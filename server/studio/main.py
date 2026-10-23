@@ -25,6 +25,7 @@ from . import __version__, collab, comments, db, files, sharing
 from .config import Settings, load_settings_or_exit
 from .logging_config import configure_logging
 from .powertools import CURRENT_APP_ID, HOME_URL, PowerTools
+from .tables import api as tables_api
 
 access_log = logging.getLogger("markdown_studio.access")
 log = logging.getLogger("markdown_studio")
@@ -91,6 +92,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.router.routes.append(WebSocketRoute(collab.PATH, collab.make_endpoint(auth, rooms)))
     app.include_router(sharing.make_router(auth, get_db))
     app.include_router(comments.make_router(auth, get_db))
+    app.include_router(tables_api.make_router(auth, get_db))
 
     @app.get("/health")
     def health():

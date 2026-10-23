@@ -8,7 +8,7 @@ import { ShareButton } from "../sharing/ShareButton";
 import { useSession } from "../session";
 import { DownloadMenu } from "./DownloadMenu";
 import { Editor } from "./Editor";
-import { files, formatSize, isMarkdown, isText, withShare, type FileMeta, type FileRole } from "./filesApi";
+import { files, formatSize, isMarkdown, isText, TABLES_MIME, withShare, type FileMeta, type FileRole } from "./filesApi";
 import { LiveNote, type LiveStatus, type Peer } from "./live";
 import { renderMarkdown } from "./markdown";
 
@@ -257,6 +257,10 @@ function BinaryFile({ file }: { file: FileMeta }) {
       <div className="note-binary">
         {file.mime_type.startsWith("image/") ? (
           <img src={src} alt={file.name} />
+        ) : file.mime_type === TABLES_MIME ? (
+          <p>
+            This is a database. <Link href={`/tables/${file.id}`}>Open it in Tables</Link>
+          </p>
         ) : (
           <p className="muted">There's no preview for this kind of file. Download it to open it.</p>
         )}
