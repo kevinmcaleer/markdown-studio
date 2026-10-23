@@ -90,6 +90,15 @@ def test_names_are_unique_per_folder(user_client):
     assert c.post_json("/api/folders", {"name": "  "}).status_code == 422
 
 
+def test_copies_of_a_deck_stay_decks(user_client):
+    c = user_client
+    for _ in range(2):
+        c.post_json("/api/files", {"name": "Talk.deck.md", "content": "# Hi"})
+    names = sorted(f["name"] for f in c.get("/api/files").json()["files"])
+    assert names == ["Talk (2).deck.md", "Talk.deck.md"]
+    assert {f["mime_type"] for f in c.get("/api/files").json()["files"]} == {"text/markdown"}
+
+
 def test_upload_download_and_replace(user_client):
     c = user_client
     png = b"\x89PNG\r\n\x1a\n" + bytes(range(256))

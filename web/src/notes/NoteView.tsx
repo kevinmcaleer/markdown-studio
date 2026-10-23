@@ -163,7 +163,7 @@ function TextFile({
 }
 
 /** Opens the note live for as long as the component is mounted. */
-function useLiveNote(fileId: number, name: string) {
+export function useLiveNote(fileId: number, name: string) {
   const [note, setNote] = useState<LiveNote | null>(null);
   const [ready, setReady] = useState(false);
   const [, rerender] = useState(0);
@@ -183,7 +183,7 @@ function useLiveNote(fileId: number, name: string) {
   return { note, ready, status: note?.status ?? ("connecting" as LiveStatus), peers: note?.peers() ?? [] };
 }
 
-function LiveStatusBadge({ status, readOnly }: { status: LiveStatus; readOnly: boolean }) {
+export function LiveStatusBadge({ status, readOnly }: { status: LiveStatus; readOnly: boolean }) {
   const label = { connecting: "Connecting…", live: readOnly ? "Read only" : "Saved", offline: "Offline: changes are kept on this device", closed: "" }[status];
   return (
     <span className={`note-status small ${status === "offline" ? "warn-text" : "muted"}`} aria-live="polite">
@@ -193,7 +193,7 @@ function LiveStatusBadge({ status, readOnly }: { status: LiveStatus; readOnly: b
   );
 }
 
-function Presence({ peers }: { peers: Peer[] }) {
+export function Presence({ peers }: { peers: Peer[] }) {
   if (peers.length < 2) return null;
   return (
     <ul className="presence" aria-label="Editing now">
