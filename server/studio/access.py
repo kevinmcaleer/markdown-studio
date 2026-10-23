@@ -33,7 +33,9 @@ def file_access(
         return None
     if user is not None and row["owner_id"] == user["id"]:
         return "owner"
-    return None
+    from .sharing import shared_role  # sharing imports this module
+
+    return shared_role(conn, file_id, user, share_token)
 
 
 def allows(role: str | None, needed: str) -> bool:

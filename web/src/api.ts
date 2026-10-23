@@ -27,6 +27,17 @@ export class ApiError extends Error {
 }
 
 let csrfToken = "";
+// Set while a document is open through a share link (/s/<token>), so every
+// request for it carries the link's permissions.
+let shareToken = "";
+
+export function setShareToken(token: string | null): void {
+  shareToken = token ?? "";
+}
+
+export function getShareToken(): string {
+  return shareToken;
+}
 
 export function setCsrfToken(token: string | undefined): void {
   if (token) csrfToken = token;
@@ -40,6 +51,7 @@ export async function api<T>(path: string, options: { method?: string; body?: un
   const method = options.method ?? (options.body === undefined ? "GET" : "POST");
   const headers: Record<string, string> = { Accept: "application/json" };
   if (method !== "GET") headers["X-CSRF-Token"] = csrfToken;
+  if (shareToken) headers["X-Share-Token"] = shareToken;
   if (options.body !== undefined) headers["Content-Type"] = "application/json";
   const response = await fetch(path, {
     method,
