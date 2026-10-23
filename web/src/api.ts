@@ -32,6 +32,10 @@ export function setCsrfToken(token: string | undefined): void {
   if (token) csrfToken = token;
 }
 
+export function csrf(): string {
+  return csrfToken;
+}
+
 export async function api<T>(path: string, options: { method?: string; body?: unknown } = {}): Promise<T> {
   const method = options.method ?? (options.body === undefined ? "GET" : "POST");
   const headers: Record<string, string> = { Accept: "application/json" };

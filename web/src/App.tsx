@@ -1,4 +1,4 @@
-import { useEffect, type ComponentType } from "react";
+import { lazy, Suspense, useEffect, type ComponentType } from "react";
 import { Link } from "./Link";
 import { TopBar } from "./TopBar";
 import { Account } from "./pages/Account";
@@ -11,6 +11,9 @@ import { ResetPassword } from "./pages/ResetPassword";
 import { navigate, useLocation } from "./router";
 import { useSession } from "./session";
 import { SUITE_APPS } from "./suite";
+
+// Each app is its own bundle, loaded the first time it's opened.
+const Notes = lazy(() => import("./notes/Notes").then((m) => ({ default: m.Notes })));
 
 const PUBLIC_PAGES: Record<string, ComponentType> = {
   "/login": Login,
@@ -41,13 +44,16 @@ export function App() {
   let page;
   if (path === "/") page = <Home />;
   else if (path === "/account") page = <Account />;
+  else if (app?.id === "notes") page = <Notes path={path} />;
   else if (app) page = <ComingSoon app={app} />;
   else page = <NotFound />;
 
   return (
     <div className="shell">
       <TopBar current={app?.id} />
-      <main className="page">{page}</main>
+      <main className={app?.ready ? "app-page" : "page"}>
+        <Suspense fallback={<div className="splash" aria-busy="true" />}>{page}</Suspense>
+      </main>
     </div>
   );
 }
