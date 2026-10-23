@@ -20,12 +20,14 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
-from . import db
+from . import db, export
 from .access import allows, file_access
 
 NAME_MAX = 255
 _BAD_NAME = re.compile(r"[/\\\x00-\x1f\x7f]")
+DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 TEXT_TYPES = {"application/json", "application/xml", "image/svg+xml"}
 
 mimetypes.add_type("text/markdown", ".md")
@@ -338,6 +340,55 @@ def make_router(auth, get_db) -> APIRouter:
             if listener is not None:
                 listener(file_id, content.decode("utf-8", errors="replace"))
         return {"file": file_json(row)}
+
+    @router.get("/files/{file_id}/export")
+    async def export_file(
+        file_id: int,
+        request: Request,
+        format: Annotated[str, Query(pattern="^(docx|pdf)$")],
+        conn=Depends(get_db),
+        user=Depends(current_user),
+    ):
+        """The note as a Word document or a PDF."""
+        token = share_token(request)
+        require_role(request, conn, file_id, user, "view")
+        row = get_file(conn, file_id)
+        if not is_markdown(row["mime_type"]):
+            raise HTTPException(status_code=415, detail="Only Markdown notes can be exported.")
+        # Someone may be typing: save the live copy first so the export is current.
+        room = request.app.state.rooms.rooms.get(file_id)
+        if room is not None:
+            await room.save()
+        source = bytes(
+            conn.execute("SELECT content FROM files WHERE id = ?", (file_id,)).fetchone()[0]
+        ).decode("utf-8", errors="replace")
+
+        def load_image(image_id: int) -> tuple[bytes, str] | None:
+            # Its own connection: this runs on a worker thread.
+            image_conn = db.connect(request.app.state.settings.database_path)
+            try:
+                if file_access(image_conn, image_id, user, token) is None:
+                    return None
+                found = image_conn.execute(
+                    "SELECT content, mime_type FROM files WHERE id = ?", (image_id,)
+                ).fetchone()
+            finally:
+                image_conn.close()
+            if found is None or not found["mime_type"].startswith("image/"):
+                return None
+            return bytes(found["content"]), found["mime_type"]
+
+        title = row["name"].rsplit(".", 1)[0]
+        convert = export.to_docx if format == "docx" else export.to_pdf
+        data = await run_in_threadpool(convert, source, title, load_image)
+        media_type = DOCX_TYPE if format == "docx" else "application/pdf"
+        return Response(
+            data,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{quote(title)}.{format}"
+            },
+        )
 
     @router.patch("/files/{file_id}")
     def change_file(

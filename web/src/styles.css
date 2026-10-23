@@ -208,8 +208,18 @@ a:hover {
   left: 0;
 }
 
-.user-menu .menu-list {
+.user-menu .menu-list,
+.download-menu .menu-list {
   right: 0;
+}
+
+.download-menu .menu-list {
+  z-index: 20;
+  min-width: 180px;
+}
+
+.download-menu .menu-list .muted {
+  margin-left: auto;
 }
 
 .menu-list > a,

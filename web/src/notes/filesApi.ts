@@ -64,6 +64,7 @@ export const files = {
     api<{ file: FileMeta }>(`/api/files/${id}`, { method: "PATCH", body: { folder_id: folderId, move: true } }),
   remove: (id: number) => api<{ ok: true }>(`/api/files/${id}`, { method: "DELETE" }),
   downloadUrl: (id: number) => withShare(`/api/files/${id}/content?download=1`),
+  exportUrl: (id: number, format: "docx" | "pdf") => withShare(`/api/files/${id}/export?format=${format}`),
 };
 
 export const folders = {

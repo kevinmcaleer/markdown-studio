@@ -6,6 +6,7 @@ import { useNoteComments } from "../comments/useNoteComments";
 import { Link } from "../Link";
 import { ShareButton } from "../sharing/ShareButton";
 import { useSession } from "../session";
+import { DownloadMenu } from "./DownloadMenu";
 import { Editor } from "./Editor";
 import { files, formatSize, isMarkdown, isText, withShare, type FileMeta, type FileRole } from "./filesApi";
 import { LiveNote, type LiveStatus, type Peer } from "./live";
@@ -124,9 +125,7 @@ function TextFile({
         )}
         {comments.button}
         {role === "owner" && <ShareButton fileId={file.id} fileName={file.name} />}
-        <a className="menu-button" href={files.downloadUrl(file.id)}>
-          Download
-        </a>
+        <DownloadMenu file={file} markdown={markdown} />
       </header>
       {live.status === "closed" ? (
         <div className="notes-empty">

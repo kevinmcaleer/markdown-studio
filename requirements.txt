@@ -4,5 +4,13 @@ uvicorn[standard]==0.54.0
 argon2-cffi==25.1.0
 # Real-time co-editing: the server side of Yjs (prebuilt wheels for arm64 too).
 pycrdt==0.14.10
+# Markdown parsing (matches the editor's preview) and Word/PDF export.
+markdown-it-py==4.2.0
+mdit-py-plugins==0.6.1
+linkify-it-py==2.2.0
+Pygments==2.21.0
+python-docx==1.2.0
+# PDF rendering; needs Pango from the OS (see the Dockerfile).
+weasyprint==70.0
 # The shared login, from this repo.
 ./packages/powertools-auth
