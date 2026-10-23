@@ -56,3 +56,27 @@ def test_serves_single_page_app(app_factory, tmp_path):
         assert c.get("/../../etc/passwd").status_code in (200, 404)
         assert "root:" not in c.get("/../../etc/passwd").text
         assert c.get("/api/nope").status_code == 404
+
+
+def test_each_app_installs_with_its_own_manifest(app_factory, tmp_path):
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    (dist / "index.html").write_text(
+        '<link rel="manifest" href="/manifest.webmanifest">'
+        '<link rel="apple-touch-icon" href="/icons/studio-apple-180.png">'
+        '<meta name="apple-mobile-web-app-title" content="Markdown Studio">'
+    )
+    (dist / "sw.js").write_text("// sw")
+    (dist / "notes.webmanifest").write_text("{}")
+    with Client(app_factory(STATIC_DIR=dist)) as c:
+        home = c.get("/").text
+        assert 'href="/manifest.webmanifest"' in home
+        notes = c.get("/notes/12").text
+        assert 'href="/notes.webmanifest"' in notes
+        assert 'href="/icons/notes-apple-180.png"' in notes
+        assert 'content="Notes"' in notes
+        sw = c.get("/sw.js")
+        assert sw.headers["cache-control"] == "no-cache"
+        manifest = c.get("/notes.webmanifest")
+        assert manifest.headers["content-type"] == "application/manifest+json"
+        assert manifest.headers["cache-control"] == "no-cache"

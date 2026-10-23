@@ -16,7 +16,7 @@ export const SUITE_APPS: SuiteApp[] = [
     path: "/notes",
     description: "Markdown documents with live preview, sharing and threaded comments.",
     epic: 3,
-    ready: false,
+    ready: true,
   },
   {
     id: "tables",

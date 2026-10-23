@@ -256,7 +256,7 @@ function ThreadCard({
   }
 
   return (
-    <li className={classes}>
+    <li className={classes} data-thread-card={thread.id}>
       {thread.quote && (
         <button type="button" className="quote" onClick={onFocus} title={detached ? "This passage was changed or removed" : "Show in the document"}>
           {thread.quote}

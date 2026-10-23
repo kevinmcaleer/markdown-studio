@@ -1,4 +1,4 @@
-import { useEffect, type ComponentType } from "react";
+import { lazy, Suspense, useEffect, type ComponentType } from "react";
 import { Link } from "./Link";
 import { TopBar } from "./TopBar";
 import { Account } from "./pages/Account";
@@ -8,9 +8,14 @@ import { Home } from "./pages/Home";
 import { Login } from "./pages/Login";
 import { Register } from "./pages/Register";
 import { ResetPassword } from "./pages/ResetPassword";
+import { setManifestFor } from "./pwa";
 import { navigate, useLocation } from "./router";
 import { useSession } from "./session";
 import { SUITE_APPS } from "./suite";
+
+// Each app is its own bundle, loaded the first time it's opened.
+const Notes = lazy(() => import("./notes/Notes").then((m) => ({ default: m.Notes })));
+const SharedLink = lazy(() => import("./sharing/SharedLink").then((m) => ({ default: m.SharedLink })));
 
 const PUBLIC_PAGES: Record<string, ComponentType> = {
   "/login": Login,
@@ -23,7 +28,12 @@ export function App() {
   const { path, search } = useLocation();
   const { loading, user, firstUser } = useSession();
   const PublicPage = PUBLIC_PAGES[path];
-  const isPublic = PublicPage !== undefined;
+  // Share links open signed out too; the page itself asks for sign-in when the link needs it.
+  const shareToken = /^\/s\/([\w-]+)$/.exec(path)?.[1];
+  const isPublic = PublicPage !== undefined || shareToken !== undefined;
+  const app = SUITE_APPS.find((a) => path === a.path || path.startsWith(`${a.path}/`));
+
+  useEffect(() => setManifestFor(app), [app]);
 
   useEffect(() => {
     if (loading) return;
@@ -34,20 +44,33 @@ export function App() {
   }, [loading, user, isPublic, firstUser, path, search]);
 
   if (loading) return <div className="splash" aria-busy="true" />;
-  if (isPublic) return <PublicPage />;
+  if (shareToken)
+    return (
+      <div className="shell">
+        {user && <TopBar current="notes" />}
+        <main className="app-page">
+          <Suspense fallback={<div className="splash" aria-busy="true" />}>
+            <SharedLink token={shareToken} />
+          </Suspense>
+        </main>
+      </div>
+    );
+  if (PublicPage) return <PublicPage />;
   if (!user) return <div className="splash" aria-busy="true" />;
 
-  const app = SUITE_APPS.find((a) => path === a.path || path.startsWith(`${a.path}/`));
   let page;
   if (path === "/") page = <Home />;
   else if (path === "/account") page = <Account />;
+  else if (app?.id === "notes") page = <Notes path={path} />;
   else if (app) page = <ComingSoon app={app} />;
   else page = <NotFound />;
 
   return (
     <div className="shell">
       <TopBar current={app?.id} />
-      <main className="page">{page}</main>
+      <main className={app?.ready ? "app-page" : "page"}>
+        <Suspense fallback={<div className="splash" aria-busy="true" />}>{page}</Suspense>
+      </main>
     </div>
   );
 }

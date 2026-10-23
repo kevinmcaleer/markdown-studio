@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { clearApiCache } from "./pwa";
 import { auth, setCsrfToken, type SessionInfo, type User } from "./api";
 
 type SessionState = {
@@ -27,6 +28,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   const setUser = useCallback((user: User | null) => {
+    clearApiCache();
     setInfo((prev) => (prev ? { ...prev, user, first_user: prev.first_user && !user } : prev));
   }, []);
 

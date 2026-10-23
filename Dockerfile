@@ -27,6 +27,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PUID=1000 \
     PGID=1000
 
+# Pango and fonts for PDF export (WeasyPrint).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 COPY requirements.txt ./
 COPY packages/powertools-auth/ ./packages/powertools-auth/
