@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { ApiError, setShareToken } from "../api";
 import { Link } from "../Link";
+import { DeckView } from "../decks/DeckView";
+import { isDeck } from "../decks/deck";
 import { NoteView } from "../notes/NoteView";
 import { navigate } from "../router";
 import { useSession } from "../session";
@@ -27,7 +29,7 @@ export function SharedLink({ token }: { token: string }) {
       (data) => {
         if (!live) return;
         // The owner gets their normal editor, with the file browser.
-        if (data.role === "owner") navigate(`/notes/${data.file.id}`, { replace: true });
+        if (data.role === "owner") navigate(`/${isDeck(data.file) ? "decks" : "notes"}/${data.file.id}`, { replace: true });
         else setOpened(data);
       },
       (err) => {
@@ -71,7 +73,7 @@ export function SharedLink({ token }: { token: string }) {
           </Link>
         )}
       </div>
-      <NoteView fileId={opened.file.id} onRenamed={() => {}} onSaved={() => {}} />
+      {isDeck(opened.file) ? <DeckView fileId={opened.file.id} /> : <NoteView fileId={opened.file.id} onRenamed={() => {}} onSaved={() => {}} />}
     </div>
   );
 }

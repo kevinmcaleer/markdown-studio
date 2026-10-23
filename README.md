@@ -11,7 +11,8 @@ Docker container that is happy on a Raspberry Pi. It runs at kevspowertools.com 
 own home network.
 
 > **Status:** Notes works: files and folders, the Markdown editor, live co-editing, sharing,
-> comments, Word/PDF export and offline use. Tables and Decks are tracked in the
+> comments, Word/PDF export and offline use. Decks works: slides in Markdown, presenting with
+> a presenter view, and PowerPoint/Keynote export. Tables is tracked in the
 > [epics](https://github.com/kevinmcaleer/markdown-studio/issues?q=label%3Aepic).
 
 ## How it fits together
@@ -41,6 +42,42 @@ port) can live under `packages/` next to the web app.
   **Install Notes**; on iPhone and iPad use Share, then Add to Home Screen). Notes you've
   opened before keep working offline, and your changes merge when you're back online.
   Service workers need HTTPS, or `localhost`.
+
+## Decks
+
+- **A deck is a Markdown file** whose name ends in `.deck.md`, kept with your other files, so
+  it co-edits, shares and takes comments just like a note. Slides are separated by a line
+  holding only `---`, and presenter notes follow a line holding only `???`:
+
+  ```markdown
+  # Robots 101
+
+  Kevin McAleer
+
+  ---
+
+  <!-- layout: section -->
+  <!-- transition: dissolve 1s -->
+  ## Why robots?
+
+  ???
+  Keep this one short.
+  ```
+
+  A slide picks its layout from what's on it (a `#` title with a line under it is a title
+  slide, a heading alone is a section, a lone quote is a quote, and so on), or name one in a
+  `layout` comment: `title`, `section`, `content`, `quote`, `statement` or `blank` (Keynote
+  layout names work too). `<!-- skipped -->` hides a slide when presenting. This is the same
+  format [keynotejs](https://www.npmjs.com/package/@kevsmac/keynotejs) and pykeynote read and
+  write.
+- **Present** shows the slides full screen (arrow keys, space, or tap; Esc to stop). Press
+  **S** or **Presenter view** to open a second window with your notes, the next slide and a
+  timer. Either window moves both.
+- **Download** as PowerPoint (`.pptx`) or Keynote (`.key`). Both files are made in your browser
+  from the text on screen, so exporting works offline and never sends the deck anywhere.
+  PowerPoint files have real text boxes, bullets, tables, images and notes. Keynote files use
+  Keynote's Basic White theme and its own layouts; images and tables arrive in Keynote export
+  with the next keynotejs release.
 
 ## Quick start with Docker
 

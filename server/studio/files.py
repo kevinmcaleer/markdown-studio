@@ -29,6 +29,8 @@ NAME_MAX = 255
 _BAD_NAME = re.compile(r"[/\\\x00-\x1f\x7f]")
 DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 TEXT_TYPES = {"application/json", "application/xml", "image/svg+xml"}
+# Decks are Markdown files named *.deck.md.
+DOUBLE_EXTENSIONS = (".deck.md",)
 
 mimetypes.add_type("text/markdown", ".md")
 mimetypes.add_type("text/markdown", ".markdown")
@@ -119,11 +121,17 @@ def unique_name(conn: sqlite3.Connection, owner_id: int, folder_id: int | None, 
     """``name``, or ``name (2)``, ``name (3)``... if a file already has it."""
     if not _taken(conn, "files", owner_id, folder_id, name):
         return name
-    stem, dot, ext = name.rpartition(".")
-    if not dot or not stem:
-        stem, ext = name, ""
+    # Keep two-part extensions whole, so a copy of a deck is still a deck.
+    lower = name.lower()
+    double = next((e for e in DOUBLE_EXTENSIONS if lower.endswith(e) and lower != e), None)
+    if double:
+        stem, ext = name[: -len(double)], name[-len(double) :]
     else:
-        ext = "." + ext
+        stem, dot, ext = name.rpartition(".")
+        if not dot or not stem:
+            stem, ext = name, ""
+        else:
+            ext = "." + ext
     n = 2
     while _taken(conn, "files", owner_id, folder_id, f"{stem} ({n}){ext}"):
         n += 1
