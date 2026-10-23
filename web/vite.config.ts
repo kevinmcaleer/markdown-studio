@@ -10,7 +10,7 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": api,
+      "/api": { target: api, ws: true },
       "/health": api,
     },
   },

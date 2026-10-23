@@ -24,16 +24,9 @@ export type Folder = {
 
 export type Tree = { folders: Folder[]; files: FileMeta[] };
 
-/** The open share link's token, for requests that don't go through api(). */
-function shareHeader(): Record<string, string> {
-  const token = getShareToken();
-  return token ? { "X-Share-Token": token } : {};
-}
-
-/** Adds ?share= to URLs the browser fetches by itself (downloads, images). */
-export function withShare(url: string): string {
-  const token = getShareToken();
-  return token ? `${url}${url.includes("?") ? "&" : "?"}share=${encodeURIComponent(token)}` : url;
+function rawHeaders(): Record<string, string> {
+  const share = getShareToken();
+  return share ? { "X-Share-Token": share } : {};
 }
 
 /** Sends raw bytes (uploads and saves), with the CSRF token like every write. */
@@ -41,7 +34,7 @@ async function sendBody<T>(method: string, path: string, body: BodyInit): Promis
   const response = await fetch(path, {
     method,
     credentials: "same-origin",
-    headers: { Accept: "application/json", "X-CSRF-Token": csrf(), ...shareHeader() },
+    headers: { Accept: "application/json", "X-CSRF-Token": csrf(), ...rawHeaders() },
     body,
   });
   const data = response.headers.get("content-type")?.includes("json") ? await response.json() : null;
@@ -53,7 +46,7 @@ export const files = {
   tree: () => api<Tree>("/api/files"),
   info: (id: number) => api<{ file: FileMeta; role: FileRole }>(`/api/files/${id}`),
   async text(id: number): Promise<string> {
-    const response = await fetch(`/api/files/${id}/content`, { credentials: "same-origin", headers: shareHeader() });
+    const response = await fetch(`/api/files/${id}/content`, { credentials: "same-origin", headers: rawHeaders() });
     if (!response.ok) throw new ApiError(response.status, response.statusText);
     return response.text();
   },
@@ -81,6 +74,12 @@ export const folders = {
     api<{ folder: Folder }>(`/api/folders/${id}`, { method: "PATCH", body: { parent_id: parentId, move: true } }),
   remove: (id: number) => api<{ ok: true }>(`/api/folders/${id}`, { method: "DELETE" }),
 };
+
+/** Plain links (downloads) can't send headers, so a share token goes in the URL. */
+export function withShare(url: string): string {
+  const share = getShareToken();
+  return share ? `${url}${url.includes("?") ? "&" : "?"}share=${encodeURIComponent(share)}` : url;
+}
 
 export function isMarkdown(file: Pick<FileMeta, "mime_type">): boolean {
   return file.mime_type === "text/markdown";

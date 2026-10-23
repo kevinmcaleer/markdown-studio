@@ -58,18 +58,32 @@ export function useNoteComments({ fileId, doc, role }: { fileId: number; doc: st
     }
   }, [open]);
 
-  useEffect(() => {
-    const marks = placed.flatMap(({ thread, range }) => (range ? [{ id: thread.id, from: range.from, to: range.to }] : []));
-    view.current?.dispatch({ effects: setCommentMarks.of({ marks, active }) });
-  }, [placed, active]);
+  const marks = useMemo(
+    () => ({
+      marks: placed.flatMap(({ thread, range }) => (range ? [{ id: thread.id, from: range.from, to: range.to }] : [])),
+      active,
+    }),
+    [placed, active],
+  );
+  const latest = useRef(marks);
+  latest.current = marks;
 
+  // Null while there's no editor on screen (Preview mode, or not loaded yet).
+  const liveView = () => (view.current?.dom.isConnected ? view.current : null);
+
+  useEffect(() => {
+    liveView()?.dispatch({ effects: setCommentMarks.of(marks) });
+  }, [marks]);
+
+  // The editor is rebuilt when switching to Preview and back; give it the marks again.
   const onReady = useCallback((v: EditorView) => {
     view.current = v;
+    v.dispatch({ effects: setCommentMarks.of(latest.current) });
   }, []);
 
   const focusThread = useCallback((thread: Thread, range: Range | null) => {
     setActive(thread.id);
-    const v = view.current;
+    const v = liveView();
     if (!v || !range) return;
     const to = Math.min(range.to, v.state.doc.length);
     v.dispatch({ selection: { anchor: Math.min(range.from, to), head: to }, scrollIntoView: true });
