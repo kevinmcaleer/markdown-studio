@@ -11,7 +11,7 @@ Docker container that is happy on a Raspberry Pi. It runs at kevspowertools.com 
 own home network.
 
 > **Status:** Notes works: files and folders, the Markdown editor, live co-editing, sharing,
-> comments, Word/PDF export and offline use. Tables and Decks are tracked in the
+> comments, Word/PDF export, offline use, and Google Docs and iCloud sync. Tables and Decks are tracked in the
 > [epics](https://github.com/kevinmcaleer/markdown-studio/issues?q=label%3Aepic).
 
 ## How it fits together
@@ -41,6 +41,50 @@ port) can live under `packages/` next to the web app.
   **Install Notes**; on iPhone and iPad use Share, then Add to Home Screen). Notes you've
   opened before keep working offline, and your changes merge when you're back online.
   Service workers need HTTPS, or `localhost`.
+
+- **Google Docs sync:** from a note's **Sync** menu, **Create a Google Doc** makes a Doc from
+  the note and keeps the two in step, both ways: on **Sync now**, and in the background every
+  few minutes. Needs Google set up on the server (below). Images stored in Markdown Studio
+  don't travel to Google.
+- **iCloud Drive:** **Sync, Save a copy** hands the note (Markdown, Word or PDF) to the share
+  sheet; on iPhone, iPad and Mac choose **Save to Files**, then iCloud Drive. Other browsers
+  download it. Edit the Markdown copy anywhere, then **Sync, Update from a copy** picks it
+  from iCloud Drive and merges it back. iCloud has no web API, so this is a save and a
+  restore rather than a live sync.
+- **Conflicts:** every sync is a three-way merge against what both sides looked like last
+  time, so edits to different parts of a note merge on their own. If both sides changed the
+  same lines, nothing is overwritten: the note shows a banner to keep this note, keep the
+  other copy, keep both (the copy becomes a new note), or fix it by hand (both versions go
+  into the note between `<<<<<<<` and `>>>>>>>` lines).
+
+## Google Docs sync
+
+Each server needs its own Google OAuth client. It's free and takes ten minutes:
+
+1. In the [Google Cloud console](https://console.cloud.google.com/), create a project (or
+   pick one) and enable the **Google Drive API** (APIs & Services, Library).
+2. Set up the **OAuth consent screen** (Google Auth Platform, Branding / Audience): app name
+   *Markdown Studio*, your email, and on **Data Access** add the scope
+   `https://www.googleapis.com/auth/drive.file`. This scope only reaches files the app
+   creates, so Google treats it as non-sensitive and no app review is needed. While the app
+   is in *Testing*, add each person's Google address under **Test users** (up to 100), or
+   publish the app to let anyone connect.
+3. Create an **OAuth client ID** (Clients, Create client), type **Web application**, with this
+   authorised redirect URI: `<PUBLIC_URL>/api/cloud/google/callback`, for example
+   `https://studio.kevspowertools.com/api/cloud/google/callback`. Google only accepts
+   `https://` addresses or `http://localhost`, so a home server needs HTTPS (a Cloudflare
+   Tunnel works) or must be reached as `localhost`.
+4. Put the client's ID and secret in `.env`, set `PUBLIC_URL`, and restart:
+
+   ```sh
+   PUBLIC_URL=https://studio.example.com
+   GOOGLE_CLIENT_ID=1234567890-abc.apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=GOCSPX-...
+   ```
+
+Then each person connects their Google account from their Account page (or from a note's
+Sync menu). Disconnecting stops syncing; the Google Docs stay in their Drive. Google's
+refresh tokens are kept in `studio.db`, so protect its backups like the database itself.
 
 ## Quick start with Docker
 
@@ -151,6 +195,8 @@ All settings are environment variables, normally set in `.env` (see `.env.exampl
 | `SESSION_MAX_AGE` | `86400` | Seconds a login lasts. |
 | `REMEMBER_ME_MAX_AGE` | `2592000` | Seconds a "keep me signed in" login lasts. |
 | `LOGIN_RATE_LIMIT` / `LOGIN_RATE_WINDOW` | `5` / `60` | Sign-in and sign-up attempts allowed per IP per window (seconds). |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | *(empty)* | OAuth client for Google Docs sync (see above). Empty hides Google Docs. |
+| `GOOGLE_SYNC_INTERVAL` | `300` | Seconds between background syncs of linked notes. `0` syncs only on request. |
 | `POWERTOOLS_APPS_URL` | `https://kevspowertools.com/apps.json` | The shared list behind the app switcher. Empty uses the bundled copy. |
 | `PUID` / `PGID` | `1000` | Owner of files in `./data` (Docker only). |
 | `LOG_LEVEL` | `INFO` | Logs are JSON lines on stdout. |

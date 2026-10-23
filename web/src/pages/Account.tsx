@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ApiError, auth } from "../api";
 import { navigate } from "../router";
 import { useSession } from "../session";
+import { CloudAccounts } from "../sync/Sync";
 import { Field } from "./AuthForm";
 
 export function Account() {
@@ -104,6 +105,8 @@ export function Account() {
           Save email
         </button>
       </form>
+
+      <CloudAccounts />
 
       <form className="card stack danger-zone" onSubmit={deleteAccount}>
         <h2>Delete account</h2>
