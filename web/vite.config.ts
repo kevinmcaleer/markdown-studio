@@ -16,7 +16,7 @@ function serviceWorker(): Plugin {
       const files = Object.keys(bundle)
         .filter((name) => !name.endsWith(".map") && name !== "index.html")
         .map((name) => `/${name}`)
-        .concat(["/favicon.svg", "/manifest.webmanifest", "/notes.webmanifest", "/decks.webmanifest"])
+        .concat(["/favicon.svg", "/manifest.webmanifest", "/notes.webmanifest", "/tables.webmanifest", "/decks.webmanifest"])
         .sort();
       const version = createHash("sha256").update(files.join("\n")).digest("hex").slice(0, 12);
       const source = readFileSync(new URL("./sw.js", import.meta.url), "utf8")

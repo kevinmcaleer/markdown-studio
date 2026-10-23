@@ -24,7 +24,7 @@ export const SUITE_APPS: SuiteApp[] = [
     path: "/tables",
     description: "A simple database with a spreadsheet-style grid, forms and queries.",
     epic: 9,
-    ready: false,
+    ready: true,
   },
   {
     id: "decks",

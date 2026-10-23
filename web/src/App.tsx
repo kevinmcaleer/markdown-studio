@@ -15,6 +15,7 @@ import { SUITE_APPS } from "./suite";
 
 // Each app is its own bundle, loaded the first time it's opened.
 const Notes = lazy(() => import("./notes/Notes").then((m) => ({ default: m.Notes })));
+const Tables = lazy(() => import("./tables/Tables").then((m) => ({ default: m.Tables })));
 const Decks = lazy(() => import("./decks/Decks").then((m) => ({ default: m.Decks })));
 const SharedLink = lazy(() => import("./sharing/SharedLink").then((m) => ({ default: m.SharedLink })));
 
@@ -63,6 +64,7 @@ export function App() {
   if (path === "/") page = <Home />;
   else if (path === "/account") page = <Account />;
   else if (app?.id === "notes") page = <Notes path={path} />;
+  else if (app?.id === "tables") page = <Tables path={path} />;
   else if (app?.id === "decks") page = <Decks path={path} />;
   else if (app) page = <ComingSoon app={app} />;
   else page = <NotFound />;
