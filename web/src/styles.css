@@ -418,7 +418,10 @@ a:hover {
 }
 
 button.primary,
+a.button.primary,
 button.danger {
+  display: inline-block;
+  text-decoration: none;
   font: inherit;
   font-weight: 500;
   border: 0;
@@ -1390,4 +1393,90 @@ button.quote {
 
 .install-hint p {
   margin: 0;
+}
+
+/* ------------------------------------------------------------- cloud sync */
+
+.sync-menu .menu-list {
+  right: 0;
+  z-index: 20;
+  min-width: 230px;
+}
+
+.sync-menu .menu-list .muted {
+  margin-left: auto;
+}
+
+.sync-menu .menu-list > button:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.sync-dot {
+  width: 8px;
+  height: 8px;
+  margin-left: 0.4rem;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
+.sync-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 0.5rem 1rem;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.875rem;
+}
+
+.sync-banner > span:first-child {
+  flex: 1 1 18rem;
+}
+
+.sync-conflict {
+  background: color-mix(in srgb, var(--danger) 10%, var(--surface));
+}
+
+.sync-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.sync-actions button {
+  font: inherit;
+  padding: 0.3rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.sync-actions button:hover {
+  border-color: var(--accent);
+}
+
+.format-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 1rem 0 0.5rem;
+  padding: 0;
+  border: 0;
+}
+
+.format-choice label {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 1rem;
 }

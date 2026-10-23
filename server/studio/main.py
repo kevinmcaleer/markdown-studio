@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import logging
 import mimetypes
 import sqlite3
 import time
 import uuid
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager
 from dataclasses import asdict
 from pathlib import Path
 
@@ -21,8 +24,9 @@ from starlette.routing import WebSocketRoute
 from powertools_auth import Auth, AuthSettings, SmtpMailer
 from powertools_auth.security import SECURITY_HEADERS
 
-from . import __version__, collab, comments, db, files, sharing
+from . import __version__, collab, comments, db, files, sharing, sync
 from .config import Settings, load_settings_or_exit
+from .gdocs import Google
 from .logging_config import configure_logging
 from .powertools import CURRENT_APP_ID, HOME_URL, PowerTools
 from .tables import api as tables_api
@@ -70,6 +74,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         _mailer(settings),
     )
 
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        task = None
+        if app.state.syncer.google is not None and settings.google_sync_interval > 0:
+            task = asyncio.create_task(app.state.syncer.run_forever(settings.google_sync_interval))
+        yield
+        if task is not None:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
     app = FastAPI(
         title="Markdown Studio",
         version=__version__,
@@ -77,6 +92,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         redoc_url=None,
         openapi_url=None,
         dependencies=[Depends(auth.verify_csrf)],
+        lifespan=lifespan,
     )
     app.state.settings = settings
     app.state.auth = auth
@@ -92,6 +108,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.router.routes.append(WebSocketRoute(collab.PATH, collab.make_endpoint(auth, rooms)))
     app.include_router(sharing.make_router(auth, get_db))
     app.include_router(comments.make_router(auth, get_db))
+    google = None
+    if settings.google_client_id:
+        google = Google(settings.google_client_id, settings.google_client_secret)
+    app.state.syncer = sync.Syncer(app.state, google)
+    app.include_router(sync.make_router(auth, get_db, app.state.syncer))
     app.include_router(tables_api.make_router(auth, get_db))
 
     @app.get("/health")

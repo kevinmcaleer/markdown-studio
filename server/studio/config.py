@@ -102,6 +102,11 @@ class Settings:
     password_reset_max_age: int = 60 * 60
     # Largest file a user can upload or save, in bytes.
     max_upload_bytes: int = 25 * 1024 * 1024
+    # Google Docs sync: an OAuth client from Google Cloud. Empty turns it off.
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    # Seconds between background syncs of linked notes; 0 syncs only on request.
+    google_sync_interval: int = 300
 
     @property
     def is_production(self) -> bool:
@@ -139,6 +144,14 @@ def load_settings(env: dict[str, str] | None = None) -> Settings:
             "to the app (e.g. https://studio.example.com or http://pi.local:8000)."
         )
 
+    google_client_id = env.get("GOOGLE_CLIENT_ID", "").strip()
+    google_client_secret = env.get("GOOGLE_CLIENT_SECRET", "").strip()
+    if bool(google_client_id) != bool(google_client_secret):
+        raise ConfigError("Set both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, or neither.")
+    google_sync_interval = _int("GOOGLE_SYNC_INTERVAL", env.get("GOOGLE_SYNC_INTERVAL"), 300)
+    if google_sync_interval < 0:
+        raise ConfigError("GOOGLE_SYNC_INTERVAL can't be negative.")
+
     return Settings(
         app_env=app_env,
         secret_key=secret_key,
@@ -172,6 +185,9 @@ def load_settings(env: dict[str, str] | None = None) -> Settings:
             "PASSWORD_RESET_MAX_AGE", env.get("PASSWORD_RESET_MAX_AGE"), 60 * 60
         ),
         max_upload_bytes=_int("MAX_UPLOAD_MB", env.get("MAX_UPLOAD_MB"), 25) * 1024 * 1024,
+        google_client_id=google_client_id,
+        google_client_secret=google_client_secret,
+        google_sync_interval=google_sync_interval,
     )
 
 
