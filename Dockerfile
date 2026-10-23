@@ -4,7 +4,7 @@
 
 # ---- Stage 1: build the web app (React + Vite). The output is plain static
 # files, so this stage runs on the build machine's own architecture.
-FROM --platform=$BUILDPLATFORM node:22-bookworm-slim AS web
+FROM --platform=$BUILDPLATFORM node:25-bookworm-slim AS web
 WORKDIR /build
 COPY package.json package-lock.json ./
 COPY web/package.json web/
