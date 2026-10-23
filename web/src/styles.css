@@ -431,3 +431,8 @@ button:disabled {
   color: var(--success);
   background: color-mix(in srgb, var(--success) 12%, transparent);
 }
+
+.auth-card .forgot {
+  margin: 0;
+  text-align: right;
+}

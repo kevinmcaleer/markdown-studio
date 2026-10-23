@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from powertools_auth import Auth, AuthSettings
+from powertools_auth import Auth, AuthSettings, SmtpMailer
 from powertools_auth.security import SECURITY_HEADERS
 
 from . import __version__, db
@@ -59,8 +59,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             login_rate_window=settings.login_rate_window,
             cookie_prefix="ms",
             cookie_domain=settings.cookie_domain or None,
+            app_name="Markdown Studio",
+            public_url=settings.public_url,
+            reset_max_age=settings.password_reset_max_age,
         ),
         get_db,
+        _mailer(settings),
     )
 
     app = FastAPI(
@@ -155,6 +159,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         extra={"database_path": str(settings.database_path), "env": settings.app_env},
     )
     return app
+
+
+def _mailer(settings: Settings) -> SmtpMailer | None:
+    if not settings.smtp_host:
+        return None
+    return SmtpMailer(
+        host=settings.smtp_host,
+        port=settings.smtp_port,
+        username=settings.smtp_username,
+        password=settings.smtp_password,
+        security=settings.smtp_security,
+        sender=settings.smtp_from,
+    )
 
 
 def _mount_front_end(app: FastAPI, static_dir: Path | None) -> None:

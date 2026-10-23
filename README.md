@@ -88,7 +88,23 @@ stops the container, keeps the current database aside, swaps the backup in and w
 
 ## Forgotten passwords
 
-There's no email yet, so whoever runs the server resets passwords:
+With email set up, "Forgot your password?" on the sign-in page sends a one-time link to the
+account's email address. The link lasts an hour, works once, and signs out every other
+session when used. Set these in `.env` (see `.env.example`):
+
+```sh
+PUBLIC_URL=https://studio.example.com     # reset links point here
+SMTP_HOST=smtp.fastmail.com
+SMTP_SECURITY=starttls                    # or ssl (port 465), or none for a LAN relay
+SMTP_USERNAME=you@example.com
+SMTP_PASSWORD=an-app-password
+SMTP_FROM=Markdown Studio <you@example.com>
+```
+
+People who signed up without an email address can add one on their Account page.
+
+Without email, or for an account with no address, whoever runs the server resets the
+password:
 
 ```sh
 docker compose exec -u app markdown-studio python -m studio reset-password kev
@@ -108,6 +124,13 @@ All settings are environment variables, normally set in `.env` (see `.env.exampl
 | `HTTPS` | `false` | Set `true` when served over HTTPS: cookies get the `Secure` flag. |
 | `TRUST_PROXY` | `false` | Honour `X-Forwarded-For` / `X-Forwarded-Proto` from a reverse proxy or tunnel. |
 | `COOKIE_DOMAIN` | *(empty)* | Share the login cookie with sibling subdomains, e.g. `.kevspowertools.com`. |
+| `PUBLIC_URL` | *(empty)* | The app's address as users see it. Required with `SMTP_HOST`; reset links use it. |
+| `SMTP_HOST` | *(empty)* | Mail server for password reset emails. Empty turns email resets off. |
+| `SMTP_SECURITY` | `starttls` | `starttls`, `ssl` (implicit TLS) or `none` (trusted local relay only). |
+| `SMTP_PORT` | `587` (`465` with `ssl`) | Mail server port. |
+| `SMTP_USERNAME` / `SMTP_PASSWORD` | *(empty)* | Mail server login, if it needs one. |
+| `SMTP_FROM` | *(empty)* | Sender, e.g. `Markdown Studio <studio@example.com>`. Required with `SMTP_HOST`. |
+| `PASSWORD_RESET_MAX_AGE` | `3600` | Seconds a reset link stays valid. |
 | `SESSION_MAX_AGE` | `86400` | Seconds a login lasts. |
 | `REMEMBER_ME_MAX_AGE` | `2592000` | Seconds a "keep me signed in" login lasts. |
 | `LOGIN_RATE_LIMIT` / `LOGIN_RATE_WINDOW` | `5` / `60` | Sign-in and sign-up attempts allowed per IP per window (seconds). |

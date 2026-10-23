@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "powertools-auth"
-version = "0.1.0"
+version = "0.2.0"
 description = "Shared login for Kev's Power Tools apps: accounts, server-side sessions, CSRF and rate limiting on SQLite + FastAPI"
 requires-python = ">=3.12"
 dependencies = [

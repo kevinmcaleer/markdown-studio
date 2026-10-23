@@ -1,21 +1,29 @@
-import { useEffect } from "react";
+import { useEffect, type ComponentType } from "react";
 import { Link } from "./Link";
 import { TopBar } from "./TopBar";
 import { Account } from "./pages/Account";
 import { ComingSoon } from "./pages/ComingSoon";
+import { ForgotPassword } from "./pages/ForgotPassword";
 import { Home } from "./pages/Home";
 import { Login } from "./pages/Login";
 import { Register } from "./pages/Register";
+import { ResetPassword } from "./pages/ResetPassword";
 import { navigate, useLocation } from "./router";
 import { useSession } from "./session";
 import { SUITE_APPS } from "./suite";
 
-const PUBLIC_PATHS = new Set(["/login", "/register"]);
+const PUBLIC_PAGES: Record<string, ComponentType> = {
+  "/login": Login,
+  "/register": Register,
+  "/forgot-password": ForgotPassword,
+  "/reset-password": ResetPassword,
+};
 
 export function App() {
   const { path, search } = useLocation();
   const { loading, user, firstUser } = useSession();
-  const isPublic = PUBLIC_PATHS.has(path);
+  const PublicPage = PUBLIC_PAGES[path];
+  const isPublic = PublicPage !== undefined;
 
   useEffect(() => {
     if (loading) return;
@@ -26,7 +34,7 @@ export function App() {
   }, [loading, user, isPublic, firstUser, path, search]);
 
   if (loading) return <div className="splash" aria-busy="true" />;
-  if (isPublic) return path === "/login" ? <Login /> : <Register />;
+  if (isPublic) return <PublicPage />;
   if (!user) return <div className="splash" aria-busy="true" />;
 
   const app = SUITE_APPS.find((a) => path === a.path || path.startsWith(`${a.path}/`));

@@ -5,7 +5,10 @@ import { useSession } from "../session";
 import { Field } from "./AuthForm";
 
 export function Account() {
-  const { user, setUser, refresh } = useSession();
+  const { user, setUser, refresh, passwordReset } = useSession();
+  const [email, setEmail] = useState(user?.email ?? "");
+  const [emailPassword, setEmailPassword] = useState("");
+  const [emailMessage, setEmailMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -29,6 +32,18 @@ export function Account() {
       setPasswordMessage({ ok: true, text: "Password changed. Your other devices have been signed out." });
     } catch (err) {
       setPasswordMessage({ ok: false, text: err instanceof ApiError ? err.message : "Couldn't reach the server." });
+    }
+  }
+
+  async function changeEmail(event: React.FormEvent) {
+    event.preventDefault();
+    try {
+      const { user } = await auth.changeEmail(email, emailPassword);
+      setUser(user);
+      setEmailPassword("");
+      setEmailMessage({ ok: true, text: user.email ? "Email address saved." : "Email address removed." });
+    } catch (err) {
+      setEmailMessage({ ok: false, text: err instanceof ApiError ? err.message : "Couldn't reach the server." });
     }
   }
 
@@ -68,6 +83,25 @@ export function Account() {
         <Field label="Confirm new password" type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
         <button type="submit" className="primary">
           Change password
+        </button>
+      </form>
+
+      <form className="card stack" onSubmit={changeEmail}>
+        <h2>Email address</h2>
+        <p className="muted">
+          {passwordReset
+            ? "If you forget your password, a reset link is sent here."
+            : "This server can't send email yet, but your address is kept for when it can."}
+        </p>
+        {emailMessage && (
+          <p className={emailMessage.ok ? "success" : "error"} role="status">
+            {emailMessage.text}
+          </p>
+        )}
+        <Field label="Email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <Field label="Current password" type="password" autoComplete="current-password" value={emailPassword} onChange={(e) => setEmailPassword(e.target.value)} />
+        <button type="submit" className="primary">
+          Save email
         </button>
       </form>
 

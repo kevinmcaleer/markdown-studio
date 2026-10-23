@@ -13,6 +13,8 @@ export type SessionInfo = {
   csrf_token: string;
   registration_open: boolean;
   first_user: boolean;
+  /** The server can email password reset links. */
+  password_reset: boolean;
 };
 
 export class ApiError extends Error {
@@ -58,6 +60,11 @@ export const auth = {
   logout: () => api<{ user: null }>("/api/auth/logout", { method: "POST" }),
   changePassword: (current_password: string, new_password: string) =>
     api<{ user: User }>("/api/auth/password", { body: { current_password, new_password } }),
+  changeEmail: (email: string, current_password: string) =>
+    api<{ user: User }>("/api/auth/email", { body: { email, current_password } }),
+  forgotPassword: (login: string) => api<{ ok: true }>("/api/auth/forgot-password", { body: { login } }),
+  resetPassword: (token: string, password: string) =>
+    api<{ user: User }>("/api/auth/reset-password", { body: { token, password } }),
   deleteAccount: (confirm_username: string) =>
     api<{ user: null }>("/api/auth/delete-account", { body: { confirm_username } }),
 };

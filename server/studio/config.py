@@ -89,6 +89,17 @@ class Settings:
     static_dir: Path | None = None
     # The landing page's shared app list for the switcher; empty keeps the bundled copy.
     powertools_apps_url: str = "https://kevspowertools.com/apps.json"
+    # Where users reach the app; reset links in emails point here.
+    public_url: str = ""
+    # Outgoing mail for password resets. No SMTP_HOST means no email resets
+    # (the `reset-password` command still works).
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_security: str = "starttls"
+    smtp_from: str = ""
+    password_reset_max_age: int = 60 * 60
 
     @property
     def is_production(self) -> bool:
@@ -109,6 +120,22 @@ def load_settings(env: dict[str, str] | None = None) -> Settings:
     log_level = env.get("LOG_LEVEL", "INFO").strip().upper()
     if log_level not in {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}:
         raise ConfigError(f"LOG_LEVEL must be one of DEBUG/INFO/WARNING/ERROR, got {log_level!r}")
+
+    public_url = env.get("PUBLIC_URL", "").strip().rstrip("/")
+    if public_url and not public_url.startswith(("http://", "https://")):
+        raise ConfigError(f"PUBLIC_URL must start with http:// or https://, got {public_url!r}")
+    smtp_host = env.get("SMTP_HOST", "").strip()
+    smtp_security = env.get("SMTP_SECURITY", "starttls").strip().lower() or "starttls"
+    if smtp_security not in {"starttls", "ssl", "none"}:
+        raise ConfigError(f"SMTP_SECURITY must be starttls, ssl or none, got {smtp_security!r}")
+    smtp_from = env.get("SMTP_FROM", "").strip()
+    if smtp_host and not smtp_from:
+        raise ConfigError("SMTP_FROM must be set when SMTP_HOST is (the address emails come from).")
+    if smtp_host and not public_url:
+        raise ConfigError(
+            "PUBLIC_URL must be set when SMTP_HOST is, so reset emails can link back "
+            "to the app (e.g. https://studio.example.com or http://pi.local:8000)."
+        )
 
     return Settings(
         app_env=app_env,
@@ -132,6 +159,16 @@ def load_settings(env: dict[str, str] | None = None) -> Settings:
         powertools_apps_url=env.get(
             "POWERTOOLS_APPS_URL", "https://kevspowertools.com/apps.json"
         ).strip(),
+        public_url=public_url,
+        smtp_host=smtp_host,
+        smtp_port=_int("SMTP_PORT", env.get("SMTP_PORT"), 465 if smtp_security == "ssl" else 587),
+        smtp_username=env.get("SMTP_USERNAME", "").strip(),
+        smtp_password=env.get("SMTP_PASSWORD", ""),
+        smtp_security=smtp_security,
+        smtp_from=smtp_from,
+        password_reset_max_age=_int(
+            "PASSWORD_RESET_MAX_AGE", env.get("PASSWORD_RESET_MAX_AGE"), 60 * 60
+        ),
     )
 
 

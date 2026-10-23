@@ -6,6 +6,7 @@ type SessionState = {
   user: User | null;
   registrationOpen: boolean;
   firstUser: boolean;
+  passwordReset: boolean;
   setUser: (user: User | null) => void;
   refresh: () => Promise<void>;
 };
@@ -22,7 +23,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    refresh().catch(() => setInfo({ user: null, csrf_token: "", registration_open: false, first_user: false }));
+    refresh().catch(() => setInfo({ user: null, csrf_token: "", registration_open: false, first_user: false, password_reset: false }));
   }, [refresh]);
 
   const setUser = useCallback((user: User | null) => {
@@ -34,6 +35,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     user: info?.user ?? null,
     registrationOpen: info?.registration_open ?? false,
     firstUser: info?.first_user ?? false,
+    passwordReset: info?.password_reset ?? false,
     setUser,
     refresh,
   };

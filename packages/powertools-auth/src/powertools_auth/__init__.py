@@ -10,9 +10,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from .api import Auth, AuthSettings
+from .mailer import Mailer, SmtpMailer
 
-__all__ = ["Auth", "AuthSettings", "migrations_dir"]
-__version__ = "0.1.0"
+__all__ = ["Auth", "AuthSettings", "Mailer", "SmtpMailer", "migrations_dir"]
+__version__ = "0.2.0"
 
 
 def migrations_dir() -> Path:
