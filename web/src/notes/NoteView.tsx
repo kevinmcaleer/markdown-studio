@@ -2,10 +2,12 @@ import { keymap } from "@codemirror/view";
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import { ApiError } from "../api";
+import { useNoteComments } from "../comments/useNoteComments";
 import { Link } from "../Link";
+import { ShareButton } from "../sharing/ShareButton";
 import { useSession } from "../session";
 import { Editor } from "./Editor";
-import { files, formatSize, isMarkdown, isText, type FileMeta, type FileRole } from "./filesApi";
+import { files, formatSize, isMarkdown, isText, withShare, type FileMeta, type FileRole } from "./filesApi";
 import { LiveNote, type LiveStatus, type Peer } from "./live";
 import { renderMarkdown } from "./markdown";
 
@@ -69,9 +71,13 @@ function TextFile({
   const [text, setText] = useState<string | null>(null);
   const preview = useDeferredValue(text ?? "");
   const html = useMemo(() => (markdown && mode !== "write" ? renderMarkdown(preview) : ""), [markdown, mode, preview]);
+  const comments = useNoteComments({ fileId: file.id, doc: text ?? "", role });
   const extensions = useMemo(
-    () => (live.note ? [yCollab(live.note.text, live.note.provider.awareness, { undoManager: live.note.undo }), keymap.of(yUndoManagerKeymap)] : []),
-    [live.note],
+    () => [
+      ...(live.note ? [yCollab(live.note.text, live.note.provider.awareness, { undoManager: live.note.undo }), keymap.of(yUndoManagerKeymap)] : []),
+      ...comments.extensions,
+    ],
+    [live.note, comments.extensions],
   );
 
   useEffect(() => {
@@ -116,6 +122,8 @@ function TextFile({
             ))}
           </div>
         )}
+        {comments.button}
+        {role === "owner" && <ShareButton fileId={file.id} fileName={file.name} />}
         <a className="menu-button" href={files.downloadUrl(file.id)}>
           Download
         </a>
@@ -130,10 +138,11 @@ function TextFile({
           {live.status === "offline" ? "You're offline, and this note hasn't been opened on this device before." : ""}
         </div>
       ) : (
+        <div className="note-main">
         <div className="note-body">
           {mode !== "read" && (
             <div className="note-pane note-source">
-              <Editor initialDoc={live.note!.text.toString()} readOnly={!canEdit} history={false} extensions={extensions} />
+              <Editor initialDoc={live.note!.text.toString()} readOnly={!canEdit} history={false} extensions={extensions} onReady={comments.onReady} />
             </div>
           )}
           {markdown && mode !== "write" && (
@@ -141,6 +150,8 @@ function TextFile({
               <div className="prose" dangerouslySetInnerHTML={{ __html: html }} />
             </div>
           )}
+        </div>
+        {comments.panel}
         </div>
       )}
     </article>
@@ -233,7 +244,7 @@ function FileName({ file, canRename, onRenamed }: { file: FileMeta; canRename: b
 }
 
 function BinaryFile({ file }: { file: FileMeta }) {
-  const src = `/api/files/${file.id}/content`;
+  const src = withShare(`/api/files/${file.id}/content`);
   return (
     <article className="note">
       <header className="note-bar">
