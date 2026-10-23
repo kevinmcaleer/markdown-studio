@@ -1,0 +1,643 @@
+/* Decks. Slides are drawn in container units (cqw: 1% of the slide's width),
+   matching layout.ts: the slide is 13.333 in wide, so 1 in = 7.5cqw and
+   1 pt = 0.10417cqw. Slides keep their light theme in dark mode, like a
+   projected deck. */
+
+/* ----------------------------------------------------------------- slide */
+
+.slide {
+  --in: 7.5cqw;
+  --pt-unit: 0.10417cqw;
+  --bg: #faf9f5;
+  --text: #141413;
+  --muted: #6b6a63;
+  --accent: #c96442;
+  --border: #e3e0d6;
+  --highlight: #fbe7a1;
+  --code-bg: #f0eee6;
+  --code-text: #3d3929;
+  --syntax-keyword: #a3367a;
+  --syntax-string: #3d7a3d;
+  --syntax-number: #b45f06;
+  --syntax-function: #2f5fa7;
+  --syntax-type: #8a5a00;
+  --syntax-attr: #6b4fbb;
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  container-type: inline-size;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.06), 0 2px 10px rgb(0 0 0 / 0.06);
+  user-select: text;
+}
+
+.slide-inner {
+  position: absolute;
+  inset: 0;
+  font-family: "Helvetica Neue", Helvetica, Arial, var(--font-sans);
+  font-size: calc(var(--pt, 24) * var(--pt-unit));
+  line-height: 1.3;
+}
+
+.slide-title {
+  position: absolute;
+  left: calc(0.7 * var(--in));
+  right: calc(0.7 * var(--in));
+  top: calc(0.45 * var(--in));
+  height: calc(1 * var(--in));
+  margin: 0;
+  display: flex;
+  align-items: flex-end;
+  font-family: Georgia, var(--font-serif);
+  font-weight: 400;
+  font-size: calc(var(--title-pt) * var(--pt-unit));
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.slide-body {
+  position: absolute;
+  left: calc(0.7 * var(--in));
+  right: calc(0.7 * var(--in));
+  top: calc(1.65 * var(--in));
+  bottom: calc(0.55 * var(--in));
+  display: flex;
+  gap: calc(0.4 * var(--in));
+  overflow: hidden;
+}
+
+.slide-inner > .slide-body:first-child {
+  top: calc(0.65 * var(--in));
+}
+
+.slide-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(0.18 * var(--in));
+  overflow-wrap: anywhere;
+}
+
+.with-images .slide-text {
+  flex: 0 0 56%;
+}
+
+.slide-images {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: calc(0.18 * var(--in));
+}
+
+.with-images .slide-images {
+  flex-direction: column;
+}
+
+.slide-images img {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.slide p,
+.slide ul,
+.slide ol,
+.slide blockquote,
+.slide pre,
+.slide table {
+  margin: 0;
+}
+
+.slide ul,
+.slide ol {
+  padding-left: 1.2em;
+}
+
+.slide li + li,
+.slide li > ul,
+.slide li > ol {
+  margin-top: 0.25em;
+}
+
+.slide li > ul,
+.slide li > ol {
+  margin-bottom: 0;
+}
+
+.slide li::marker {
+  color: var(--accent);
+}
+
+.slide blockquote {
+  font-style: italic;
+  color: var(--muted);
+  border-left: calc(0.04 * var(--in)) solid var(--border);
+  padding-left: 0.7em;
+}
+
+.slide code {
+  font-family: Menlo, var(--font-mono);
+  font-size: 0.9em;
+  color: var(--code-text);
+  background: var(--code-bg);
+  border-radius: 0.2em;
+  padding: 0 0.2em;
+}
+
+.slide pre {
+  font-family: Menlo, var(--font-mono);
+  font-size: calc(var(--code-pt, 18) * var(--pt-unit));
+  line-height: 1.25;
+  background: var(--code-bg);
+  color: var(--code-text);
+  padding: calc(0.14 * var(--in));
+  border-radius: calc(0.06 * var(--in));
+  white-space: pre-wrap;
+  overflow: hidden;
+}
+
+.slide pre code {
+  font-size: inherit;
+  background: none;
+  padding: 0;
+}
+
+.slide mark {
+  background: var(--highlight);
+  color: inherit;
+  padding: 0 0.1em;
+}
+
+.slide a {
+  color: var(--accent);
+}
+
+.slide table {
+  border-collapse: collapse;
+  font-size: 0.85em;
+}
+
+.slide th,
+.slide td {
+  border: 1px solid var(--border);
+  padding: 0.25em 0.5em;
+  text-align: left;
+}
+
+.slide th {
+  background: var(--code-bg);
+}
+
+/* Title slide: big title, subtitle under it, centred. */
+.layout-title .slide-title {
+  top: calc(2.2 * var(--in));
+  height: calc(1.7 * var(--in));
+  justify-content: center;
+  text-align: center;
+}
+
+.layout-title .slide-body {
+  top: calc(4.1 * var(--in));
+  justify-content: center;
+  text-align: center;
+  color: var(--muted);
+  font-size: calc(22 * var(--pt-unit));
+}
+
+/* Section: a heading beside an accent bar. */
+.layout-section .slide-inner::before {
+  content: "";
+  position: absolute;
+  left: calc(0.7 * var(--in));
+  top: calc(3 * var(--in));
+  width: calc(0.12 * var(--in));
+  height: calc(1.5 * var(--in));
+  background: var(--accent);
+}
+
+.layout-section .slide-title {
+  left: calc(1.15 * var(--in));
+  top: calc(2.75 * var(--in));
+  height: calc(2 * var(--in));
+  align-items: center;
+}
+
+.layout-section .slide-body {
+  left: calc(1.15 * var(--in));
+  top: calc(4.75 * var(--in));
+  color: var(--muted);
+  font-size: calc(20 * var(--pt-unit));
+}
+
+/* Quote and statement: big centred text. */
+.layout-quote .slide-inner,
+.layout-statement .slide-inner {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: calc(1.2 * var(--in)) calc(1.4 * var(--in));
+  text-align: center;
+  font-family: Georgia, var(--font-serif);
+  font-size: calc(36 * var(--pt-unit));
+}
+
+.layout-quote .slide-inner {
+  font-size: calc(32 * var(--pt-unit));
+  font-style: italic;
+}
+
+.layout-quote .slide-inner::before {
+  content: "";
+  position: absolute;
+  left: calc(50% - 0.5 * var(--in));
+  top: calc(1 * var(--in));
+  width: calc(1 * var(--in));
+  height: calc(0.06 * var(--in));
+  background: var(--accent);
+}
+
+.layout-quote .slide-title,
+.layout-statement .slide-title,
+.layout-quote .slide-body,
+.layout-statement .slide-body {
+  position: static;
+  height: auto;
+  display: block;
+  font: inherit;
+}
+
+.layout-quote .slide-text,
+.layout-statement .slide-text {
+  gap: 0.4em;
+}
+
+.layout-quote blockquote {
+  border: 0;
+  padding: 0;
+  color: inherit;
+}
+
+/* ------------------------------------------------------------ deck page */
+
+.decks-page {
+  height: 100%;
+}
+
+.deck-body {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1fr) minmax(0, 1.15fr);
+}
+
+.mode-slides .deck-body {
+  grid-template-columns: 168px minmax(0, 1fr);
+}
+
+.deck-rail {
+  margin: 0;
+  padding: 0.75rem 0.75rem 2rem;
+  list-style: none;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.deck-thumb {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0 0 0 1.25rem;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.deck-thumb .slide {
+  pointer-events: none;
+}
+
+.deck-thumb.current .slide {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.deck-thumb.skipped .slide {
+  opacity: 0.45;
+}
+
+.deck-thumb-number {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.deck-add {
+  width: 100%;
+  margin-left: 0;
+}
+
+.deck-source {
+  border-right: 1px solid var(--border);
+}
+
+.deck-stage {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  background: var(--surface-2);
+}
+
+.mode-slides .deck-stage .slide,
+.mode-slides .deck-stage .deck-notes {
+  max-width: min(100%, calc((100dvh - 230px) * 16 / 9));
+  margin-inline: auto;
+  width: 100%;
+}
+
+.deck-notes {
+  white-space: pre-wrap;
+  font-size: 0.9rem;
+  color: var(--muted);
+  border-left: 3px solid var(--border);
+  padding-left: 0.75rem;
+}
+
+.deck-help {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.deck-help summary {
+  cursor: pointer;
+}
+
+.deck-help ul {
+  padding-left: 1.2rem;
+}
+
+.deck-help code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--surface);
+  padding: 0 0.25em;
+  border-radius: 4px;
+}
+
+.present-button {
+  padding-inline: 1rem;
+}
+
+@media (max-width: 1000px) {
+  .deck-body,
+  .mode-slides .deck-body {
+    grid-template-columns: 120px minmax(0, 1fr);
+  }
+
+  .mode-edit .deck-stage {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .deck-body,
+  .mode-slides .deck-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  .deck-rail {
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 0.5rem;
+  }
+
+  .deck-rail > li {
+    flex: 0 0 110px;
+  }
+
+  .mode-edit .deck-stage {
+    display: none;
+  }
+}
+
+/* ----------------------------------------------------------- deck list */
+
+.deck-list {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 4rem;
+  overflow-y: auto;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.deck-list-head {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.deck-list-head h1 {
+  margin: 0;
+}
+
+.deck-grid {
+  list-style: none;
+  margin: 1.5rem 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 1.25rem;
+}
+
+.deck-card {
+  position: relative;
+}
+
+.deck-card-link {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.deck-card-link .slide {
+  margin-bottom: 0.4rem;
+  transition: box-shadow 0.15s;
+}
+
+.deck-card-link:hover .slide {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.deck-card-name {
+  font-weight: 600;
+}
+
+.deck-card-delete {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  background: var(--surface);
+  visibility: hidden;
+}
+
+.deck-card:hover .deck-card-delete,
+.deck-card-delete:focus-visible {
+  visibility: visible;
+}
+
+/* ------------------------------------------------------------ presenting */
+
+.presentation {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: #000;
+  display: grid;
+  place-items: center;
+  cursor: none;
+}
+
+.presentation:hover {
+  cursor: default;
+}
+
+.presentation .slide-present {
+  width: min(100vw, calc(100vh * 16 / 9));
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.presentation-black {
+  position: absolute;
+  inset: 0;
+  background: #000;
+}
+
+.presentation-controls {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
+  background: rgb(0 0 0 / 0.6);
+  color: #fff;
+  font-size: 0.85rem;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.presentation:hover .presentation-controls,
+.presentation-controls:focus-within {
+  opacity: 1;
+}
+
+.presentation-controls button {
+  font: inherit;
+  color: inherit;
+  background: rgb(255 255 255 / 0.15);
+  border: 0;
+  border-radius: 6px;
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+}
+
+.presenter {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr);
+  gap: 1.25rem;
+  padding: 1.25rem;
+  background: #1f1e1d;
+  color: #f5f4ef;
+}
+
+.presenter .muted {
+  color: #a6a39a;
+}
+
+.presenter-current {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.presenter-side {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 0;
+}
+
+.presenter-clock {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.presenter-elapsed {
+  font-size: 2rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.presenter-next {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  width: 75%;
+}
+
+.presenter-notes {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  font-size: 1.25rem;
+  line-height: 1.5;
+}
+
+.presenter-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.presenter .menu-button {
+  color: inherit;
+}
+
+@media (max-width: 760px) {
+  .presenter {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+}

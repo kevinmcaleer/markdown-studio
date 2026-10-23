@@ -32,6 +32,6 @@ export const SUITE_APPS: SuiteApp[] = [
     path: "/decks",
     description: "Slides written in Markdown, exported to PowerPoint and Keynote.",
     epic: 11,
-    ready: false,
+    ready: true,
   },
 ];
