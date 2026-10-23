@@ -82,6 +82,9 @@ export function withShare(url: string): string {
   return share ? `${url}${url.includes("?") ? "&" : "?"}share=${encodeURIComponent(share)}` : url;
 }
 
+/** A Tables database (a .tables file). */
+export const TABLES_MIME = "application/vnd.markdown-studio.tables+json";
+
 export function isMarkdown(file: Pick<FileMeta, "mime_type">): boolean {
   return file.mime_type === "text/markdown";
 }
