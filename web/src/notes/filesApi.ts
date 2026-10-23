@@ -1,4 +1,4 @@
-import { api, ApiError, csrf } from "../api";
+import { api, ApiError, csrf, getShareToken } from "../api";
 
 export type FileRole = "view" | "comment" | "edit" | "owner";
 
@@ -24,12 +24,24 @@ export type Folder = {
 
 export type Tree = { folders: Folder[]; files: FileMeta[] };
 
+/** The open share link's token, for requests that don't go through api(). */
+function shareHeader(): Record<string, string> {
+  const token = getShareToken();
+  return token ? { "X-Share-Token": token } : {};
+}
+
+/** Adds ?share= to URLs the browser fetches by itself (downloads, images). */
+export function withShare(url: string): string {
+  const token = getShareToken();
+  return token ? `${url}${url.includes("?") ? "&" : "?"}share=${encodeURIComponent(token)}` : url;
+}
+
 /** Sends raw bytes (uploads and saves), with the CSRF token like every write. */
 async function sendBody<T>(method: string, path: string, body: BodyInit): Promise<T> {
   const response = await fetch(path, {
     method,
     credentials: "same-origin",
-    headers: { Accept: "application/json", "X-CSRF-Token": csrf() },
+    headers: { Accept: "application/json", "X-CSRF-Token": csrf(), ...shareHeader() },
     body,
   });
   const data = response.headers.get("content-type")?.includes("json") ? await response.json() : null;
@@ -41,7 +53,7 @@ export const files = {
   tree: () => api<Tree>("/api/files"),
   info: (id: number) => api<{ file: FileMeta; role: FileRole }>(`/api/files/${id}`),
   async text(id: number): Promise<string> {
-    const response = await fetch(`/api/files/${id}/content`, { credentials: "same-origin" });
+    const response = await fetch(`/api/files/${id}/content`, { credentials: "same-origin", headers: shareHeader() });
     if (!response.ok) throw new ApiError(response.status, response.statusText);
     return response.text();
   },
@@ -58,7 +70,7 @@ export const files = {
   move: (id: number, folderId: number | null) =>
     api<{ file: FileMeta }>(`/api/files/${id}`, { method: "PATCH", body: { folder_id: folderId, move: true } }),
   remove: (id: number) => api<{ ok: true }>(`/api/files/${id}`, { method: "DELETE" }),
-  downloadUrl: (id: number) => `/api/files/${id}/content?download=1`,
+  downloadUrl: (id: number) => withShare(`/api/files/${id}/content?download=1`),
 };
 
 export const folders = {

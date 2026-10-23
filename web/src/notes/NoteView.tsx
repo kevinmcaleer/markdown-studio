@@ -1,8 +1,10 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../api";
+import { useNoteComments } from "../comments/useNoteComments";
 import { Link } from "../Link";
+import { ShareButton } from "../sharing/ShareButton";
 import { Editor } from "./Editor";
-import { files, formatSize, isMarkdown, isText, type FileMeta, type FileRole } from "./filesApi";
+import { files, formatSize, isMarkdown, isText, withShare, type FileMeta, type FileRole } from "./filesApi";
 import { renderMarkdown } from "./markdown";
 
 type Mode = "write" | "split" | "read";
@@ -68,6 +70,7 @@ function TextFile({
   const preview = useDeferredValue(text);
   const html = useMemo(() => (markdown && mode !== "write" ? renderMarkdown(preview) : ""), [markdown, mode, preview]);
   const save = useAutosave(file.id, setFile, onSaved);
+  const comments = useNoteComments({ fileId: file.id, doc: text, role });
 
   useEffect(() => {
     try {
@@ -92,16 +95,21 @@ function TextFile({
             ))}
           </div>
         )}
+        {comments.button}
+        {role === "owner" && <ShareButton fileId={file.id} fileName={file.name} />}
         <a className="menu-button" href={files.downloadUrl(file.id)}>
           Download
         </a>
       </header>
+      <div className="note-main">
       <div className="note-body">
         {mode !== "read" && (
           <div className="note-pane note-source">
             <Editor
               initialDoc={initialText}
               readOnly={!canEdit}
+              extensions={comments.extensions}
+              onReady={comments.onReady}
               onChange={(doc) => {
                 setText(doc);
                 save.change(doc);
@@ -114,6 +122,8 @@ function TextFile({
             <div className="prose" dangerouslySetInnerHTML={{ __html: html }} />
           </div>
         )}
+      </div>
+      {comments.panel}
       </div>
     </article>
   );
@@ -221,7 +231,7 @@ function FileName({ file, canRename, onRenamed }: { file: FileMeta; canRename: b
 }
 
 function BinaryFile({ file }: { file: FileMeta }) {
-  const src = `/api/files/${file.id}/content`;
+  const src = withShare(`/api/files/${file.id}/content`);
   return (
     <article className="note">
       <header className="note-bar">
