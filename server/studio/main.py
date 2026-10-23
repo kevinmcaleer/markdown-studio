@@ -29,6 +29,7 @@ from .config import Settings, load_settings_or_exit
 from .gdocs import Google
 from .logging_config import configure_logging
 from .powertools import CURRENT_APP_ID, HOME_URL, PowerTools
+from .tables import api as tables_api
 
 access_log = logging.getLogger("markdown_studio.access")
 log = logging.getLogger("markdown_studio")
@@ -112,6 +113,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         google = Google(settings.google_client_id, settings.google_client_secret)
     app.state.syncer = sync.Syncer(app.state, google)
     app.include_router(sync.make_router(auth, get_db, app.state.syncer))
+    app.include_router(tables_api.make_router(auth, get_db))
 
     @app.get("/health")
     def health():

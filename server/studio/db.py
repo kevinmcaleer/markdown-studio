@@ -2,8 +2,9 @@
 
 Migrations are plain ``.sql`` files named ``NNNN_description.sql``, grouped by
 component: ``auth`` (shipped with the powertools-auth package) runs first, then
-``studio`` (``studio/migrations``). Each file is applied once, in order, and
-recorded in ``schema_migrations`` under its component. To change the schema,
+``studio`` (``studio/migrations``), then each app's own (``studio/tables/migrations``).
+Each file is applied once, in order, and recorded in ``schema_migrations`` under
+its component. To change the schema,
 add a new file; never edit one that has already shipped.
 """
 
@@ -26,6 +27,8 @@ MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 COMPONENTS: list[tuple[str, Path]] = [
     ("auth", powertools_auth.migrations_dir()),
     ("studio", MIGRATIONS_DIR),
+    # Each app keeps its own numbering, so apps built side by side never clash.
+    ("tables", Path(__file__).parent / "tables" / "migrations"),
 ]
 _MIGRATION_RE = re.compile(r"^(\d{4})_[\w-]+\.sql$")
 

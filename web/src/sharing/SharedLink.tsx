@@ -1,10 +1,15 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { ApiError, setShareToken } from "../api";
 import { Link } from "../Link";
 import { NoteView } from "../notes/NoteView";
 import { navigate } from "../router";
 import { useSession } from "../session";
 import { ROLE_LABELS, sharing, type OpenedLink } from "./api";
+
+const SharedDatabaseView = lazy(() => import("../tables/Tables").then((m) => ({ default: m.SharedDatabaseView })));
+
+/** A Tables database rather than a note (its file name says so). */
+const isDatabase = (name: string) => name.toLowerCase().endsWith(".tables");
 
 /**
  * /s/<token>: a note opened through a share link. Works signed out when the
@@ -27,7 +32,7 @@ export function SharedLink({ token }: { token: string }) {
       (data) => {
         if (!live) return;
         // The owner gets their normal editor, with the file browser.
-        if (data.role === "owner") navigate(`/notes/${data.file.id}`, { replace: true });
+        if (data.role === "owner") navigate(`/${isDatabase(data.file.name) ? "tables" : "notes"}/${data.file.id}`, { replace: true });
         else setOpened(data);
       },
       (err) => {
@@ -71,7 +76,13 @@ export function SharedLink({ token }: { token: string }) {
           </Link>
         )}
       </div>
-      <NoteView fileId={opened.file.id} onRenamed={() => {}} onSaved={() => {}} />
+      {isDatabase(opened.file.name) ? (
+        <Suspense fallback={<div className="splash" aria-busy="true" />}>
+          <SharedDatabaseView dbId={opened.file.id} />
+        </Suspense>
+      ) : (
+        <NoteView fileId={opened.file.id} onRenamed={() => {}} onSaved={() => {}} />
+      )}
     </div>
   );
 }
