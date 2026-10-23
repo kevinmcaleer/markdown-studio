@@ -105,3 +105,68 @@ def test_rate_limiter_window():
     assert not allowed and retry > 0
     now[0] = 11
     assert limiter.hit("ip")[0]
+
+
+def test_find_user_by_username_or_email(conn):
+    user_id = store.create_user(conn, "kev", PASSWORD, "kev@example.com")
+    assert store.find_user_by_login(conn, " KEV ")["id"] == user_id
+    assert store.find_user_by_login(conn, "Kev@Example.com")["id"] == user_id
+    assert store.find_user_by_login(conn, "nobody@example.com") is None
+
+
+def test_reset_token_is_hashed_single_use_and_ends_sessions(conn):
+    user_id = store.create_user(conn, "kev", PASSWORD, "kev@example.com")
+    session = store.create_session(conn, user_id, max_age=60)
+    token = store.create_reset_token(conn, user_id, max_age=60)
+    assert conn.execute("SELECT id FROM password_resets").fetchone()["id"] == token_digest(token)
+    assert store.reset_token_user(conn, token)["id"] == user_id
+
+    with pytest.raises(store.UserError, match="at least"):
+        store.reset_password(conn, token, "short")
+    assert store.reset_password(conn, token, "a brand new passphrase")["id"] == user_id
+    assert store.authenticate(conn, "kev", "a brand new passphrase")
+    assert store.session_user(conn, session) is None
+    with pytest.raises(store.UserError, match="expired"):
+        store.reset_password(conn, token, "another new passphrase")
+
+
+def test_reset_token_expires_and_new_one_replaces_old(conn):
+    user_id = store.create_user(conn, "kev", PASSWORD, "kev@example.com")
+    expired = store.create_reset_token(conn, user_id, max_age=-1)
+    assert store.reset_token_user(conn, expired) is None
+    first = store.create_reset_token(conn, user_id, max_age=60)
+    second = store.create_reset_token(conn, user_id, max_age=60)
+    assert store.reset_token_user(conn, first) is None
+    assert store.reset_token_user(conn, second)["id"] == user_id
+    assert store.reset_token_user(conn, None) is None
+
+
+def test_reset_token_throttled(conn):
+    user_id = store.create_user(conn, "kev", PASSWORD, "kev@example.com")
+    first = store.create_reset_token(conn, user_id, max_age=60, min_interval=60)
+    assert store.create_reset_token(conn, user_id, max_age=60, min_interval=60) is None
+    assert store.reset_token_user(conn, first)["id"] == user_id
+
+
+def test_password_change_or_new_email_cancels_reset_links(conn):
+    user_id = store.create_user(conn, "kev", PASSWORD, "kev@example.com")
+    token = store.create_reset_token(conn, user_id, max_age=60)
+    store.set_password(conn, user_id, "a brand new passphrase")
+    assert store.reset_token_user(conn, token) is None
+
+    token = store.create_reset_token(conn, user_id, max_age=60)
+    store.set_email(conn, user_id, "new@example.com")
+    assert store.reset_token_user(conn, token) is None
+    assert store.get_user(conn, user_id)["email"] == "new@example.com"
+
+
+def test_set_email_validation(conn):
+    user_id = store.create_user(conn, "kev", PASSWORD)
+    store.create_user(conn, "other", PASSWORD, "taken@example.com")
+    with pytest.raises(store.UserError, match="look right"):
+        store.set_email(conn, user_id, "nope")
+    with pytest.raises(store.UserError, match="already registered"):
+        store.set_email(conn, user_id, "TAKEN@example.com")
+    store.set_email(conn, user_id, "kev@example.com")
+    store.set_email(conn, user_id, "")
+    assert store.get_user(conn, user_id)["email"] is None

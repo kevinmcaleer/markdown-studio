@@ -36,7 +36,7 @@ def serve() -> None:
 
 
 def reset_password(username: str) -> int:
-    """No email yet, so a forgotten password is reset by whoever runs the server."""
+    """For servers without email (or users without an address): whoever runs it resets."""
     settings = load_settings_or_exit()
     db.init_db(settings.database_path)
     conn = db.connect(settings.database_path)

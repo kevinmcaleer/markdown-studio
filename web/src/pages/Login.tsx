@@ -7,7 +7,7 @@ import { AuthCard, Field } from "./AuthForm";
 
 export function Login() {
   const { search } = useLocation();
-  const { user, setUser, registrationOpen, firstUser } = useSession();
+  const { user, setUser, registrationOpen, firstUser, passwordReset } = useSession();
   const next = safeNext(search.get("next"));
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -55,6 +55,11 @@ export function Login() {
         <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
         Keep me signed in for 30 days
       </label>
+      {passwordReset && (
+        <p className="small forgot">
+          <Link href="/forgot-password">Forgot your password?</Link>
+        </p>
+      )}
     </AuthCard>
   );
 }

@@ -47,6 +47,14 @@ def find_user(conn: sqlite3.Connection, username: str) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM users WHERE username = ?", (username.strip(),)).fetchone()
 
 
+def find_user_by_login(conn: sqlite3.Connection, login: str) -> sqlite3.Row | None:
+    """Look a user up by username or, if it has an '@', by email address."""
+    login = login.strip()
+    if "@" in login:
+        return conn.execute("SELECT * FROM users WHERE email = ?", (login,)).fetchone()
+    return find_user(conn, login)
+
+
 def create_user(
     conn: sqlite3.Connection, username: str, password: str, email: str | None = None
 ) -> int:
@@ -99,6 +107,23 @@ def set_password(conn: sqlite3.Connection, user_id: int, password: str) -> None:
         (hash_password(password), utcnow(), user_id),
     )
     conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM password_resets WHERE user_id = ?", (user_id,))
+
+
+def set_email(conn: sqlite3.Connection, user_id: int, email: str) -> None:
+    """Change (or, with an empty string, remove) a user's email. Raises UserError."""
+    email = email.strip()
+    if email and not EMAIL_RE.match(email):
+        raise UserError("That email address doesn't look right.")
+    try:
+        conn.execute(
+            "UPDATE users SET email = ?, updated_at = ? WHERE id = ?",
+            (email or None, utcnow(), user_id),
+        )
+    except sqlite3.IntegrityError:
+        raise UserError("That email address is already registered.") from None
+    # A reset link already sent to the old address must not keep working.
+    conn.execute("DELETE FROM password_resets WHERE user_id = ?", (user_id,))
 
 
 def delete_user(conn: sqlite3.Connection, user_id: int) -> None:
@@ -136,6 +161,59 @@ def session_user(conn: sqlite3.Connection, token: str | None) -> sqlite3.Row | N
 def delete_session(conn: sqlite3.Connection, token: str | None) -> None:
     if token:
         conn.execute("DELETE FROM sessions WHERE id = ?", (token_digest(token),))
+
+
+# ------------------------------------------------------------------ password resets
+
+
+def create_reset_token(
+    conn: sqlite3.Connection, user_id: int, max_age: int, min_interval: int = 0
+) -> str | None:
+    """Store a one-time password reset token and return it (only its hash is kept).
+
+    Any earlier link for the user stops working. Returns None, creating nothing,
+    if a link was issued less than ``min_interval`` seconds ago, so repeated
+    requests can't flood someone's inbox.
+    """
+    conn.execute("DELETE FROM password_resets WHERE expires_at <= ?", (utcnow(),))
+    if (
+        min_interval
+        and conn.execute(
+            "SELECT 1 FROM password_resets WHERE user_id = ? AND created_at > ?",
+            (user_id, utcnow(-min_interval)),
+        ).fetchone()
+    ):
+        return None
+    conn.execute("DELETE FROM password_resets WHERE user_id = ?", (user_id,))
+    token = new_token()
+    conn.execute(
+        "INSERT INTO password_resets (id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+        (token_digest(token), user_id, utcnow(), utcnow(max_age)),
+    )
+    return token
+
+
+def reset_token_user(conn: sqlite3.Connection, token: str | None) -> sqlite3.Row | None:
+    """The user a still-valid reset token belongs to, or None."""
+    if not token:
+        return None
+    return conn.execute(
+        "SELECT u.* FROM password_resets r JOIN users u ON u.id = r.user_id"
+        " WHERE r.id = ? AND r.expires_at > ?",
+        (token_digest(token), utcnow()),
+    ).fetchone()
+
+
+def reset_password(conn: sqlite3.Connection, token: str | None, password: str) -> sqlite3.Row:
+    """Use a reset token to set a new password; returns the user. Raises UserError.
+
+    Like :func:`set_password`, this ends every session and every other reset link.
+    """
+    user = reset_token_user(conn, token)
+    if user is None:
+        raise UserError("This reset link has expired or has already been used.")
+    set_password(conn, user["id"], password)
+    return user
 
 
 def public_user(user: sqlite3.Row) -> dict:

@@ -29,6 +29,6 @@ export function useLocation(): { path: string; search: URLSearchParams } {
 /** Only allow local redirects after sign-in (no open redirects). */
 export function safeNext(next: string | null | undefined, fallback = "/"): string {
   if (!next || !next.startsWith("/") || next.startsWith("//") || next.includes("\\")) return fallback;
-  if (next.startsWith("/login") || next.startsWith("/register")) return fallback;
+  if (["/login", "/register", "/forgot-password", "/reset-password"].some((p) => next.startsWith(p))) return fallback;
   return next;
 }

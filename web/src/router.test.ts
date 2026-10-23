@@ -6,7 +6,7 @@ describe("safeNext", () => {
     expect(safeNext("/notes/42?x=1")).toBe("/notes/42?x=1");
   });
 
-  it.each([null, "", "https://evil.example", "//evil.example", "/\\evil.example", "notes", "/login"])(
+  it.each([null, "", "https://evil.example", "//evil.example", "/\\evil.example", "notes", "/login", "/reset-password"])(
     "falls back for %s",
     (value) => {
       expect(safeNext(value)).toBe("/");
