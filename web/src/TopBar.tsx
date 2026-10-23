@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { auth, powertools, type PowerToolApp } from "./api";
+import { InstallButton } from "./InstallButton";
 import { Link } from "./Link";
 import { navigate } from "./router";
 import { useSession } from "./session";
@@ -33,6 +34,7 @@ export function TopBar({ current }: { current?: SuiteApp["id"] }) {
         </>
       )}
       <div className="spacer" />
+      <InstallButton app={currentApp} />
       <Menu label={user?.username ?? ""} className="user-menu">
         <Link href="/account">Account</Link>
         <button type="button" onClick={signOut}>

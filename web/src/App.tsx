@@ -8,6 +8,7 @@ import { Home } from "./pages/Home";
 import { Login } from "./pages/Login";
 import { Register } from "./pages/Register";
 import { ResetPassword } from "./pages/ResetPassword";
+import { setManifestFor } from "./pwa";
 import { navigate, useLocation } from "./router";
 import { useSession } from "./session";
 import { SUITE_APPS } from "./suite";
@@ -30,6 +31,9 @@ export function App() {
   // Share links open signed out too; the page itself asks for sign-in when the link needs it.
   const shareToken = /^\/s\/([\w-]+)$/.exec(path)?.[1];
   const isPublic = PublicPage !== undefined || shareToken !== undefined;
+  const app = SUITE_APPS.find((a) => path === a.path || path.startsWith(`${a.path}/`));
+
+  useEffect(() => setManifestFor(app), [app]);
 
   useEffect(() => {
     if (loading) return;
@@ -54,7 +58,6 @@ export function App() {
   if (PublicPage) return <PublicPage />;
   if (!user) return <div className="splash" aria-busy="true" />;
 
-  const app = SUITE_APPS.find((a) => path === a.path || path.startsWith(`${a.path}/`));
   let page;
   if (path === "/") page = <Home />;
   else if (path === "/account") page = <Account />;

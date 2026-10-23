@@ -10,8 +10,9 @@ Everything sits behind one login, stores its data in a single SQLite file, and r
 Docker container that is happy on a Raspberry Pi. It runs at kevspowertools.com and on your
 own home network.
 
-> **Status:** foundations. Sign-up, sign-in, the suite shell and deployment work; the apps
-> themselves are tracked in the [epics](https://github.com/kevinmcaleer/markdown-studio/issues?q=label%3Aepic).
+> **Status:** Notes works: files and folders, the Markdown editor, live co-editing, sharing,
+> comments, Word/PDF export and offline use. Tables and Decks are tracked in the
+> [epics](https://github.com/kevinmcaleer/markdown-studio/issues?q=label%3Aepic).
 
 ## How it fits together
 
@@ -24,6 +25,22 @@ own home network.
 
 The repository is an npm workspace, so TypeScript libraries (such as the Keynote library
 port) can live under `packages/` next to the web app.
+
+## Notes
+
+- **Files and folders** live in `studio.db` (contents as blobs). Drag to move, drop files from
+  your desktop to upload. `MAX_UPLOAD_MB` (default 25) caps uploads.
+- **The editor** shows Markdown with live preview: GFM tables, task lists, footnotes, fenced
+  code with syntax highlighting, and `==highlights==`.
+- **Co-editing** is live: everyone editing a note sees each other's cursors and changes, merged
+  without conflicts (Yjs over a WebSocket at `/api/files/{id}/live`). If you put a reverse
+  proxy in front, let it pass WebSocket upgrades.
+- **Export** a note as Word or PDF from its Download menu. Only images stored in Markdown
+  Studio are included; the server never fetches outside URLs while exporting.
+- **Install and offline:** Notes installs as its own app (Chrome, Edge and Android offer
+  **Install Notes**; on iPhone and iPad use Share, then Add to Home Screen). Notes you've
+  opened before keep working offline, and your changes merge when you're back online.
+  Service workers need HTTPS, or `localhost`.
 
 ## Quick start with Docker
 

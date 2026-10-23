@@ -1,0 +1,31 @@
+{
+  "id": "/notes",
+  "name": "Notes",
+  "short_name": "Notes",
+  "description": "Markdown documents with live co-editing, sharing and comments.",
+  "start_url": "/notes",
+  "scope": "/notes",
+  "display": "standalone",
+  "background_color": "#faf9f5",
+  "theme_color": "#c96442",
+  "icons": [
+    {
+      "src": "/icons/notes-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/notes-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/notes-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

@@ -1373,3 +1373,21 @@ button.quote {
   flex: 1;
   min-height: 0;
 }
+
+/* ---------------------------------------------------------------- install */
+
+.install-button {
+  color: var(--accent);
+  font-size: 0.9rem;
+}
+
+.install-hint {
+  right: 0;
+  width: 260px;
+  padding: 0.75rem 0.9rem;
+  font-size: 0.9rem;
+}
+
+.install-hint p {
+  margin: 0;
+}

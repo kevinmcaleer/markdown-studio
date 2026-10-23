@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import mimetypes
 import sqlite3
 import time
 import uuid
@@ -12,7 +13,7 @@ from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.routing import WebSocketRoute
@@ -183,12 +184,32 @@ def _mailer(settings: Settings) -> SmtpMailer | None:
     )
 
 
+# Each app installs as its own PWA: pages under its path link its manifest.
+APP_PATHS = {"notes": "Notes", "tables": "Tables", "decks": "Decks"}
+# Must never be cached, or browsers keep running an old service worker / manifest.
+NO_CACHE_FILES = {"sw.js", "index.html"}
+
+mimetypes.add_type("application/manifest+json", ".webmanifest")
+
+
+def app_index(index_html: str, path: str) -> str:
+    """index.html with the manifest and home-screen icon of the app at ``path``."""
+    app = path.split("/", 1)[0]
+    if app not in APP_PATHS:
+        return index_html
+    return (
+        index_html.replace('href="/manifest.webmanifest"', f'href="/{app}.webmanifest"')
+        .replace('href="/icons/studio-apple-180.png"', f'href="/icons/{app}-apple-180.png"')
+        .replace('content="Markdown Studio"', f'content="{APP_PATHS[app]}"')
+    )
+
+
 def _mount_front_end(app: FastAPI, static_dir: Path | None) -> None:
     """Serve the built single-page app; every unknown non-API path gets index.html."""
     if static_dir is None or not (static_dir / "index.html").is_file():
         return
     root = static_dir.resolve()
-    index = root / "index.html"
+    index_html = (root / "index.html").read_text(encoding="utf-8")
     if (root / "assets").is_dir():
         # Vite fingerprints these file names, so they can be cached for good.
         app.mount("/assets", StaticFiles(directory=root / "assets"), name="assets")
@@ -199,5 +220,8 @@ def _mount_front_end(app: FastAPI, static_dir: Path | None) -> None:
             raise HTTPException(status_code=404, detail="Not found")
         candidate = (root / path).resolve()
         if path and candidate.is_file() and candidate.is_relative_to(root):
-            return FileResponse(candidate)
-        return FileResponse(index, headers={"Cache-Control": "no-cache"})
+            no_cache = path in NO_CACHE_FILES or path.endswith(".webmanifest")
+            return FileResponse(
+                candidate, headers={"Cache-Control": "no-cache"} if no_cache else None
+            )
+        return HTMLResponse(app_index(index_html, path), headers={"Cache-Control": "no-cache"})

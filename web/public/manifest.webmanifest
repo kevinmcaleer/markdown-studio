@@ -1,0 +1,31 @@
+{
+  "id": "/",
+  "name": "Markdown Studio",
+  "short_name": "Studio",
+  "description": "Notes, Tables and Decks: Markdown apps that sync and work together.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#faf9f5",
+  "theme_color": "#262624",
+  "icons": [
+    {
+      "src": "/icons/studio-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/studio-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/studio-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

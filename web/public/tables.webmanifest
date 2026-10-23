@@ -1,0 +1,31 @@
+{
+  "id": "/tables",
+  "name": "Tables",
+  "short_name": "Tables",
+  "description": "A simple database with a spreadsheet-style grid.",
+  "start_url": "/tables",
+  "scope": "/tables",
+  "display": "standalone",
+  "background_color": "#faf9f5",
+  "theme_color": "#3f7d6e",
+  "icons": [
+    {
+      "src": "/icons/tables-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/tables-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/tables-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
