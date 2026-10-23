@@ -436,3 +436,284 @@ button:disabled {
   margin: 0;
   text-align: right;
 }
+
+/* ---------------------------------------------------------------- sharing */
+
+.link-button {
+  background: none;
+  border: 0;
+  padding: 0.25rem 0.4rem;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.link-button:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.danger-text {
+  color: var(--danger);
+}
+
+.share-dialog {
+  width: min(560px, calc(100vw - 2rem));
+  padding: 1.25rem 1.5rem 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
+.share-dialog::backdrop {
+  background: rgb(0 0 0 / 0.3);
+}
+
+.share-dialog header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.share-dialog h3 {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.share-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+}
+
+.share-list > li + li {
+  border-top: 1px solid var(--border);
+}
+
+.share-link {
+  padding: 0.5rem 0;
+}
+
+.share-link p {
+  margin: 0.25rem 0 0;
+}
+
+.share-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+}
+
+.share-row input,
+.share-row select,
+.share-row > button:not(.primary):not(.link-button) {
+  font: inherit;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.share-row input {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.share-who {
+  flex: 1;
+}
+
+.new-link {
+  margin-top: 0.5rem;
+}
+
+.shared-with-me ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.shared-with-me li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.shared-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 0.5rem 1rem;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.875rem;
+}
+
+/* --------------------------------------------------------------- comments */
+
+.comments-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 340px;
+  max-width: 100%;
+  padding: 1rem;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  overflow-y: auto;
+}
+
+.comments-panel > header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.comments-panel > header h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.comments-panel textarea,
+.comments-panel .reply input,
+.guest-name input {
+  width: 100%;
+  font: inherit;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  resize: vertical;
+}
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.composer p {
+  margin: 0;
+}
+
+.composer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.quote {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0.25rem 0 0.25rem 0.6rem;
+  border: 0;
+  border-left: 3px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: left;
+  white-space: pre-wrap;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+button.quote {
+  cursor: pointer;
+}
+
+.threads {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.thread {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.thread.active {
+  border-color: var(--accent);
+}
+
+.thread.resolved {
+  opacity: 0.7;
+}
+
+.comment + .comment {
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.comment-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.comment-head time {
+  margin-left: auto;
+}
+
+.comment-body {
+  margin: 0.15rem 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.comment-tools {
+  display: flex;
+  gap: 0.25rem;
+  margin-left: -0.4rem;
+}
+
+.thread-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.thread-actions .reply {
+  display: flex;
+  flex: 1;
+  gap: 0.4rem;
+}
+
+/* A passage with a comment on it, in the editor. */
+.comment-mark {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  cursor: pointer;
+}
+
+.comment-mark.active {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
