@@ -1,0 +1,6 @@
+# Use with the Cloudflare Tunnel: stops the app publishing a port on the host,
+# because cloudflared reaches it over the compose network. Enable it with
+# COMPOSE_FILE=docker-compose.yml:docker-compose.tunnel.yml in .env.
+services:
+  markdown-studio:
+    ports: !reset []
