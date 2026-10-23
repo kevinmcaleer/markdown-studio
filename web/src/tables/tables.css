@@ -351,7 +351,7 @@
   color: var(--text);
 }
 
-.tb-number {
+.tb-rownum {
   margin-left: auto;
   order: 2;
 }
@@ -500,7 +500,7 @@
   background: var(--surface-2);
 }
 
-.tb-number,
+.tb-rownum,
 .tb-td.tb-number,
 .tb-td.tb-currency {
   font-variant-numeric: tabular-nums;

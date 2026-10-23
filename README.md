@@ -11,7 +11,8 @@ Docker container that is happy on a Raspberry Pi. It runs at kevspowertools.com 
 own home network.
 
 > **Status:** Notes works: files and folders, the Markdown editor, live co-editing, sharing,
-> comments, Word/PDF export and offline use. Tables and Decks are tracked in the
+> comments, Word/PDF export and offline use. Tables works: linked tables, a datasheet,
+> queries, forms and CSV import/export. Decks is tracked in the
 > [epics](https://github.com/kevinmcaleer/markdown-studio/issues?q=label%3Aepic).
 
 ## How it fits together
@@ -41,6 +42,24 @@ port) can live under `packages/` next to the web app.
   **Install Notes**; on iPhone and iPad use Share, then Add to Home Screen). Notes you've
   opened before keep working offline, and your changes merge when you're back online.
   Service workers need HTTPS, or `localhost`.
+
+## Tables
+
+- **A database is a `.tables` file** in your files, so it moves, shares and appears in
+  *Shared with me* like a note. Its tables, rows, queries and forms live in `studio.db`.
+- **Fields** have types: text, long text, number, currency, date, date and time, checkbox,
+  choice, email, link (URL) and link to another table. Changing a type converts the data and
+  warns first if any values won't fit.
+- **The datasheet** works like a spreadsheet: arrow keys, Enter to edit, copy and paste
+  blocks to and from Excel or Sheets, Ctrl+D to fill down, and a count/sum of the selection.
+  Filter, sort and search from the toolbar or a column header.
+- **Queries** use an Access-style design grid: criteria with *or* rows, sorting, totals
+  (group, sum, average, min, max, count) and a top-N limit. Results update as you design.
+- **Forms** show one record at a time, in one or two columns, or open on a blank record for
+  data entry only.
+- **Import and export:** import a CSV as a new database or table; export a table, a filtered
+  view or a query as CSV; download the whole database as a `.tables` file and open it again
+  later.
 
 ## Quick start with Docker
 

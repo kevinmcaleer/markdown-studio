@@ -99,6 +99,12 @@ export function Datasheet({
   const pending = useRef(new Set<number>());
   const generation = useRef(0);
   const dragging = useRef(false);
+  // The latest rows and count, for saves that wait on a row being created.
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
+  const totalRef = useRef(total);
+  totalRef.current = total;
+  const creating = useRef<Promise<void> | null>(null);
 
   const fieldsById = useMemo(() => new Map(table.fields.map((f) => [f.id, f])), [table.fields]);
   const editable = canEdit && !grouped;
@@ -240,7 +246,9 @@ export function Datasheet({
   const inRange = (r: number, c: number) => range !== null && r >= range.r0 && r <= range.r1 && c >= range.c0 && c <= range.c1;
 
   function select(cell: Cell, extend = false, rowsMode = false) {
-    const r = Math.max(0, Math.min(rowCount - 1, cell.r));
+    // Counted from refs, so moving on from a row that's still being added lands on the next new row.
+    const rows = (totalRef.current ?? 0) + (creating.current ? 1 : 0) + (editable && allowNewRows ? 1 : 0);
+    const r = Math.max(0, Math.min(rows - 1, cell.r));
     const c = Math.max(0, Math.min(columns.length - 1, cell.c));
     setSel((prev) => (extend && prev ? { ...prev, focus: { r, c } } : { anchor: { r, c }, focus: { r, c }, rows: rowsMode }));
     scrollIntoView({ r, c });
@@ -264,20 +272,29 @@ export function Datasheet({
     const col = columns[c]!;
     const key = String(col.field_id);
     setError("");
-    if (r === newRowAt) {
-      try {
-        const res = await tablesApi.addRows(dbId, table.id, [{ [key]: value }]);
-        onRevision(res.revision);
-        const row = res.rows[0]!;
-        setRows((prev) => new Map(prev).set(r, row));
-        setTotal((t) => (t ?? 0) + 1);
-        onRowsChanged?.();
-      } catch (err) {
-        fail(err);
-      }
+    // Typing on in a row that's still being added: wait for it, then change it.
+    if (creating.current) await creating.current;
+    if (r >= (totalRef.current ?? 0)) {
+      const create = (async () => {
+        try {
+          const res = await tablesApi.addRows(dbId, table.id, [{ [key]: value }]);
+          onRevision(res.revision);
+          const row = res.rows[0]!;
+          rowsRef.current = new Map(rowsRef.current).set(r, row);
+          totalRef.current = (totalRef.current ?? 0) + 1;
+          setRows((prev) => new Map(prev).set(r, row));
+          setTotal((t) => (t ?? 0) + 1);
+          onRowsChanged?.();
+        } catch (err) {
+          fail(err);
+        }
+      })();
+      creating.current = create;
+      await create;
+      if (creating.current === create) creating.current = null;
       return;
     }
-    const row = rows.get(r);
+    const row = rowsRef.current.get(r);
     if (!row?.id) return;
     // Show the new value straight away; the server's version replaces it.
     const optimistic: Row = { ...row, values: { ...row.values, [key]: value as Value }, labels: { ...row.labels, ...(label !== undefined ? { [key]: label } : {}) } };
@@ -627,7 +644,7 @@ export function Datasheet({
                 if (total) setSel({ anchor: { r: 0, c: 0 }, focus: { r: total - 1, c: columns.length - 1 } });
               }}
             >
-              ID
+              {grouped ? "" : "ID"}
             </div>
             {columns.map((col, c) => {
               const field = col.field_id !== null ? fieldsById.get(col.field_id) : undefined;
@@ -706,7 +723,7 @@ export function Datasheet({
                     </span>
                   ) : (
                     <>
-                      <span className="tb-number">{row?.number ?? (grouped ? r + 1 : "")}</span>
+                      <span className="tb-rownum">{row?.number ?? (grouped ? r + 1 : "")}</span>
                       {row?.id && !grouped && (
                         <button
                           type="button"
