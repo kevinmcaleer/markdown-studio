@@ -1,17 +1,19 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { keymap } from "@codemirror/view";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import { ApiError } from "../api";
 import { Link } from "../Link";
+import { useSession } from "../session";
 import { Editor } from "./Editor";
 import { files, formatSize, isMarkdown, isText, type FileMeta, type FileRole } from "./filesApi";
+import { LiveNote, type LiveStatus, type Peer } from "./live";
 import { renderMarkdown } from "./markdown";
 
 type Mode = "write" | "split" | "read";
-type SaveState = "saved" | "saving" | "unsaved" | "error";
 
 const MODE_KEY = "notes.mode";
-const SAVE_DELAY = 700;
 
-type Loaded = { file: FileMeta; role: FileRole; text: string | null };
+type Loaded = { file: FileMeta; role: FileRole };
 
 export function NoteView({
   fileId,
@@ -30,8 +32,7 @@ export function NoteView({
     (async () => {
       try {
         const { file, role } = await files.info(fileId);
-        const text = isText(file) ? await files.text(fileId) : null;
-        if (live) setLoaded({ file, role, text });
+        if (live) setLoaded({ file, role });
       } catch (err) {
         if (live) setError(err instanceof ApiError && err.status === 404 ? "This file doesn't exist, or you don't have access to it." : "Couldn't open this file.");
       }
@@ -49,25 +50,47 @@ export function NoteView({
       </div>
     );
   if (!loaded) return <div className="notes-empty" aria-busy="true" />;
-  if (loaded.text === null) return <BinaryFile file={loaded.file} />;
-  return <TextFile {...loaded} text={loaded.text} onRenamed={onRenamed} onSaved={onSaved} />;
+  if (!isText(loaded.file)) return <BinaryFile file={loaded.file} />;
+  return <TextFile {...loaded} onRenamed={onRenamed} onSaved={onSaved} />;
 }
 
 function TextFile({
   file: initialFile,
   role,
-  text: initialText,
   onRenamed,
   onSaved,
-}: Loaded & { text: string; onRenamed: () => void; onSaved: (file: FileMeta) => void }) {
+}: Loaded & { onRenamed: () => void; onSaved: (file: FileMeta) => void }) {
+  const { user } = useSession();
   const [file, setFile] = useState(initialFile);
   const markdown = isMarkdown(file);
   const canEdit = role === "edit" || role === "owner";
   const [mode, setMode] = useState<Mode>(() => (markdown ? readMode() : "write"));
-  const [text, setText] = useState(initialText);
-  const preview = useDeferredValue(text);
+  const live = useLiveNote(file.id, user?.username ?? "Guest");
+  const [text, setText] = useState<string | null>(null);
+  const preview = useDeferredValue(text ?? "");
   const html = useMemo(() => (markdown && mode !== "write" ? renderMarkdown(preview) : ""), [markdown, mode, preview]);
-  const save = useAutosave(file.id, setFile, onSaved);
+  const extensions = useMemo(
+    () => (live.note ? [yCollab(live.note.text, live.note.provider.awareness, { undoManager: live.note.undo }), keymap.of(yUndoManagerKeymap)] : []),
+    [live.note],
+  );
+
+  useEffect(() => {
+    if (!live.note || !live.ready) return;
+    const ytext = live.note.text;
+    const update = () => setText(ytext.toString());
+    update();
+    ytext.observe(update);
+    return () => ytext.unobserve(update);
+  }, [live.note, live.ready]);
+
+  // The server saves; refresh the file's size and date in the list now and then.
+  const saved = useRef(onSaved);
+  saved.current = onSaved;
+  useEffect(() => {
+    if (live.status !== "live" || text === null) return;
+    const timer = window.setTimeout(() => files.info(file.id).then(({ file }) => saved.current(file), () => {}), 3000);
+    return () => window.clearTimeout(timer);
+  }, [text, live.status, file.id]);
 
   useEffect(() => {
     try {
@@ -81,8 +104,9 @@ function TextFile({
     <article className={`note mode-${mode}`}>
       <header className="note-bar">
         <FileName file={file} canRename={role === "owner"} onRenamed={(f) => (setFile(f), onRenamed())} />
-        <SaveStatus state={save.state} readOnly={!canEdit} />
+        <LiveStatusBadge status={live.status} readOnly={!canEdit} />
         <div className="spacer" />
+        <Presence peers={live.peers} />
         {markdown && (
           <div className="segmented" role="group" aria-label="View">
             {(["write", "split", "read"] as const).map((m) => (
@@ -96,86 +120,74 @@ function TextFile({
           Download
         </a>
       </header>
-      <div className="note-body">
-        {mode !== "read" && (
-          <div className="note-pane note-source">
-            <Editor
-              initialDoc={initialText}
-              readOnly={!canEdit}
-              onChange={(doc) => {
-                setText(doc);
-                save.change(doc);
-              }}
-            />
-          </div>
-        )}
-        {markdown && mode !== "write" && (
-          <div className="note-pane note-preview">
-            <div className="prose" dangerouslySetInnerHTML={{ __html: html }} />
-          </div>
-        )}
-      </div>
+      {live.status === "closed" ? (
+        <div className="notes-empty">
+          <p className="error">This note was deleted, or you no longer have access to it.</p>
+          <Link href="/notes">Back to your files</Link>
+        </div>
+      ) : !live.ready || text === null ? (
+        <div className="notes-empty muted" aria-busy="true">
+          {live.status === "offline" ? "You're offline, and this note hasn't been opened on this device before." : ""}
+        </div>
+      ) : (
+        <div className="note-body">
+          {mode !== "read" && (
+            <div className="note-pane note-source">
+              <Editor initialDoc={live.note!.text.toString()} readOnly={!canEdit} history={false} extensions={extensions} />
+            </div>
+          )}
+          {markdown && mode !== "write" && (
+            <div className="note-pane note-preview">
+              <div className="prose" dangerouslySetInnerHTML={{ __html: html }} />
+            </div>
+          )}
+        </div>
+      )}
     </article>
   );
 }
 
-/** Saves a little after typing stops, and once more when the note closes. */
-function useAutosave(fileId: number, setFile: (f: FileMeta) => void, onSaved: (f: FileMeta) => void) {
-  const [state, setState] = useState<SaveState>("saved");
-  const pending = useRef<string | null>(null);
-  const timer = useRef<number | undefined>(undefined);
-  const saved = useRef({ setFile, onSaved });
-  saved.current = { setFile, onSaved };
-
-  const flush = useCallback(async () => {
-    window.clearTimeout(timer.current);
-    const doc = pending.current;
-    if (doc === null) return;
-    pending.current = null;
-    setState("saving");
-    try {
-      const { file } = await files.save(fileId, doc);
-      saved.current.setFile(file);
-      saved.current.onSaved(file);
-      setState(pending.current === null ? "saved" : "unsaved");
-    } catch {
-      // Keep the text so the next edit (or leaving the note) tries again.
-      pending.current ??= doc;
-      setState("error");
-    }
-  }, [fileId]);
+/** Opens the note live for as long as the component is mounted. */
+function useLiveNote(fileId: number, name: string) {
+  const [note, setNote] = useState<LiveNote | null>(null);
+  const [ready, setReady] = useState(false);
+  const [, rerender] = useState(0);
 
   useEffect(() => {
-    const warn = (event: BeforeUnloadEvent) => {
-      if (pending.current !== null) event.preventDefault();
-    };
-    window.addEventListener("beforeunload", warn);
+    const live = new LiveNote(fileId, { name, key: name === "Guest" ? String(Math.random()) : name });
+    setNote(live);
+    setReady(false);
+    const unsubscribe = live.subscribe(() => rerender((n) => n + 1));
+    live.ready.then(() => setReady(true));
     return () => {
-      window.removeEventListener("beforeunload", warn);
-      flush();
+      unsubscribe();
+      live.destroy();
     };
-  }, [flush]);
+  }, [fileId, name]);
 
-  const change = useCallback(
-    (doc: string) => {
-      pending.current = doc;
-      setState("unsaved");
-      window.clearTimeout(timer.current);
-      timer.current = window.setTimeout(flush, SAVE_DELAY);
-    },
-    [flush],
-  );
-
-  return { state, change };
+  return { note, ready, status: note?.status ?? ("connecting" as LiveStatus), peers: note?.peers() ?? [] };
 }
 
-function SaveStatus({ state, readOnly }: { state: SaveState; readOnly: boolean }) {
-  if (readOnly) return <span className="note-status muted small">Read only</span>;
-  const label = { saved: "Saved", saving: "Saving…", unsaved: "Editing", error: "Not saved, retrying on next edit" }[state];
+function LiveStatusBadge({ status, readOnly }: { status: LiveStatus; readOnly: boolean }) {
+  const label = { connecting: "Connecting…", live: readOnly ? "Read only" : "Saved", offline: "Offline: changes are kept on this device", closed: "" }[status];
   return (
-    <span className={`note-status small ${state === "error" ? "error-text" : "muted"}`} aria-live="polite">
+    <span className={`note-status small ${status === "offline" ? "warn-text" : "muted"}`} aria-live="polite">
+      {status === "live" && <span className="live-dot" aria-hidden="true" />}
       {label}
     </span>
+  );
+}
+
+function Presence({ peers }: { peers: Peer[] }) {
+  if (peers.length < 2) return null;
+  return (
+    <ul className="presence" aria-label="Editing now">
+      {peers.map((p) => (
+        <li key={p.clientId} title={p.self ? `${p.name} (you)` : p.name} style={{ background: p.color }}>
+          {p.name.slice(0, 1).toUpperCase()}
+        </li>
+      ))}
+    </ul>
   );
 }
 

@@ -20,6 +20,8 @@ export type EditorProps = {
   initialDoc: string;
   onChange?: (doc: string) => void;
   readOnly?: boolean;
+  /** Keep CodeMirror's own undo history. Turn off when an extension brings its own (co-editing does). */
+  history?: boolean;
   /** Extra CodeMirror extensions (comment anchors, co-editing, ...). Read once, at mount. */
   extensions?: Extension[];
   onReady?: (view: EditorView) => void;
@@ -33,7 +35,7 @@ export function markdownExtensions(): Extension[] {
   ];
 }
 
-export function Editor({ initialDoc, onChange, readOnly = false, extensions = [], onReady }: EditorProps) {
+export function Editor({ initialDoc, onChange, readOnly = false, history: ownHistory = true, extensions = [], onReady }: EditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const editable = useRef(new Compartment());
@@ -44,13 +46,13 @@ export function Editor({ initialDoc, onChange, readOnly = false, extensions = []
     const state = EditorState.create({
       doc: initialDoc,
       extensions: [
-        history(),
+        ownHistory ? history() : [],
         drawSelection(),
         dropCursor(),
         rectangularSelection(),
         highlightActiveLine(),
         EditorView.lineWrapping,
-        keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+        keymap.of([...defaultKeymap, ...(ownHistory ? historyKeymap : []), indentWithTab]),
         placeholder("Start writing…"),
         markdownExtensions(),
         editorTheme,

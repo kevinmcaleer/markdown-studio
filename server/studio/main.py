@@ -15,11 +15,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.routing import WebSocketRoute
 
 from powertools_auth import Auth, AuthSettings, SmtpMailer
 from powertools_auth.security import SECURITY_HEADERS
 
-from . import __version__, comments, db, files, sharing
+from . import __version__, collab, comments, db, files, sharing
 from .config import Settings, load_settings_or_exit
 from .logging_config import configure_logging
 from .powertools import CURRENT_APP_ID, HOME_URL, PowerTools
@@ -82,6 +83,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     auth.install(app)
     app.include_router(auth.router)
     app.include_router(files.make_router(auth, get_db))
+    rooms = collab.Rooms(settings.database_path)
+    app.state.rooms = rooms
+    app.state.content_listener = rooms.content_replaced
+    # A plain Starlette route: FastAPI's app-wide CSRF dependency is HTTP-only.
+    app.router.routes.append(WebSocketRoute(collab.PATH, collab.make_endpoint(auth, rooms)))
     app.include_router(sharing.make_router(auth, get_db))
     app.include_router(comments.make_router(auth, get_db))
 

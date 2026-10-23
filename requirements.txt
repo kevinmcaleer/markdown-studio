@@ -2,5 +2,7 @@
 fastapi==0.161.1
 uvicorn[standard]==0.54.0
 argon2-cffi==25.1.0
+# Real-time co-editing: the server side of Yjs (prebuilt wheels for arm64 too).
+pycrdt==0.14.10
 # The shared login, from this repo.
 ./packages/powertools-auth
