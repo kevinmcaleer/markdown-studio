@@ -3,7 +3,7 @@
 services:
   markdown-studio:
     build: .
-    image: ghcr.io/kevinmcaleer/markdown-studio:latest
+    image: ghcr.io/kevinmcaleer/markdown-studio:${STUDIO_TAG:-latest}
     restart: unless-stopped
     init: true  # reap zombies and forward signals cleanly
     env_file:
