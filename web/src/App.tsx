@@ -1,0 +1,55 @@
+import { useEffect } from "react";
+import { Link } from "./Link";
+import { TopBar } from "./TopBar";
+import { Account } from "./pages/Account";
+import { ComingSoon } from "./pages/ComingSoon";
+import { Home } from "./pages/Home";
+import { Login } from "./pages/Login";
+import { Register } from "./pages/Register";
+import { navigate, useLocation } from "./router";
+import { useSession } from "./session";
+import { SUITE_APPS } from "./suite";
+
+const PUBLIC_PATHS = new Set(["/login", "/register"]);
+
+export function App() {
+  const { path, search } = useLocation();
+  const { loading, user, firstUser } = useSession();
+  const isPublic = PUBLIC_PATHS.has(path);
+
+  useEffect(() => {
+    if (loading) return;
+    if (!user && !isPublic) {
+      const next = path === "/" ? "" : `?next=${encodeURIComponent(path + (search.size ? `?${search}` : ""))}`;
+      navigate(`${firstUser ? "/register" : "/login"}${next}`, { replace: true });
+    }
+  }, [loading, user, isPublic, firstUser, path, search]);
+
+  if (loading) return <div className="splash" aria-busy="true" />;
+  if (isPublic) return path === "/login" ? <Login /> : <Register />;
+  if (!user) return <div className="splash" aria-busy="true" />;
+
+  const app = SUITE_APPS.find((a) => path === a.path || path.startsWith(`${a.path}/`));
+  let page;
+  if (path === "/") page = <Home />;
+  else if (path === "/account") page = <Account />;
+  else if (app) page = <ComingSoon app={app} />;
+  else page = <NotFound />;
+
+  return (
+    <div className="shell">
+      <TopBar current={app?.id} />
+      <main className="page">{page}</main>
+    </div>
+  );
+}
+
+function NotFound() {
+  return (
+    <section className="narrow">
+      <h1>Not found</h1>
+      <p className="muted">That page doesn't exist.</p>
+      <Link href="/">Back to the suite</Link>
+    </section>
+  );
+}

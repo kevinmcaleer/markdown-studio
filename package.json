@@ -1,0 +1,13 @@
+{
+  "name": "markdown-studio",
+  "private": true,
+  "workspaces": [
+    "web"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w web",
+    "build": "npm run build -w web",
+    "test": "npm test -w web",
+    "typecheck": "npm run typecheck -w web"
+  }
+}

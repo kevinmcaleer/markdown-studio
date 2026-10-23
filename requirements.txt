@@ -1,0 +1,6 @@
+# Runtime dependencies (pinned). Dependabot keeps these up to date.
+fastapi==0.161.1
+uvicorn[standard]==0.54.0
+argon2-cffi==25.1.0
+# The shared login, from this repo.
+./packages/powertools-auth
