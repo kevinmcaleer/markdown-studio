@@ -82,7 +82,74 @@ docker stack deploy -c docker-stack.yml studio
 
 Keep `SECRET_KEY` somewhere safe; if it changes, open browser tabs just need a refresh. Never put
 the database on NFS or SMB: SQLite's locking isn't safe over network filesystems. To publish the
-suite through Cloudflare without opening ports, uncomment `cloudflared` in `docker-stack.yml`.
+suite through Cloudflare without opening ports, see [Cloudflare Tunnel](#cloudflare-tunnel).
+
+## Cloudflare Tunnel
+
+A Cloudflare Tunnel publishes the suite at your own hostname (say `studio.kevspowertools.com`)
+over HTTPS without opening any ports on your network.
+
+1. In the Cloudflare dashboard, go to **Zero Trust > Networks > Tunnels**, create a tunnel and
+   copy its token (the long string after `--token` in the install command).
+2. Add a **public hostname** to the tunnel: your hostname, service `http://markdown-studio:8000`.
+   The tunnel passes WebSockets through, so co-editing works without extra settings.
+3. In `.env`, uncomment `COMPOSE_PROFILES`, `CLOUDFLARE_TUNNEL_TOKEN` and `COMPOSE_FILE` in the
+   Cloudflare section, and set `HTTPS=true`, `TRUST_PROXY=true` and `PUBLIC_URL`.
+4. `docker compose up -d`.
+
+On a Swarm, uncomment `cloudflared` in `docker-stack.yml` instead and export
+`CLOUDFLARE_TUNNEL_TOKEN` before `docker stack deploy`. It runs two replicas on different Pis,
+so the site stays up if one of them goes down.
+
+## Deploying to kevspowertools
+
+kevspowertools runs the published image from GHCR on the Pi cluster, behind a Cloudflare
+Tunnel, at <https://studio.kevspowertools.com>. The settings that differ from a home install:
+
+```sh
+PUBLIC_URL=https://studio.kevspowertools.com
+HTTPS=true
+TRUST_PROXY=true
+COOKIE_DOMAIN=.kevspowertools.com   # one sign-in across the kevspowertools apps
+ALLOW_REGISTRATION=true
+SMTP_HOST=...                       # so people can reset their own passwords
+```
+
+**First deploy:** follow [Raspberry Pi cluster](#raspberry-pi-cluster) with the settings above
+exported, plus `CLOUDFLARE_TUNNEL_TOKEN` and the `cloudflared` service uncommented, and set the
+`markdown-studio` entry in `https://kevspowertools.com/apps.json` to `"status": "live"` so it
+shows in every app's switcher.
+
+**Releasing:** tag a version on `main`.
+
+```sh
+git tag v0.1.0 && git push origin v0.1.0
+```
+
+CI tests it, builds amd64 and arm64 images, and moves `latest` to it. The Pis pick it up on
+their own (next section), so nothing has to reach into the home network and no ports open.
+
+**Rolling back:** `STUDIO_TAG=v0.0.9 docker stack deploy -c docker-stack.yml studio` pins the
+previous version. Version tags never move, so automatic updates leave it alone until you deploy
+with `STUDIO_TAG=latest` again.
+
+## Automatic updates
+
+`scripts/auto-update.sh` checks whether the image tag the app is running (`STUDIO_TAG` when you
+deployed it, `latest` by default) has moved. If it has, it backs up the database, switches to the new image and waits
+for it to be healthy. A version that fails its health check is rolled back, and skipped until
+a newer one is published. Run it every 10 minutes from cron on the host:
+
+```cron
+# One machine (docker compose), from the repo checkout:
+*/10 * * * * cd /home/kev/markdown-studio && scripts/auto-update.sh compose >> backups/update.log 2>&1
+
+# Swarm: on the Pi labelled studio.data=true, which must also be a manager:
+*/10 * * * * cd /home/kev/markdown-studio && scripts/auto-update.sh swarm >> /srv/markdown-studio/backups/update.log 2>&1
+```
+
+It needs `docker buildx`, which comes with Docker Engine. If the GHCR package is private,
+`docker login ghcr.io` once on that Pi.
 
 ## Backup and restore
 
@@ -153,6 +220,7 @@ All settings are environment variables, normally set in `.env` (see `.env.exampl
 | `LOGIN_RATE_LIMIT` / `LOGIN_RATE_WINDOW` | `5` / `60` | Sign-in and sign-up attempts allowed per IP per window (seconds). |
 | `POWERTOOLS_APPS_URL` | `https://kevspowertools.com/apps.json` | The shared list behind the app switcher. Empty uses the bundled copy. |
 | `PUID` / `PGID` | `1000` | Owner of files in `./data` (Docker only). |
+| `STUDIO_TAG` | `latest` | Image tag Docker runs and `scripts/auto-update.sh` follows: `latest`, `edge` or a version. |
 | `LOG_LEVEL` | `INFO` | Logs are JSON lines on stdout. |
 
 ## Development

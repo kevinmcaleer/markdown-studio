@@ -34,6 +34,13 @@ jobs:
       - name: Pytest
         run: pytest --cov --cov-report=term-missing
 
+  shell:
+    name: Shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck scripts/*.sh docker/*.sh
+
   web:
     name: Web typecheck, test and build
     runs-on: ubuntu-latest
@@ -51,7 +58,7 @@ jobs:
   docker:
     name: Docker image
     runs-on: ubuntu-latest
-    needs: [python, web]
+    needs: [python, shell, web]
     permissions:
       contents: read
       packages: write

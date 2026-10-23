@@ -49,6 +49,11 @@ services:
         # Stop the old container before starting the new one: two copies must
         # never write the same SQLite file at once.
         order: stop-first
+        # A new version that isn't healthy within a minute is rolled back.
+        monitor: 60s
+        failure_action: rollback
+      rollback_config:
+        order: stop-first
       restart_policy:
         condition: any
         delay: 5s
