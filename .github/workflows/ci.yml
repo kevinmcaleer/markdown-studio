@@ -75,7 +75,7 @@ jobs:
             type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
             type=sha
       - name: Build (and push on main and version tags)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           # amd64 for servers, arm64 for Raspberry Pi. PRs build amd64 only for speed.
