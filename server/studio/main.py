@@ -19,7 +19,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from powertools_auth import Auth, AuthSettings, SmtpMailer
 from powertools_auth.security import SECURITY_HEADERS
 
-from . import __version__, db
+from . import __version__, db, files
 from .config import Settings, load_settings_or_exit
 from .logging_config import configure_logging
 from .powertools import CURRENT_APP_ID, HOME_URL, PowerTools
@@ -81,6 +81,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     auth.install(app)
     app.include_router(auth.router)
+    app.include_router(files.make_router(auth, get_db))
 
     @app.get("/health")
     def health():

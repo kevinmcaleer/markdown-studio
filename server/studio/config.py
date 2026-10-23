@@ -100,6 +100,8 @@ class Settings:
     smtp_security: str = "starttls"
     smtp_from: str = ""
     password_reset_max_age: int = 60 * 60
+    # Largest file a user can upload or save, in bytes.
+    max_upload_bytes: int = 25 * 1024 * 1024
 
     @property
     def is_production(self) -> bool:
@@ -169,6 +171,7 @@ def load_settings(env: dict[str, str] | None = None) -> Settings:
         password_reset_max_age=_int(
             "PASSWORD_RESET_MAX_AGE", env.get("PASSWORD_RESET_MAX_AGE"), 60 * 60
         ),
+        max_upload_bytes=_int("MAX_UPLOAD_MB", env.get("MAX_UPLOAD_MB"), 25) * 1024 * 1024,
     )
 
 
