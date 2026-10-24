@@ -5,6 +5,7 @@ import { ApiError } from "../api";
 import { useNoteComments } from "../comments/useNoteComments";
 import { Link } from "../Link";
 import { ShareButton } from "../sharing/ShareButton";
+import { SyncBanners, SyncMenu, useNoteSync } from "../sync/Sync";
 import { useSession } from "../session";
 import { DownloadMenu } from "./DownloadMenu";
 import { Editor } from "./Editor";
@@ -73,6 +74,8 @@ function TextFile({
   const preview = useDeferredValue(text ?? "");
   const html = useMemo(() => (markdown && mode !== "write" ? renderMarkdown(preview) : ""), [markdown, mode, preview]);
   const comments = useNoteComments({ fileId: file.id, doc: text ?? "", role });
+  // Cloud sync needs an account, so it's for signed-in people who can edit.
+  const noteSync = useNoteSync(file.id, markdown && canEdit && user !== null);
   const extensions = useMemo(
     () => [
       ...(live.note ? [yCollab(live.note.text, live.note.provider.awareness, { undoManager: live.note.undo }), keymap.of(yUndoManagerKeymap)] : []),
@@ -125,8 +128,10 @@ function TextFile({
         )}
         {comments.button}
         {role === "owner" && <ShareButton fileId={file.id} fileName={file.name} />}
+        <SyncMenu note={file} role={role} sync={noteSync} currentText={() => live.note?.text.toString() ?? text ?? ""} />
         <DownloadMenu file={file} markdown={markdown} />
       </header>
+      <SyncBanners sync={noteSync} onCopy={onRenamed} />
       {live.status === "closed" ? (
         <div className="notes-empty">
           <p className="error">This note was deleted, or you no longer have access to it.</p>
