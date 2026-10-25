@@ -14,6 +14,7 @@ import {
 import { useEffect, useRef } from "react";
 import { editorHighlighting, editorTheme } from "./editorTheme";
 import { Highlight } from "./highlightSyntax";
+import { livePreview } from "./livePreview";
 
 export type EditorProps = {
   /** The text to start with. Changing it later doesn't reset the editor; remount with a new `key`. */
@@ -22,6 +23,8 @@ export type EditorProps = {
   readOnly?: boolean;
   /** Keep CodeMirror's own undo history. Turn off when an extension brings its own (co-editing does). */
   history?: boolean;
+  /** Show the Markdown as it reads (headings, lists, tables), with its syntax only on the cursor's line. */
+  livePreview?: boolean;
   /** Extra CodeMirror extensions (comment anchors, co-editing, ...). Read once, at mount. */
   extensions?: Extension[];
   onReady?: (view: EditorView) => void;
@@ -35,10 +38,19 @@ export function markdownExtensions(): Extension[] {
   ];
 }
 
-export function Editor({ initialDoc, onChange, readOnly = false, history: ownHistory = true, extensions = [], onReady }: EditorProps) {
+export function Editor({
+  initialDoc,
+  onChange,
+  readOnly = false,
+  history: ownHistory = true,
+  livePreview: live = false,
+  extensions = [],
+  onReady,
+}: EditorProps) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView | null>(null);
   const editable = useRef(new Compartment());
+  const preview = useRef(new Compartment());
   const changed = useRef(onChange);
   changed.current = onChange;
 
@@ -56,6 +68,7 @@ export function Editor({ initialDoc, onChange, readOnly = false, history: ownHis
         placeholder("Start writing…"),
         markdownExtensions(),
         editorTheme,
+        preview.current.of(live ? livePreview() : []),
         editable.current.of([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) changed.current?.(update.state.doc.toString());
@@ -78,6 +91,10 @@ export function Editor({ initialDoc, onChange, readOnly = false, history: ownHis
       effects: editable.current.reconfigure([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),
     });
   }, [readOnly]);
+
+  useEffect(() => {
+    view.current?.dispatch({ effects: preview.current.reconfigure(live ? livePreview() : []) });
+  }, [live]);
 
   return <div className="editor" ref={host} />;
 }

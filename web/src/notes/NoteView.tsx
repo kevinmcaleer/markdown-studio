@@ -15,9 +15,18 @@ import { renderMarkdown } from "./markdown";
 import { NoteTitle } from "./NoteTitle";
 import { slashMenu } from "./slashMenu";
 
-type Mode = "write" | "split" | "read";
+/** "write" is the live view (rendered as you type); "raw" shows all the Markdown. */
+type Mode = "write" | "raw" | "split" | "read";
 
-const MODE_KEY = "notes.mode";
+const MODES: { mode: Mode; label: string; title: string }[] = [
+  { mode: "write", label: "Write", title: "Write, with the Markdown shown as it reads" },
+  { mode: "raw", label: "Raw", title: "All the Markdown, as text" },
+  { mode: "split", label: "Split", title: "Raw Markdown beside the preview" },
+  { mode: "read", label: "Preview", title: "Read only" },
+];
+
+// A new key, so everyone starts on the live view rather than their old choice.
+const MODE_KEY = "notes.view";
 
 type Loaded = { file: FileMeta; role: FileRole };
 
@@ -74,7 +83,7 @@ function TextFile({
   const live = useLiveNote(file.id, user?.username ?? "Guest");
   const [text, setText] = useState<string | null>(null);
   const preview = useDeferredValue(text ?? "");
-  const html = useMemo(() => (markdown && mode !== "write" ? renderMarkdown(preview) : ""), [markdown, mode, preview]);
+  const html = useMemo(() => (markdown && (mode === "split" || mode === "read") ? renderMarkdown(preview) : ""), [markdown, mode, preview]);
   const comments = useNoteComments({ fileId: file.id, doc: text ?? "", role });
   // Cloud sync needs an account, so it's for signed-in people who can edit.
   const noteSync = useNoteSync(file.id, markdown && canEdit && user !== null);
@@ -135,9 +144,9 @@ function TextFile({
         <Presence peers={live.peers} />
         {markdown && (
           <div className="segmented" role="group" aria-label="View">
-            {(["write", "split", "read"] as const).map((m) => (
-              <button key={m} type="button" aria-pressed={mode === m} onClick={() => setMode(m)}>
-                {m === "write" ? "Write" : m === "split" ? "Split" : "Preview"}
+            {MODES.map((m) => (
+              <button key={m.mode} type="button" title={m.title} aria-pressed={mode === m.mode} onClick={() => setMode(m.mode)}>
+                {m.label}
               </button>
             ))}
           </div>
@@ -163,10 +172,17 @@ function TextFile({
           {mode !== "read" && (
             <div className="note-pane note-source titled">
               {title}
-              <Editor initialDoc={live.note!.text.toString()} readOnly={!canEdit} history={false} extensions={extensions} onReady={onEditorReady} />
+              <Editor
+                initialDoc={live.note!.text.toString()}
+                readOnly={!canEdit}
+                history={false}
+                livePreview={markdown && mode === "write"}
+                extensions={extensions}
+                onReady={onEditorReady}
+              />
             </div>
           )}
-          {markdown && mode !== "write" && (
+          {markdown && (mode === "split" || mode === "read") && (
             <div className="note-pane note-preview">
               {mode === "read" && title}
               <div className="prose" dangerouslySetInnerHTML={{ __html: html }} />
@@ -295,9 +311,9 @@ function BinaryFile({ file }: { file: FileMeta }) {
 function readMode(): Mode {
   try {
     const value = localStorage.getItem(MODE_KEY);
-    if (value === "write" || value === "split" || value === "read") return value;
+    if (value === "write" || value === "raw" || value === "split" || value === "read") return value;
   } catch {
     /* private mode */
   }
-  return window.innerWidth < 900 ? "write" : "split";
+  return "write";
 }

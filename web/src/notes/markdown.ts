@@ -38,6 +38,11 @@ export function renderMarkdown(source: string): string {
   return md.render(source);
 }
 
+/** One line of Markdown (a table cell, say) as inline HTML, with no paragraph around it. */
+export function renderInline(source: string): string {
+  return md.renderInline(source);
+}
+
 /** The note's title: its first heading, or its first line of text. */
 export function titleOf(source: string): string {
   const heading = /^#{1,6}\s+(.+?)\s*#*\s*$/m.exec(source);
