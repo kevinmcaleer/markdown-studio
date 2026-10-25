@@ -138,9 +138,8 @@ refresh tokens are kept in `studio.db`, so protect its backups like the database
   timer. Either window moves both.
 - **Download** as PowerPoint (`.pptx`) or Keynote (`.key`). Both files are made in your browser
   from the text on screen, so exporting works offline and never sends the deck anywhere.
-  PowerPoint files have real text boxes, bullets, tables, images and notes. Keynote files use
-  Keynote's Basic White theme and its own layouts; images and tables arrive in Keynote export
-  with the next keynotejs release.
+  Both have real text boxes, bullets, tables, images and notes. Keynote files use Keynote's
+  Basic White theme and its own layouts, with images in the layout's photo placeholder.
 
 ## Quick start with Docker
 
