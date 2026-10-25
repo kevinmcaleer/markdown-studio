@@ -12,6 +12,7 @@ import { DownloadMenu } from "./DownloadMenu";
 import { Editor } from "./Editor";
 import { findReplace } from "./findReplace";
 import { files, formatSize, isMarkdown, isText, TABLES_MIME, withShare, type FileMeta, type FileRole } from "./filesApi";
+import { useWritingLint } from "./lint/useWritingLint";
 import { LiveNote, type LiveStatus, type Peer } from "./live";
 import { renderMarkdown } from "./markdown";
 import { NoteTitle } from "./NoteTitle";
@@ -113,6 +114,7 @@ function TextFile({
   const [typewriter, setTypewriter] = useTypewriter();
   const [selection, setSelection] = useState<SelectionStats>(null);
   const goal = useDailyGoal();
+  const lint = useWritingLint();
   const addWritten = goal.add;
   const proofing = useProofing(user !== null);
   // Pasted and dropped images go beside the note when it's yours, otherwise in your own files.
@@ -141,12 +143,12 @@ function TextFile({
       ...comments.extensions,
       ...place.extensions,
       ...(markdown ? outline.extensions : []),
-      ...(markdown ? [slashMenu(), smartPaste({ uploadImage }), notesProofing] : []),
+      ...(markdown ? [slashMenu(), smartPaste({ uploadImage }), ...lint.extensions, notesProofing] : []),
       findReplace(),
       writingMode(),
       writingStats({ onSelection: setSelection, onWritten: addWritten }),
     ],
-    [live.note, comments.extensions, place.extensions, outline.extensions, markdown, uploadImage, addWritten],
+    [live.note, comments.extensions, place.extensions, outline.extensions, markdown, uploadImage, addWritten, lint.extensions],
   );
   const editorView = useRef<EditorView | null>(null);
   const writing = useRef({ focus, typewriter });
@@ -156,6 +158,7 @@ function TextFile({
   const commentsReady = comments.onReady;
   const placeReady = place.onReady;
   const outlineReady = outline.onReady;
+  const lintReady = lint.onReady;
   const onEditorReady = useCallback(
     (view: EditorView) => {
       editorView.current = view;
@@ -163,9 +166,10 @@ function TextFile({
       if (markdown) view.dispatch({ effects: setProofing.of(proofingSettings.current) });
       commentsReady(view);
       if (markdown) outlineReady(view);
+      if (markdown) lintReady(view);
       placeReady(view);
     },
-    [commentsReady, outlineReady, placeReady, markdown],
+    [commentsReady, outlineReady, placeReady, lintReady, markdown],
   );
   useWritingMode(focus, setFocus);
   useEffect(() => {
@@ -284,6 +288,7 @@ function TextFile({
             typewriter,
             onTypewriter: setTypewriter,
             onFind: () => editorView.current && openSearchPanel(editorView.current),
+            lint: markdown ? lint.status : undefined,
             ...(markdown && { proofing }),
           })}
         />

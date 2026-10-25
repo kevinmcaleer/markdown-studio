@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LanguageChip } from "./proofing/LanguageChip";
 import type { Proofing } from "./proofing/useProofing";
 import { countChars, countWords, readingMinutes, type SelectionStats } from "./writingMode";
@@ -82,6 +82,7 @@ export function WritingBar({
   typewriter,
   onTypewriter,
   onFind,
+  lint,
   proofing,
 }: {
   text: string;
@@ -93,6 +94,8 @@ export function WritingBar({
   typewriter?: boolean;
   onTypewriter?: (on: boolean) => void;
   onFind?: () => void;
+  /** The writing hints switch and score, from `useWritingLint`. */
+  lint?: ReactNode;
   /** The language chip; left out where nothing is proofed. */
   proofing?: Proofing;
 }) {
@@ -124,6 +127,7 @@ export function WritingBar({
       </span>
       {proofing && <LanguageChip proofing={proofing} />}
       <GoalButton goal={goal} />
+      {lint}
       <div className="spacer" />
       {onFind && (
         <button type="button" className="writing-toggle" title="Find and replace (Ctrl+F, Ctrl+H)" onClick={onFind}>
