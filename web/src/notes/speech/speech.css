@@ -1,0 +1,110 @@
+/* Dictation button and the floating read-aloud bar on the note page. */
+
+.dictation-menu {
+  display: inline-flex;
+  align-items: center;
+}
+
+.dictation-more {
+  width: 18px;
+  padding: 0;
+  margin-left: -4px;
+}
+
+.dictation-menu.listening .dictation-button {
+  color: var(--danger);
+  animation: dictation-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes dictation-pulse {
+  50% {
+    background: color-mix(in srgb, var(--danger) 14%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dictation-menu.listening .dictation-button {
+    animation: none;
+    background: color-mix(in srgb, var(--danger) 14%, transparent);
+  }
+}
+
+.dictation-pop {
+  right: 0;
+  z-index: 20;
+  width: min(340px, calc(100vw - 32px));
+  padding: 0.6rem 0.75rem;
+}
+
+.dictation-pop p {
+  margin: 0 0 0.5rem;
+}
+
+.dictation-pop p:last-child {
+  margin-bottom: 0;
+}
+
+.dictation-pop .field {
+  margin-bottom: 0.5rem;
+}
+
+.read-aloud-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 48px;
+  z-index: 30;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  width: min(640px, calc(100vw - 32px));
+  padding: 0.3rem 0.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.14);
+}
+
+.read-aloud-bar .icon-button {
+  width: 30px;
+  height: 30px;
+  flex: none;
+}
+
+.read-aloud-bar .icon-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.read-aloud-play {
+  color: var(--accent);
+}
+
+.read-aloud-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted);
+  padding: 0 0.25rem;
+}
+
+.read-aloud-rate,
+.read-aloud-voice {
+  flex: none;
+  font: inherit;
+  max-width: 9rem;
+  padding: 0.15rem 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+@media (max-width: 560px) {
+  .read-aloud-text,
+  .read-aloud-voice {
+    display: none;
+  }
+}

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LanguageChip } from "./proofing/LanguageChip";
 import type { Proofing } from "./proofing/useProofing";
+import { READ_SHORTCUT } from "./speech/support";
 import { countChars, countWords, readingMinutes, type SelectionStats } from "./writingMode";
 
 // The status bar under a note: counts, the day's word goal, and the writing
@@ -82,6 +83,8 @@ export function WritingBar({
   typewriter,
   onTypewriter,
   onFind,
+  reading,
+  onReadAloud,
   lint,
   proofing,
 }: {
@@ -94,6 +97,9 @@ export function WritingBar({
   typewriter?: boolean;
   onTypewriter?: (on: boolean) => void;
   onFind?: () => void;
+  /** Left out where the browser can't speak. */
+  reading?: boolean;
+  onReadAloud?: () => void;
   /** The writing hints switch and score, from `useWritingLint`. */
   lint?: ReactNode;
   /** The language chip; left out where nothing is proofed. */
@@ -132,6 +138,17 @@ export function WritingBar({
       {onFind && (
         <button type="button" className="writing-toggle" title="Find and replace (Ctrl+F, Ctrl+H)" onClick={onFind}>
           Find
+        </button>
+      )}
+      {onReadAloud && (
+        <button
+          type="button"
+          className="writing-toggle"
+          aria-pressed={reading}
+          title={`${reading ? "Stop reading" : "Read aloud from the cursor, or the selection"} (${READ_SHORTCUT})`}
+          onClick={onReadAloud}
+        >
+          Read aloud
         </button>
       )}
       {onTypewriter && (
