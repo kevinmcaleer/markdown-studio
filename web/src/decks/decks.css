@@ -314,6 +314,35 @@
   gap: 0.6rem;
 }
 
+/* Dragging a thumbnail to reorder: a line marks where it will land. */
+.deck-rail > li {
+  position: relative;
+}
+
+.deck-rail > li.dragging {
+  opacity: 0.4;
+}
+
+.deck-rail > li.drop-before::before,
+.deck-rail > li.drop-after::after {
+  content: "";
+  position: absolute;
+  left: 1.25rem;
+  right: 0;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.deck-rail > li.drop-before::before {
+  top: calc(-0.3rem - 1.5px);
+}
+
+.deck-rail > li.drop-after::after {
+  bottom: calc(-0.3rem - 1.5px);
+}
+
 .deck-thumb {
   position: relative;
   display: block;
@@ -434,6 +463,24 @@
 
   .deck-rail > li {
     flex: 0 0 110px;
+  }
+
+  .deck-rail > li.drop-before::before,
+  .deck-rail > li.drop-after::after {
+    top: 0;
+    bottom: 0;
+    left: auto;
+    right: auto;
+    width: 3px;
+    height: auto;
+  }
+
+  .deck-rail > li.drop-before::before {
+    left: calc(-0.3rem - 1.5px);
+  }
+
+  .deck-rail > li.drop-after::after {
+    right: calc(-0.3rem - 1.5px);
   }
 
   .mode-edit .deck-stage {

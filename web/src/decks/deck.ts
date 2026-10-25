@@ -76,6 +76,16 @@ const md = new MarkdownIt({ html: false, linkify: true, typographer: true }).use
 
 /** Split a deck's text into slides. Blank slides (only whitespace) are left out. */
 export function parseDeck(text: string): Deck {
+  const slides: Slide[] = [];
+  for (const chunk of splitChunks(text)) {
+    if (isBlank(chunk.lines)) continue;
+    slides.push(parseSlide(chunk.lines, chunk.start, slides.length));
+  }
+  return { slides };
+}
+
+/** The text between `---` lines (outside code fences), with the line each piece starts on. */
+function splitChunks(text: string): { start: number; lines: string[] }[] {
   const lines = text.split(/\r\n|\r|\n/);
   const chunks: { start: number; lines: string[] }[] = [{ start: 0, lines: [] }];
   let fence: string | null = null;
@@ -86,13 +96,40 @@ export function parseDeck(text: string): Deck {
     if (fence === null && trimmed === SEPARATOR) chunks.push({ start: i + 1, lines: [] });
     else chunks[chunks.length - 1].lines.push(line);
   });
+  return chunks;
+}
 
-  const slides: Slide[] = [];
-  for (const chunk of chunks) {
-    if (!chunk.lines.some((l) => l.trim())) continue;
-    slides.push(parseSlide(chunk.lines, chunk.start, slides.length));
-  }
-  return { slides };
+function isBlank(lines: string[]): boolean {
+  return !lines.some((l) => l.trim());
+}
+
+/**
+ * The deck's text with slide `from` moved to just before slide `before`, or to
+ * the end when `before` is the number of slides. Everything else is kept as
+ * written, apart from the blank lines around the `---` lines that move.
+ */
+export function moveSlide(text: string, from: number, before: number): string {
+  const chunks = splitChunks(text).map((c) => c.lines);
+  // Which chunk holds each slide (empty chunks between `---` lines aren't slides).
+  const slideChunks = chunks.flatMap((lines, i) => (isBlank(lines) ? [] : [i]));
+  const to = before > from ? before - 1 : before;
+  if (from < 0 || from >= slideChunks.length || to === from || to < 0 || to >= slideChunks.length) return text;
+
+  // Moving up lands before the slide now at `to`, moving down after it; once
+  // the moved chunk is taken out, both are the target's old chunk index.
+  const at = slideChunks[to];
+  const [moved] = chunks.splice(slideChunks[from], 1);
+  chunks.splice(at, 0, moved);
+
+  // A blank line either side of each `---`, none at the very start, and the file's last newline kept.
+  const last = chunks.length - 1;
+  const tidy = (i: number) => {
+    const lines = trimBlankLines(chunks[i]);
+    if (!lines.length) return;
+    chunks[i] = [...(i > 0 ? [""] : []), ...lines, ...(i < last ? [""] : /\n$/.test(text) ? [""] : [])];
+  };
+  for (const i of new Set([0, at - 1, at, at + 1, last])) if (i >= 0 && i <= last) tidy(i);
+  return chunks.map((lines) => lines.join("\n")).join(`\n${SEPARATOR}\n`);
 }
 
 function parseSlide(lines: string[], start: number, index: number): Slide {
