@@ -18,6 +18,7 @@ import { NoteTitle } from "./NoteTitle";
 import { useFilePlace } from "./place/useFilePlace";
 import { slashMenu } from "./slashMenu";
 import { smartPaste } from "./smartPaste";
+import { useOutline } from "./useOutline";
 import { useDailyGoal, useTypewriter, WritingBar } from "./WritingBar";
 import { setWriting, writingMode, writingStats, type SelectionStats } from "./writingMode";
 
@@ -91,6 +92,16 @@ function TextFile({
   const preview = useDeferredValue(text ?? "");
   const html = useMemo(() => (markdown && (mode === "split" || mode === "read") ? renderMarkdown(preview) : ""), [markdown, mode, preview]);
   const comments = useNoteComments({ fileId: file.id, doc: text ?? "", role, text: live.note?.text, suggestions: true });
+  const previewPane = useRef<HTMLDivElement>(null);
+  const outline = useOutline({
+    fileId: file.id,
+    doc: text ?? "",
+    canEdit,
+    editorMode: mode !== "read",
+    note: live.note,
+    threads: comments.placed,
+    previewRef: previewPane,
+  });
   // Cloud sync needs an account, so it's for signed-in people who can edit.
   const noteSync = useNoteSync(file.id, markdown && canEdit && user !== null);
   const [focus, setFocus] = useState(false);
@@ -123,26 +134,29 @@ function TextFile({
       ...(live.note ? [yCollab(live.note.text, live.note.provider.awareness, { undoManager: live.note.undo }), keymap.of(yUndoManagerKeymap)] : []),
       ...comments.extensions,
       ...place.extensions,
+      ...(markdown ? outline.extensions : []),
       ...(markdown ? [slashMenu(), smartPaste({ uploadImage })] : []),
       findReplace(),
       writingMode(),
       writingStats({ onSelection: setSelection, onWritten: addWritten }),
     ],
-    [live.note, comments.extensions, place.extensions, markdown, uploadImage, addWritten],
+    [live.note, comments.extensions, place.extensions, outline.extensions, markdown, uploadImage, addWritten],
   );
   const editorView = useRef<EditorView | null>(null);
   const writing = useRef({ focus, typewriter });
   writing.current = { focus, typewriter };
   const commentsReady = comments.onReady;
   const placeReady = place.onReady;
+  const outlineReady = outline.onReady;
   const onEditorReady = useCallback(
     (view: EditorView) => {
       editorView.current = view;
       view.dispatch({ effects: setWriting.of(writing.current) });
       commentsReady(view);
+      if (markdown) outlineReady(view);
       placeReady(view);
     },
-    [commentsReady, placeReady],
+    [commentsReady, outlineReady, placeReady, markdown],
   );
   useWritingMode(focus, setFocus);
   useEffect(() => {
@@ -200,6 +214,7 @@ function TextFile({
           </div>
         )}
         {mode !== "read" && comments.suggestSwitch}
+        {markdown && outline.button}
         {place.button}
         {comments.button}
         {role === "owner" && <ShareButton fileId={file.id} fileName={file.name} />}
@@ -218,6 +233,7 @@ function TextFile({
         </div>
       ) : (
         <div className="note-main">
+        {markdown && outline.panel}
         <div className="note-body">
           {mode !== "read" && (
             <div className="note-pane note-source titled">
@@ -234,7 +250,7 @@ function TextFile({
             </div>
           )}
           {markdown && (mode === "split" || mode === "read") && (
-            <div className="note-pane note-preview">
+            <div className="note-pane note-preview" ref={previewPane}>
               {mode === "read" && title}
               <div className="prose" dangerouslySetInnerHTML={{ __html: html }} />
             </div>
