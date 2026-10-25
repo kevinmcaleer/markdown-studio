@@ -52,6 +52,16 @@ port) can live under `packages/` next to the web app.
   People with comment access are always suggesting. Anyone who can edit accepts or rejects
   each suggestion from its hover card or the **Suggestions** tab of the comments panel, and
   replying to one starts a comment thread on the same passage.
+- **Spelling, grammar, Look Up and Translate:** misspelt words get a red squiggle and grammar
+  slips a blue one, as you type. Right-click a word for suggestions, **Ignore Spelling**,
+  **Add to Dictionary**, **Look Up** (a dictionary card, like macOS) and **Translate**
+  (Shift+right-click gives the browser's own menu). The language chip in the status bar
+  switches between English (UK), the default, and English (US), and turns the checks on or
+  off. Spelling uses Hunspell dictionaries that ship with the app, so it works offline. Look
+  Up uses WordNet, which the Docker image includes. Grammar has a few built-in checks
+  (repeated words, a/an, a lone "i"); set `LANGUAGETOOL_URL` for full grammar checking, and
+  `LIBRETRANSLATE_URL` to turn on Translate. Both can run on the same Pi or home network
+  (see [Language tools](#language-tools)), and both need a signed-in user.
 - **Export** a note as Word or PDF from its Download menu. Only images stored in Markdown
   Studio are included; the server never fetches outside URLs while exporting.
 - **Install and offline:** Notes installs as its own app (Chrome, Edge and Android offer
@@ -101,6 +111,25 @@ Each server needs its own Google OAuth client. It's free and takes ten minutes:
 Then each person connects their Google account from their Account page (or from a note's
 Sync menu). Disconnecting stops syncing; the Google Docs stay in their Drive. Google's
 refresh tokens are kept in `studio.db`, so protect its backups like the database itself.
+
+## Language tools
+
+Spelling and Look Up need nothing extra. Full grammar checking and Translate use two open
+source servers you can run yourself, so nothing you write leaves your network:
+
+- **[LanguageTool](https://languagetool.org)** for grammar. The `erikvl87/languagetool`
+  image runs on 64-bit Raspberry Pi OS; give it about 1 GB of RAM. Set
+  `LANGUAGETOOL_URL=http://languagetool:8010`.
+- **[LibreTranslate](https://libretranslate.com)** for Translate. The
+  `libretranslate/libretranslate` image runs on arm64 too, but its language models want
+  2 GB or more, so a Pi 5 (or another machine) suits it best. Load only the languages you
+  need with `LT_LOAD_ONLY`. Set `LIBRETRANSLATE_URL=http://libretranslate:5000`, and
+  `LIBRETRANSLATE_API_KEY` if your server requires keys.
+
+`docker-compose.yml` has both as optional services: add `language` to `COMPOSE_PROFILES` in
+`.env` to start them with the app. Spelling skips LanguageTool's own spell check (the
+editor's Hunspell already covers it) and its style hints. If either server is down, the
+editor falls back to the built-in grammar checks and greys out Translate.
 
 ## Tables
 
@@ -333,6 +362,9 @@ All settings are environment variables, normally set in `.env` (see `.env.exampl
 | `LOGIN_RATE_LIMIT` / `LOGIN_RATE_WINDOW` | `5` / `60` | Sign-in and sign-up attempts allowed per IP per window (seconds). |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | *(empty)* | OAuth client for Google Docs sync (see above). Empty hides Google Docs. |
 | `GOOGLE_SYNC_INTERVAL` | `300` | Seconds between background syncs of linked notes. `0` syncs only on request. |
+| `LANGUAGETOOL_URL` | *(empty)* | A LanguageTool server for grammar checking in Notes, e.g. `http://languagetool:8010`. Empty uses the built-in checks. |
+| `LIBRETRANSLATE_URL` / `LIBRETRANSLATE_API_KEY` | *(empty)* | A LibreTranslate server (and key, if it needs one) for Translate in Notes. Empty hides Translate. |
+| `WORDNET_DIR` | *(bundled)* | WordNet's database files for Look Up. The Docker image includes them; from a checkout, `npm install` fetches them. |
 | `POWERTOOLS_APPS_URL` | `https://kevspowertools.com/apps.json` | The shared list behind the app switcher. Empty uses the bundled copy. |
 | `PUID` / `PGID` | `1000` | Owner of files in `./data` (Docker only). |
 | `STUDIO_TAG` | `latest` | Image tag Docker runs and `scripts/auto-update.sh` follows: `latest`, `edge` or a version. |

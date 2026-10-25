@@ -24,6 +24,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=8000 \
     DATABASE_PATH=/data/studio.db \
     STATIC_DIR=/app/web \
+    WORDNET_DIR=/app/wordnet \
     PUID=1000 \
     PGID=1000
 
@@ -46,6 +47,8 @@ COPY server/studio/ ./studio/
 COPY scripts/ ./scripts/
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY --from=web /build/web/dist ./web
+# WordNet, for Look Up in Notes (from the wordnet-db npm package).
+COPY --from=web /build/node_modules/wordnet-db/dict ./wordnet
 RUN chmod +x /usr/local/bin/entrypoint.sh ./scripts/*.sh \
     && mkdir -p /data /backups
 

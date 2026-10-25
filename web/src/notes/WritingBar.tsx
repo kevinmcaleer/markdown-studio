@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { LanguageChip } from "./proofing/LanguageChip";
+import type { Proofing } from "./proofing/useProofing";
 import { countChars, countWords, readingMinutes, type SelectionStats } from "./writingMode";
 
 // The status bar under a note: counts, the day's word goal, and the writing
@@ -80,6 +82,7 @@ export function WritingBar({
   typewriter,
   onTypewriter,
   onFind,
+  proofing,
 }: {
   text: string;
   selection: SelectionStats;
@@ -90,6 +93,8 @@ export function WritingBar({
   typewriter?: boolean;
   onTypewriter?: (on: boolean) => void;
   onFind?: () => void;
+  /** The language chip; left out where nothing is proofed. */
+  proofing?: Proofing;
 }) {
   const stats = useMemo(() => {
     const words = countWords(text);
@@ -117,6 +122,7 @@ export function WritingBar({
           </>
         )}
       </span>
+      {proofing && <LanguageChip proofing={proofing} />}
       <GoalButton goal={goal} />
       <div className="spacer" />
       {onFind && (

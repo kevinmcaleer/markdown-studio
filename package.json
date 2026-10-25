@@ -9,5 +9,8 @@
     "build": "npm run build -w web",
     "test": "npm test -w web",
     "typecheck": "npm run typecheck -w web"
+  },
+  "devDependencies": {
+    "wordnet-db": "3.1.14"
   }
 }

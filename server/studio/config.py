@@ -67,6 +67,19 @@ def _stored_secret_key(path: Path) -> str:
     return key
 
 
+def _url(name: str, value: str | None) -> str:
+    url = (value or "").strip().rstrip("/")
+    if url and not url.startswith(("http://", "https://")):
+        raise ConfigError(f"{name} must start with http:// or https://, got {url!r}")
+    return url
+
+
+def _bundled_wordnet() -> Path | None:
+    """WordNet from the web app's npm packages, for running from a checkout."""
+    path = Path(__file__).resolve().parents[2] / "node_modules" / "wordnet-db" / "dict"
+    return path if path.is_dir() else None
+
+
 @dataclass(frozen=True)
 class Settings:
     app_env: str
@@ -107,6 +120,14 @@ class Settings:
     google_client_secret: str = ""
     # Seconds between background syncs of linked notes; 0 syncs only on request.
     google_sync_interval: int = 300
+    # Notes' language tools. Spelling needs nothing; these turn on the rest.
+    # A LanguageTool server for grammar (e.g. http://languagetool:8010).
+    languagetool_url: str = ""
+    # A LibreTranslate server for Translate, and its key if it needs one.
+    libretranslate_url: str = ""
+    libretranslate_api_key: str = ""
+    # WordNet's database files, for Lookup. The Docker image includes them.
+    wordnet_dir: Path | None = None
 
     @property
     def is_production(self) -> bool:
@@ -152,6 +173,10 @@ def load_settings(env: dict[str, str] | None = None) -> Settings:
     if google_sync_interval < 0:
         raise ConfigError("GOOGLE_SYNC_INTERVAL can't be negative.")
 
+    languagetool_url = _url("LANGUAGETOOL_URL", env.get("LANGUAGETOOL_URL"))
+    libretranslate_url = _url("LIBRETRANSLATE_URL", env.get("LIBRETRANSLATE_URL"))
+    wordnet_dir = env.get("WORDNET_DIR", "").strip()
+
     return Settings(
         app_env=app_env,
         secret_key=secret_key,
@@ -188,6 +213,10 @@ def load_settings(env: dict[str, str] | None = None) -> Settings:
         google_client_id=google_client_id,
         google_client_secret=google_client_secret,
         google_sync_interval=google_sync_interval,
+        languagetool_url=languagetool_url,
+        libretranslate_url=libretranslate_url,
+        libretranslate_api_key=env.get("LIBRETRANSLATE_API_KEY", "").strip(),
+        wordnet_dir=Path(wordnet_dir) if wordnet_dir else _bundled_wordnet(),
     )
 
 

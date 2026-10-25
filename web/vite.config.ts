@@ -35,6 +35,10 @@ function serviceWorker(): Plugin {
 // The Keynote theme files that ship with keynotejs, imported with ?url (see src/decks/keynote.ts).
 const keynoteTemplates = join(dirname(createRequire(import.meta.url).resolve("@kevsmac/keynotejs")), "../templates");
 
+// Hunspell dictionaries for spelling, imported with ?url (see src/notes/proofing/spellWorker.ts).
+// Their packages only export a Node entry point, so this reaches the files directly.
+const dictionary = (name: string) => dirname(createRequire(import.meta.url).resolve(name));
+
 // In development the Python server runs on :8000 (`make dev-server`) and Vite
 // proxies the API to it, so the browser sees one origin and cookies just work.
 const api = process.env.STUDIO_API ?? "http://127.0.0.1:8000";
@@ -42,7 +46,11 @@ const api = process.env.STUDIO_API ?? "http://127.0.0.1:8000";
 export default defineConfig({
   plugins: [react(), serviceWorker()],
   resolve: {
-    alias: [{ find: /^@keynote-templates\//, replacement: `${keynoteTemplates}/` }],
+    alias: [
+      { find: /^@keynote-templates\//, replacement: `${keynoteTemplates}/` },
+      { find: /^@dictionaries\/en-gb\//, replacement: `${dictionary("dictionary-en-gb")}/` },
+      { find: /^@dictionaries\/en\//, replacement: `${dictionary("dictionary-en")}/` },
+    ],
   },
   server: {
     port: 5173,

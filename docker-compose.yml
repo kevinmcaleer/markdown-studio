@@ -29,6 +29,28 @@ services:
       start_period: 10s
       retries: 3
 
+  # Grammar checking for Notes. Only starts with COMPOSE_PROFILES=language;
+  # then set LANGUAGETOOL_URL=http://languagetool:8010 in .env.
+  languagetool:
+    image: erikvl87/languagetool:latest
+    profiles: [language]
+    restart: unless-stopped
+    environment:
+      Java_Xms: 256m
+      Java_Xmx: 1g
+
+  # Translate for Notes. Only starts with COMPOSE_PROFILES=language; then set
+  # LIBRETRANSLATE_URL=http://libretranslate:5000 in .env. Its models are kept
+  # in a volume so they download once.
+  libretranslate:
+    image: libretranslate/libretranslate:latest
+    profiles: [language]
+    restart: unless-stopped
+    environment:
+      LT_LOAD_ONLY: ${LT_LOAD_ONLY:-en,fr,es,de}
+    volumes:
+      - libretranslate-models:/home/libretranslate/.local
+
   # Cloudflare Tunnel: publishes the suite at your hostname (e.g.
   # studio.kevspowertools.com) without opening any ports on this machine.
   # Only starts when COMPOSE_PROFILES=tunnel is set in .env.
@@ -48,3 +70,6 @@ services:
       timeout: 5s
       start_period: 15s
       retries: 3
+
+volumes:
+  libretranslate-models:
