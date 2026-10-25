@@ -1,5 +1,5 @@
 import { EditorView, keymap } from "@codemirror/view";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import { ApiError } from "../api";
 import { useNoteComments } from "../comments/useNoteComments";
@@ -20,6 +20,12 @@ import { SlideView } from "./SlideView";
 // current slide on the right. The text is co-edited live, like a note.
 
 type Mode = "edit" | "slides";
+
+// How much of the space beside the rail the Markdown gets; the slide gets the rest.
+const SPLIT_KEY = "decks.split";
+const SPLIT_DEFAULT = 0.5;
+const SPLIT_MIN = 0.2;
+const SPLIT_MAX = 0.8;
 
 type Loaded = { file: FileMeta; role: FileRole };
 
@@ -54,6 +60,7 @@ function OpenDeck({ file: initialFile, role, onChanged }: Loaded & { onChanged?:
   const [file, setFile] = useState(initialFile);
   const canEdit = role === "edit" || role === "owner";
   const [mode, setMode] = useState<Mode>(canEdit && window.innerWidth >= 700 ? "edit" : "slides");
+  const [split, setSplit] = useState(readSplit);
   const live = useLiveNote(file.id, user?.username ?? "Guest");
   const [text, setText] = useState<string | null>(null);
   const deck = useMemo(() => parseDeck(text ?? ""), [text]);
@@ -220,7 +227,7 @@ function OpenDeck({ file: initialFile, role, onChanged }: Loaded & { onChanged?:
         </div>
       ) : (
         <div className="note-main">
-          <div className="deck-body">
+          <div className="deck-body" style={{ "--deck-source": `${split * 100}fr`, "--deck-stage": `${(1 - split) * 100}fr` } as CSSProperties}>
             <ol
               ref={rail}
               className="deck-rail"
@@ -285,6 +292,7 @@ function OpenDeck({ file: initialFile, role, onChanged }: Loaded & { onChanged?:
                 />
               </div>
             )}
+            {mode === "edit" && <SplitHandle split={split} onChange={setSplit} />}
             <div className="deck-stage">
               {slide ? <SlideView slide={slide} /> : <EmptyDeck canEdit={canEdit} />}
               {slide?.notes && <div className="deck-notes">{slide.notes}</div>}
@@ -297,6 +305,86 @@ function OpenDeck({ file: initialFile, role, onChanged }: Loaded & { onChanged?:
       )}
     </article>
   );
+}
+
+// The divider between the Markdown and the slide: drag it, or use the arrow keys.
+// Double-click (or Enter) puts it back to half and half. The split is remembered on this device.
+function SplitHandle({ split, onChange }: { split: number; onChange: (split: number) => void }) {
+  const set = (value: number) => {
+    const next = Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, value));
+    onChange(next);
+    saveSplit(next);
+  };
+  const reset = () => {
+    onChange(SPLIT_DEFAULT);
+    saveSplit(SPLIT_DEFAULT);
+  };
+
+  return (
+    <div
+      className="deck-split"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize the editor and the slide"
+      aria-valuemin={SPLIT_MIN * 100}
+      aria-valuemax={SPLIT_MAX * 100}
+      aria-valuenow={Math.round(split * 100)}
+      tabIndex={0}
+      title="Drag to resize, double-click to reset"
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        const handle = e.currentTarget;
+        const source = handle.previousElementSibling!.getBoundingClientRect();
+        const stage = handle.nextElementSibling!.getBoundingClientRect();
+        const width = stage.right - source.left;
+        handle.setPointerCapture(e.pointerId);
+        handle.classList.add("dragging");
+        let last = split;
+        const move = (ev: PointerEvent) => {
+          last = Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, (ev.clientX - source.left) / width));
+          onChange(last);
+        };
+        const end = () => {
+          handle.removeEventListener("pointermove", move);
+          handle.removeEventListener("pointerup", end);
+          handle.removeEventListener("pointercancel", end);
+          handle.classList.remove("dragging");
+          saveSplit(last);
+        };
+        handle.addEventListener("pointermove", move);
+        handle.addEventListener("pointerup", end);
+        handle.addEventListener("pointercancel", end);
+      }}
+      onDoubleClick={reset}
+      onKeyDown={(e) => {
+        if (e.key === "ArrowLeft") set(split - 0.05);
+        else if (e.key === "ArrowRight") set(split + 0.05);
+        else if (e.key === "Enter") reset();
+        else return;
+        e.preventDefault();
+      }}
+    />
+  );
+}
+
+function readSplit(): number {
+  try {
+    const value = Number(localStorage.getItem(SPLIT_KEY));
+    if (value >= SPLIT_MIN && value <= SPLIT_MAX) return value;
+  } catch {
+    /* private mode */
+  }
+  return SPLIT_DEFAULT;
+}
+
+function saveSplit(value: number) {
+  try {
+    if (value === SPLIT_DEFAULT) localStorage.removeItem(SPLIT_KEY);
+    else localStorage.setItem(SPLIT_KEY, String(value));
+  } catch {
+    /* private mode */
+  }
 }
 
 function EmptyDeck({ canEdit }: { canEdit: boolean }) {
