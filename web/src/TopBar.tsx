@@ -66,8 +66,13 @@ function AppSwitcher({ current }: { current?: SuiteApp["id"] }) {
       {others.length > 0 && <div className="menu-heading">Power Tools</div>}
       {others.map((app) =>
         app.status === "live" ? (
-          <a key={app.id} href={app.url}>
+          <a
+            key={app.id}
+            href={app.url}
+            {...(app.external && { target: "_blank", rel: "noopener noreferrer" })}
+          >
             {app.name}
+            {app.external && <ExternalIcon />}
           </a>
         ) : (
           <span key={app.id} className="disabled">
@@ -127,6 +132,14 @@ function Menu({
         </div>
       )}
     </div>
+  );
+}
+
+function ExternalIcon() {
+  return (
+    <svg className="external" width="12" height="12" viewBox="0 0 12 12" aria-label="opens in a new tab">
+      <path d="M5 2H2v8h8V7M7 1.5h3.5V5M10.5 1.5 5.5 6.5" />
+    </svg>
   );
 }
 

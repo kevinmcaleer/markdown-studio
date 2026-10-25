@@ -3,6 +3,8 @@
     {"id": "puddle", "name": "Puddle", "url": "https://puddle.kevspowertools.com/", "description": "Messy data to tidy, in your browser", "status": "live"},
     {"id": "mermaid-factory", "name": "Mermaid Factory", "url": "https://mermaid.kevspowertools.com/", "description": "Mermaid diagrams with a live preview", "status": "live"},
     {"id": "markdown-studio", "name": "Markdown Studio", "url": "https://studio.kevspowertools.com/", "description": "Notes, Tables and Decks, together", "status": "soon"},
-    {"id": "wellyboot-bi", "name": "Wellyboot BI", "url": "https://wellyboot.kevspowertools.com/", "description": "Charts and dashboards from Puddle data", "status": "soon"}
+    {"id": "wellyboot-bi", "name": "Wellyboot BI", "url": "https://wellyboot.kevspowertools.com/", "description": "Charts and dashboards from Puddle data", "status": "soon"},
+    {"id": "noodleplanner", "name": "NoodlePlanner", "url": "https://www.noodleplanner.com/", "description": "Plan it out, step by step", "status": "live"},
+    {"id": "filmcolab", "name": "FilmColab", "url": "https://www.filmcolab.com/", "description": "Make films together", "status": "live"}
   ]
 }

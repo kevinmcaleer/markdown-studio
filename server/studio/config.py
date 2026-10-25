@@ -89,6 +89,8 @@ class Settings:
     static_dir: Path | None = None
     # The landing page's shared app list for the switcher; empty keeps the bundled copy.
     powertools_apps_url: str = "https://kevspowertools.com/apps.json"
+    # App ids to leave out of the switcher (e.g. noodleplanner, filmcolab on a home install).
+    powertools_hide: tuple[str, ...] = ()
     # Where users reach the app; reset links in emails point here.
     public_url: str = ""
     # Outgoing mail for password resets. No SMTP_HOST means no email resets
@@ -174,6 +176,9 @@ def load_settings(env: dict[str, str] | None = None) -> Settings:
         powertools_apps_url=env.get(
             "POWERTOOLS_APPS_URL", "https://kevspowertools.com/apps.json"
         ).strip(),
+        powertools_hide=tuple(
+            i.strip() for i in env.get("POWERTOOLS_HIDE", "").split(",") if i.strip()
+        ),
         public_url=public_url,
         smtp_host=smtp_host,
         smtp_port=_int("SMTP_PORT", env.get("SMTP_PORT"), 465 if smtp_security == "ssl" else 587),
