@@ -24,7 +24,18 @@ from starlette.routing import WebSocketRoute
 from powertools_auth import Auth, AuthSettings, SmtpMailer
 from powertools_auth.security import SECURITY_HEADERS
 
-from . import __version__, collab, comments, db, files, sharing, suggestions, sync, user_state
+from . import (
+    __version__,
+    collab,
+    comments,
+    db,
+    files,
+    language,
+    sharing,
+    suggestions,
+    sync,
+    user_state,
+)
 from .config import Settings, load_settings_or_exit
 from .gdocs import Google
 from .logging_config import configure_logging
@@ -116,6 +127,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.syncer = sync.Syncer(app.state, google)
     app.include_router(sync.make_router(auth, get_db, app.state.syncer))
     app.include_router(tables_api.make_router(auth, get_db))
+    app.state.language = language.Language(settings)
+    app.include_router(language.make_router(auth, app.state.language))
 
     @app.get("/health")
     def health():

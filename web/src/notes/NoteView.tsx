@@ -19,6 +19,8 @@ import { NoteTitle } from "./NoteTitle";
 import { useFilePlace } from "./place/useFilePlace";
 import { slashMenu } from "./slashMenu";
 import { smartPaste } from "./smartPaste";
+import { proofing as proofingExtension, setProofing } from "./proofing/proofing";
+import { useProofing } from "./proofing/useProofing";
 import { speechEditor } from "./speech/speechEditor";
 import { useDictation } from "./speech/useDictation";
 import { useReadAloud } from "./speech/useReadAloud";
@@ -40,6 +42,9 @@ const MODES: { mode: Mode; label: string; title: string }[] = [
 const MODE_KEY = "notes.view";
 
 type Loaded = { file: FileMeta; role: FileRole };
+
+// Spelling, grammar and the right-click menu. Built once; settings arrive by effect.
+const notesProofing = proofingExtension();
 
 export function NoteView({
   fileId,
@@ -114,6 +119,7 @@ function TextFile({
   const goal = useDailyGoal();
   const lint = useWritingLint();
   const addWritten = goal.add;
+  const proofing = useProofing(user !== null);
   // Pasted and dropped images go beside the note when it's yours, otherwise in your own files.
   const folderId = role === "owner" ? file.folder_id : null;
   const treeChanged = useRef(onRenamed);
@@ -140,7 +146,7 @@ function TextFile({
       ...comments.extensions,
       ...place.extensions,
       ...(markdown ? outline.extensions : []),
-      ...(markdown ? [slashMenu(), smartPaste({ uploadImage }), ...lint.extensions] : []),
+      ...(markdown ? [slashMenu(), smartPaste({ uploadImage }), ...lint.extensions, notesProofing] : []),
       findReplace(),
       writingMode(),
       speechEditor(),
@@ -151,6 +157,8 @@ function TextFile({
   const editorView = useRef<EditorView | null>(null);
   const writing = useRef({ focus, typewriter });
   writing.current = { focus, typewriter };
+  const proofingSettings = useRef(proofing.settings);
+  proofingSettings.current = proofing.settings;
   const commentsReady = comments.onReady;
   const placeReady = place.onReady;
   const outlineReady = outline.onReady;
@@ -159,6 +167,7 @@ function TextFile({
     (view: EditorView) => {
       editorView.current = view;
       view.dispatch({ effects: setWriting.of(writing.current) });
+      if (markdown) view.dispatch({ effects: setProofing.of(proofingSettings.current) });
       commentsReady(view);
       if (markdown) outlineReady(view);
       if (markdown) lintReady(view);
@@ -174,6 +183,10 @@ function TextFile({
     const view = editorView.current;
     if (view?.dom.isConnected) view.dispatch({ effects: setWriting.of({ focus, typewriter }) });
   }, [focus, typewriter]);
+  useEffect(() => {
+    const view = editorView.current;
+    if (markdown && view?.dom.isConnected) view.dispatch({ effects: setProofing.of(proofing.settings) });
+  }, [markdown, proofing.settings]);
   const renamed = (f: FileMeta) => (setFile(f), onRenamed());
   const title = (
     <NoteTitle file={file} canRename={role === "owner"} onRenamed={renamed} onEnter={() => editorView.current?.focus()} />
@@ -286,6 +299,7 @@ function TextFile({
             onTypewriter: setTypewriter,
             onFind: () => editorView.current && openSearchPanel(editorView.current),
             lint: markdown ? lint.status : undefined,
+            ...(markdown && { proofing }),
           })}
         />
       )}
