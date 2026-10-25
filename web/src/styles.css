@@ -807,8 +807,71 @@ select {
   border-right: 1px solid var(--border);
 }
 
+.note-source.titled {
+  display: flex;
+  flex-direction: column;
+}
+
+.note-source.titled .editor {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+
 .note-source .editor {
   height: 100%;
+}
+
+/* The title at the top of a note: its file name, in the reading font. It sits
+   in the same column as the text below it. */
+.note-title-wrap,
+h1.note-title {
+  width: 100%;
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 2rem calc(1.5rem + 6px) 0;
+}
+
+.note-preview .note-title-wrap,
+.note-preview h1.note-title {
+  padding-inline: 1.75rem;
+}
+
+.note-title {
+  display: block;
+  font-family: var(--font-serif);
+  font-size: 2.25rem;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+  color: var(--text);
+  overflow-wrap: break-word;
+}
+
+textarea.note-title {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  resize: none;
+  overflow: hidden;
+  outline: none;
+}
+
+textarea.note-title::placeholder {
+  color: var(--muted);
+}
+
+.note-title-wrap .error-text {
+  margin: 0.25rem 0 0;
+}
+
+/* The title takes the space the text would otherwise leave at the top. */
+.note-source.titled .editor .cm-content,
+.note-preview .note-title ~ .prose,
+.note-preview .note-title-wrap ~ .prose {
+  padding-top: 0.75rem;
 }
 
 .note-binary {

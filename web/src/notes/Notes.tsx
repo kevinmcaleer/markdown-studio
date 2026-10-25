@@ -72,7 +72,7 @@ export function Notes({ path }: { path: string }) {
 
   const newNote = () =>
     attempt(async () => {
-      const { file } = await files.createNote("Untitled.md", selectedFolder, "# Untitled\n\n");
+      const { file } = await files.createNote("Untitled.md", selectedFolder);
       if (selectedFolder !== null) setOpen((prev) => new Set(prev).add(selectedFolder));
       navigate(`/notes/${file.id}`);
       setRenaming(null);

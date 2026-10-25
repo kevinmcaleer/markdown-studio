@@ -1,5 +1,5 @@
-import { keymap } from "@codemirror/view";
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { keymap, type EditorView } from "@codemirror/view";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import { ApiError } from "../api";
 import { useNoteComments } from "../comments/useNoteComments";
@@ -12,6 +12,7 @@ import { Editor } from "./Editor";
 import { files, formatSize, isMarkdown, isText, TABLES_MIME, withShare, type FileMeta, type FileRole } from "./filesApi";
 import { LiveNote, type LiveStatus, type Peer } from "./live";
 import { renderMarkdown } from "./markdown";
+import { NoteTitle } from "./NoteTitle";
 
 type Mode = "write" | "split" | "read";
 
@@ -83,6 +84,19 @@ function TextFile({
     ],
     [live.note, comments.extensions],
   );
+  const editorView = useRef<EditorView | null>(null);
+  const commentsReady = comments.onReady;
+  const onEditorReady = useCallback(
+    (view: EditorView) => {
+      editorView.current = view;
+      commentsReady(view);
+    },
+    [commentsReady],
+  );
+  const renamed = (f: FileMeta) => (setFile(f), onRenamed());
+  const title = (
+    <NoteTitle file={file} canRename={role === "owner"} onRenamed={renamed} onEnter={() => editorView.current?.focus()} />
+  );
 
   useEffect(() => {
     if (!live.note || !live.ready) return;
@@ -113,7 +127,7 @@ function TextFile({
   return (
     <article className={`note mode-${mode}`}>
       <header className="note-bar">
-        <FileName file={file} canRename={role === "owner"} onRenamed={(f) => (setFile(f), onRenamed())} />
+        <FileName file={file} canRename={role === "owner"} onRenamed={renamed} />
         <LiveStatusBadge status={live.status} readOnly={!canEdit} />
         <div className="spacer" />
         <Presence peers={live.peers} />
@@ -145,12 +159,14 @@ function TextFile({
         <div className="note-main">
         <div className="note-body">
           {mode !== "read" && (
-            <div className="note-pane note-source">
-              <Editor initialDoc={live.note!.text.toString()} readOnly={!canEdit} history={false} extensions={extensions} onReady={comments.onReady} />
+            <div className="note-pane note-source titled">
+              {title}
+              <Editor initialDoc={live.note!.text.toString()} readOnly={!canEdit} history={false} extensions={extensions} onReady={onEditorReady} />
             </div>
           )}
           {markdown && mode !== "write" && (
             <div className="note-pane note-preview">
+              {mode === "read" && title}
               <div className="prose" dangerouslySetInnerHTML={{ __html: html }} />
             </div>
           )}
