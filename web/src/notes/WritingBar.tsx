@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { countChars, countWords, readingMinutes, type SelectionStats } from "./writingMode";
 
 // The status bar under a note: counts, the day's word goal, and the writing
@@ -80,6 +80,7 @@ export function WritingBar({
   typewriter,
   onTypewriter,
   onFind,
+  lint,
 }: {
   text: string;
   selection: SelectionStats;
@@ -90,6 +91,8 @@ export function WritingBar({
   typewriter?: boolean;
   onTypewriter?: (on: boolean) => void;
   onFind?: () => void;
+  /** The writing hints switch and score, from `useWritingLint`. */
+  lint?: ReactNode;
 }) {
   const stats = useMemo(() => {
     const words = countWords(text);
@@ -118,6 +121,7 @@ export function WritingBar({
         )}
       </span>
       <GoalButton goal={goal} />
+      {lint}
       <div className="spacer" />
       {onFind && (
         <button type="button" className="writing-toggle" title="Find and replace (Ctrl+F, Ctrl+H)" onClick={onFind}>
