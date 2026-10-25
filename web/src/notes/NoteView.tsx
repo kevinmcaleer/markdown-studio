@@ -14,6 +14,7 @@ import { LiveNote, type LiveStatus, type Peer } from "./live";
 import { renderMarkdown } from "./markdown";
 import { NoteTitle } from "./NoteTitle";
 import { slashMenu } from "./slashMenu";
+import { useOutline } from "./useOutline";
 
 /** "write" is the live view (rendered as you type); "raw" shows all the Markdown. */
 type Mode = "write" | "raw" | "split" | "read";
@@ -86,23 +87,36 @@ function TextFile({
   const html = useMemo(() => (markdown && (mode === "split" || mode === "read") ? renderMarkdown(preview) : ""), [markdown, mode, preview]);
   const comments = useNoteComments({ fileId: file.id, doc: text ?? "", role, text: live.note?.text });
   // Cloud sync needs an account, so it's for signed-in people who can edit.
+  const previewPane = useRef<HTMLDivElement>(null);
+  const outline = useOutline({
+    fileId: file.id,
+    doc: text ?? "",
+    canEdit,
+    editorMode: mode !== "read",
+    note: live.note,
+    threads: comments.placed,
+    previewRef: previewPane,
+  });
   const noteSync = useNoteSync(file.id, markdown && canEdit && user !== null);
   const extensions = useMemo(
     () => [
       ...(live.note ? [yCollab(live.note.text, live.note.provider.awareness, { undoManager: live.note.undo }), keymap.of(yUndoManagerKeymap)] : []),
       ...comments.extensions,
+      ...(markdown ? outline.extensions : []),
       ...(markdown ? [slashMenu()] : []),
     ],
-    [live.note, comments.extensions, markdown],
+    [live.note, comments.extensions, outline.extensions, markdown],
   );
   const editorView = useRef<EditorView | null>(null);
   const commentsReady = comments.onReady;
+  const outlineReady = outline.onReady;
   const onEditorReady = useCallback(
     (view: EditorView) => {
       editorView.current = view;
       commentsReady(view);
+      if (markdown) outlineReady(view);
     },
-    [commentsReady],
+    [commentsReady, outlineReady, markdown],
   );
   const renamed = (f: FileMeta) => (setFile(f), onRenamed());
   const title = (
@@ -151,6 +165,7 @@ function TextFile({
             ))}
           </div>
         )}
+        {markdown && outline.button}
         {comments.button}
         {role === "owner" && <ShareButton fileId={file.id} fileName={file.name} />}
         <SyncMenu note={file} role={role} sync={noteSync} currentText={() => live.note?.text.toString() ?? text ?? ""} />
@@ -168,6 +183,7 @@ function TextFile({
         </div>
       ) : (
         <div className="note-main">
+        {markdown && outline.panel}
         <div className="note-body">
           {mode !== "read" && (
             <div className="note-pane note-source titled">
@@ -183,7 +199,7 @@ function TextFile({
             </div>
           )}
           {markdown && (mode === "split" || mode === "read") && (
-            <div className="note-pane note-preview">
+            <div className="note-pane note-preview" ref={previewPane}>
               {mode === "read" && title}
               <div className="prose" dangerouslySetInnerHTML={{ __html: html }} />
             </div>
