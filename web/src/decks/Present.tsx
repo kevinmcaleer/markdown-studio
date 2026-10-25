@@ -1,14 +1,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { files } from "../notes/filesApi";
+import { navigate } from "../router";
 import { parseDeck, type Slide } from "./deck";
 import { SlideView } from "./SlideView";
 
 // Presenting: the slides full screen in this tab, and (optionally) presenter
 // view in a second window with the notes, the next slide and a timer. The two
 // windows keep each other in step over a BroadcastChannel, so either can move
-// through the slides.
+// through the slides. Esc or Exit in either window ends the show in both.
 
-type Message = { type: "hello" } | { type: "state"; index: number; text: string } | { type: "go"; index: number } | { type: "end" };
+type Message =
+  | { type: "hello" }
+  | { type: "state"; index: number; text: string }
+  | { type: "go"; index: number }
+  // Presenter view asks the presenting window to stop.
+  | { type: "exit" }
+  // The presenting window has stopped.
+  | { type: "end" };
 
 const channelName = (fileId: number) => `decks-present-${fileId}`;
 
@@ -41,6 +49,30 @@ function useNavigationKeys(go: (delta: number | "first" | "last") => void, extra
   }, []);
 }
 
+/**
+ * One BroadcastChannel per mounted window. It's made in an effect, not a memo,
+ * so StrictMode's mount, unmount, mount doesn't leave us posting on a closed one.
+ */
+function useChannel(fileId: number, onMessage: (data: Message, channel: BroadcastChannel) => void, onClose?: (channel: BroadcastChannel) => void) {
+  const [channel, setChannel] = useState<BroadcastChannel | null>(null);
+  const handler = useRef(onMessage);
+  handler.current = onMessage;
+  const closing = useRef(onClose);
+  closing.current = onClose;
+  useEffect(() => {
+    if (!("BroadcastChannel" in window)) return;
+    const ch = new BroadcastChannel(channelName(fileId));
+    ch.onmessage = ({ data }: MessageEvent<Message>) => handler.current(data, ch);
+    setChannel(ch);
+    return () => {
+      closing.current?.(ch);
+      ch.close();
+      setChannel(null);
+    };
+  }, [fileId]);
+  return channel;
+}
+
 function step(index: number, delta: number | "first" | "last", count: number): number {
   if (delta === "first") return 0;
   if (delta === "last") return Math.max(0, count - 1);
@@ -53,19 +85,30 @@ export function Presentation({ fileId, text, start, onExit }: { fileId: number; 
   const [index, setIndex] = useState(() => Math.min(start, Math.max(0, slides.length - 1)));
   const [black, setBlack] = useState(false);
   const root = useRef<HTMLDivElement>(null);
-  const channel = useMemo(() => ("BroadcastChannel" in window ? new BroadcastChannel(channelName(fileId)) : null), [fileId]);
   const state = useRef({ index, text });
   state.current = { index, text };
   const exit = useRef(onExit);
   exit.current = onExit;
-
-  useEffect(() => {
-    const el = root.current;
-    el?.requestFullscreen?.().catch(() => {
+  const [fullscreen, setFullscreen] = useState(false);
+  // Browsers drop full screen when a popup opens, so opening presenter view
+  // mustn't end the show; only leaving full screen yourself (Esc) does.
+  const presenterOpened = useRef(0);
+  const presenter = () => {
+    presenterOpened.current = Date.now();
+    openPresenterView(fileId);
+  };
+  const enterFullscreen = () =>
+    root.current?.requestFullscreen?.().catch(() => {
       /* not allowed (iOS Safari): the page still fills the window */
     });
+
+  useEffect(() => {
+    enterFullscreen();
     const left = () => {
-      if (!document.fullscreenElement) exit.current();
+      setFullscreen(!!document.fullscreenElement);
+      if (document.fullscreenElement) return;
+      if (Date.now() - presenterOpened.current < 2000 || !document.hasFocus()) return;
+      exit.current();
     };
     document.addEventListener("fullscreenchange", left);
     return () => {
@@ -74,17 +117,15 @@ export function Presentation({ fileId, text, start, onExit }: { fileId: number; 
     };
   }, []);
 
-  useEffect(() => {
-    if (!channel) return;
-    channel.onmessage = ({ data }: MessageEvent<Message>) => {
-      if (data.type === "hello") channel.postMessage({ type: "state", ...state.current } satisfies Message);
+  const channel = useChannel(
+    fileId,
+    (data, ch) => {
+      if (data.type === "hello") ch.postMessage({ type: "state", ...state.current } satisfies Message);
       else if (data.type === "go") setIndex(data.index);
-    };
-    return () => {
-      channel.postMessage({ type: "end" } satisfies Message);
-      channel.close();
-    };
-  }, [channel]);
+      else if (data.type === "exit") exit.current();
+    },
+    (ch) => ch.postMessage({ type: "end" } satisfies Message),
+  );
 
   useEffect(() => {
     channel?.postMessage({ type: "state", index, text } satisfies Message);
@@ -98,9 +139,25 @@ export function Presentation({ fileId, text, start, onExit }: { fileId: number; 
     (key) => {
       if (key === "Escape") exit.current();
       else if (key === "b" || key === ".") setBlack((b) => !b);
-      else if (key === "s") openPresenterView(fileId);
+      else if (key === "s") presenter();
+      else if (key === "f") enterFullscreen();
     },
   );
+
+  // The controls show while the mouse moves and fade after a few seconds idle,
+  // so they're there when you reach for them but not in the audience's way.
+  // Touch screens have no hover, so there they stay (see decks.css).
+  const [controls, setControls] = useState(true);
+  const idle = useRef(0);
+  const wake = () => {
+    setControls(true);
+    window.clearTimeout(idle.current);
+    idle.current = window.setTimeout(() => setControls(false), 3000);
+  };
+  useEffect(() => {
+    wake();
+    return () => window.clearTimeout(idle.current);
+  }, []);
 
   // Swipe on touch screens; click or tap to go forward.
   const swipe = useRef<number | null>(null);
@@ -109,7 +166,8 @@ export function Presentation({ fileId, text, start, onExit }: { fileId: number; 
   return (
     <div
       ref={root}
-      className="presentation"
+      className={controls ? "presentation controls-shown" : "presentation"}
+      onPointerMove={wake}
       onPointerDown={(e) => (swipe.current = e.clientX)}
       onPointerUp={(e) => {
         if (swipe.current === null || (e.target as HTMLElement).closest("a, button")) return;
@@ -123,10 +181,15 @@ export function Presentation({ fileId, text, start, onExit }: { fileId: number; 
         <span>
           {slides.length ? index + 1 : 0} / {slides.length}
         </span>
-        <button type="button" onClick={() => openPresenterView(fileId)}>
+        {!fullscreen && document.fullscreenEnabled && (
+          <button type="button" onClick={enterFullscreen}>
+            Full screen
+          </button>
+        )}
+        <button type="button" onClick={presenter}>
           Presenter view
         </button>
-        <button type="button" onClick={() => exit.current()}>
+        <button type="button" className="presentation-exit" onClick={() => exit.current()} title="Exit (Esc)">
           Exit
         </button>
       </div>
@@ -149,21 +212,38 @@ export function PresenterView({ fileId }: { fileId: number }) {
   const [error, setError] = useState("");
   const [started, setStarted] = useState(() => Date.now());
   const [now, setNow] = useState(() => Date.now());
-  const channel = useMemo(() => ("BroadcastChannel" in window ? new BroadcastChannel(channelName(fileId)) : null), [fileId]);
   const slides = useMemo(() => (text === null ? [] : shownSlides(text)), [text]);
 
+  // Leave presenter view: close this window if we opened it as a popup,
+  // otherwise go back to the deck.
+  const leave = () => {
+    window.close();
+    window.setTimeout(() => {
+      if (!window.closed) navigate(`/decks/${fileId}`);
+    }, 100);
+  };
+
+  const channel = useChannel(fileId, (data) => {
+    if (data.type === "state") {
+      setLinked(true);
+      setText(data.text);
+      setIndex(data.index);
+    } else if (data.type === "end" && linked) {
+      // The show has ended in the presenting window, so this one goes too.
+      setLinked(false);
+      leave();
+    }
+  });
+
   useEffect(() => {
-    if (!channel) return;
-    channel.onmessage = ({ data }: MessageEvent<Message>) => {
-      if (data.type === "state") {
-        setLinked(true);
-        setText(data.text);
-        setIndex(data.index);
-      } else if (data.type === "end") setLinked(false);
-    };
-    channel.postMessage({ type: "hello" } satisfies Message);
-    return () => channel.close();
+    channel?.postMessage({ type: "hello" } satisfies Message);
   }, [channel]);
+
+  // Esc or Exit here ends the show in the presenting window as well.
+  const end = () => {
+    if (linked) channel?.postMessage({ type: "exit" } satisfies Message);
+    leave();
+  };
 
   // Nobody presenting: load the deck ourselves.
   useEffect(() => {
@@ -179,11 +259,16 @@ export function PresenterView({ fileId }: { fileId: number }) {
     return () => window.clearInterval(timer);
   }, []);
 
-  useNavigationKeys((delta) => {
-    const next = step(index, delta, slides.length);
-    setIndex(next);
-    if (linked) channel?.postMessage({ type: "go", index: next } satisfies Message);
-  });
+  useNavigationKeys(
+    (delta) => {
+      const next = step(index, delta, slides.length);
+      setIndex(next);
+      if (linked) channel?.postMessage({ type: "go", index: next } satisfies Message);
+    },
+    (key) => {
+      if (key === "Escape") end();
+    },
+  );
 
   useEffect(() => {
     document.title = "Presenter view";
@@ -210,6 +295,10 @@ export function PresenterView({ fileId }: { fileId: number }) {
             Restart timer
           </button>
           <span className="muted small">{new Date(now).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+          <div className="spacer" />
+          <button type="button" className="menu-button presenter-exit" onClick={end} title="Exit (Esc)">
+            {linked ? "End show" : "Exit"}
+          </button>
         </div>
         <div className="presenter-next">
           <span className="muted small">Next</span>

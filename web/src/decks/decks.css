@@ -591,11 +591,6 @@
   background: #000;
   display: grid;
   place-items: center;
-  cursor: none;
-}
-
-.presentation:hover {
-  cursor: default;
 }
 
 .presentation .slide-present {
@@ -626,9 +621,20 @@
   transition: opacity 0.2s;
 }
 
-.presentation:hover .presentation-controls,
+.presentation.controls-shown .presentation-controls,
 .presentation-controls:focus-within {
   opacity: 1;
+}
+
+.presentation:not(.controls-shown) {
+  cursor: none;
+}
+
+/* No hover on touch screens, so keep Exit within reach. */
+@media (hover: none) {
+  .presentation-controls {
+    opacity: 1;
+  }
 }
 
 .presentation-controls button {
