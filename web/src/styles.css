@@ -927,6 +927,138 @@ textarea.note-title::placeholder {
   }
 }
 
+/* ------------------------------------------------- note page: writing mode */
+
+.writing-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 32px;
+  padding: 0.2rem 0.75rem 0.2rem 1rem;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+  transition: opacity 0.2s ease;
+}
+
+.writing-stats {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-right: 0.5rem;
+}
+
+.writing-toggle {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  font: inherit;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.writing-toggle:hover,
+.writing-toggle[aria-expanded="true"] {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.writing-toggle[aria-pressed="true"] {
+  color: var(--accent);
+}
+
+.writing-toggle.goal-done {
+  color: var(--success);
+}
+
+.goal-track {
+  display: block;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.goal-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.goal-done .goal-fill {
+  background: var(--success);
+}
+
+.goal-popover {
+  bottom: calc(100% + 6px);
+  top: auto;
+  left: 0;
+  z-index: 20;
+  width: 260px;
+  gap: 0.5rem;
+  padding: 0.75rem;
+}
+
+.goal-popover p {
+  margin: 0;
+}
+
+/* Focus mode: only the note is left, and the status bar fades until you need it. */
+html.writing-focus .topbar,
+html.writing-focus .notes-sidebar,
+html.writing-focus .sidebar-toggle,
+html.writing-focus .note-bar,
+html.writing-focus .note-comments,
+html.writing-focus .note-outline {
+  display: none !important;
+}
+
+html.writing-focus .app-page {
+  height: 100vh;
+  height: 100dvh;
+}
+
+html.writing-focus .notes {
+  grid-template-columns: 1fr;
+}
+
+html.writing-focus .note .cm-editor {
+  font-size: 17px;
+}
+
+html.writing-focus .note .cm-content,
+html.writing-focus .note .note-title-wrap,
+html.writing-focus .note h1.note-title {
+  max-width: 40rem;
+}
+
+html.writing-focus .writing-bar {
+  border-top-color: transparent;
+  opacity: 0.35;
+}
+
+html.writing-focus .writing-bar:hover,
+html.writing-focus .writing-bar:focus-within {
+  opacity: 1;
+}
+
+@media (max-width: 760px) {
+  /* Room for the floating files button. */
+  .writing-bar {
+    padding-right: 6.5rem;
+  }
+
+  .typewriter-toggle {
+    display: none;
+  }
+}
+
 /* ---------------------------------------------------------- rendered notes */
 
 .prose {
@@ -1572,6 +1704,137 @@ button.quote {
   display: flex;
   justify-content: flex-end;
   margin-top: 1rem;
+}
+
+/* ------------------------------------------------------------ suggestions */
+
+/* Comments | Suggestions, in the panel's header. */
+.panel-tabs {
+  flex: 1;
+  display: flex;
+  gap: 0.25rem;
+}
+
+.panel-tabs button {
+  padding: 0.2rem 0.1rem;
+  margin-right: 0.6rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.panel-tabs button[aria-selected="true"] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.panel-tab {
+  display: flex;
+  min-height: 0;
+}
+
+.panel-tab[hidden] {
+  display: none;
+}
+
+.sugg-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.sugg-tools .check {
+  margin-right: auto;
+}
+
+.sugg-badge {
+  align-self: center;
+}
+
+/* A suggested change in the editor: old text struck, new text underlined, in the author's colour. */
+.sugg-del {
+  text-decoration: line-through;
+  text-decoration-color: var(--sugg, var(--accent));
+  text-decoration-thickness: 2px;
+  color: color-mix(in srgb, var(--text) 55%, transparent);
+  cursor: pointer;
+}
+
+.sugg-ins {
+  color: var(--sugg, var(--accent));
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+  background: color-mix(in srgb, var(--sugg, var(--accent)) 10%, transparent);
+  white-space: pre-wrap;
+  cursor: pointer;
+}
+
+.sugg-del.active,
+.sugg-del.active + .sugg-ins {
+  background: color-mix(in srgb, var(--sugg, var(--accent)) 16%, transparent);
+}
+
+/* The change itself, on a card in the panel. */
+.sugg-change {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.sugg-change del,
+.sugg-card del {
+  color: var(--muted);
+}
+
+.sugg-change ins,
+.sugg-card ins {
+  color: var(--accent);
+  text-decoration-thickness: 2px;
+}
+
+.sugg-change .badge {
+  margin-left: 0.4rem;
+}
+
+.sugg-replies {
+  align-self: flex-start;
+  margin-left: -0.4rem;
+}
+
+/* The hover card over a suggestion in the editor. */
+.cm-tooltip.cm-tooltip-hover:has(.sugg-card) {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: var(--shadow);
+}
+
+.sugg-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-width: 320px;
+  padding: 0.6rem 0.75rem;
+  font-family: var(--font, inherit);
+}
+
+.sugg-card p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* ---------------------------------------------------------------- outline */
