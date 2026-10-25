@@ -3,6 +3,8 @@
 // Markdown; `diff` turns that into the smallest change, so an edit to one
 // cell doesn't rewrite the whole table under someone typing elsewhere in it.
 
+import { parseDelimited } from "../tables/csv";
+
 export type Align = "left" | "center" | "right" | null;
 
 export type Table = {
@@ -137,4 +139,65 @@ export function diff(from: string, to: string): { from: number; to: number; inse
     endB--;
   }
   return { from: start, to: endA, insert: to.slice(start, endB) };
+}
+
+// ---------------------------------------------------------------- pasting cells
+
+/**
+ * Cells copied from a spreadsheet (Excel, Numbers, Google Sheets, Tables), from
+ * the clipboard's tab-separated text, or null when it isn't a block of cells.
+ * Spreadsheets put an HTML table beside the text; without one, the text still
+ * counts when every line has the same number of tabs and isn't just indented.
+ */
+export function spreadsheetCells(text: string, html = ""): string[][] | null {
+  const fromSheet = /<table[\s>]/i.test(html);
+  if (!text.includes("\t") && !fromSheet) return null;
+  const rows = parseDelimited(text.replace(/\r?\n$/, ""), "\t", true);
+  const width = rows[0]?.length ?? 0;
+  if (width < 2 && rows.length < 2) return null;
+  if (!rows.every((row) => row.length === width)) return null;
+  if (!fromSheet) {
+    if (html || rows.length < 2 || width < 2) return null;
+    if (rows.every((row) => !row[0].trim())) return null;
+  }
+  return rows.map((row) => row.map((cell) => cell.trim()));
+}
+
+/** Cells as a new table, the first row its header. */
+export function tableFromCells(cells: string[][]): string {
+  const width = Math.max(...cells.map((row) => row.length));
+  const rows = cells.map((row) => Array.from({ length: width }, (_, i) => escapeCell(row[i] ?? "")));
+  return formatTable({ rows, align: rows[0].map(() => null) });
+}
+
+/**
+ * The table's Markdown with `cells` pasted in from (row, col) across and down,
+ * growing the table when they run past its edge. Cells that fit keep the rest
+ * of each line exactly as it was.
+ */
+export function pasteCells(source: string, row: number, col: number, cells: string[][]): string {
+  const table = parseTable(source);
+  if (!table) return source;
+  const width = Math.max(...cells.map((r) => r.length));
+  let grown = table;
+  while (grown.rows.length < row + cells.length) grown = insertRow(grown, grown.rows.length);
+  while (grown.align.length < col + width) grown = insertColumn(grown, grown.align.length);
+  let next = grown === table ? source : formatTable(grown);
+  cells.forEach((cellsInRow, r) => cellsInRow.forEach((text, c) => (next = setCell(next, row + r, col + c, text))));
+  return next;
+}
+
+/** The cell at `offset` in the table's Markdown, as [row, col]; on the delimiter line, the first body row. */
+export function cellAt(source: string, offset: number): [number, number] {
+  const before = source.slice(0, offset).split("\n");
+  const index = before.length - 1;
+  const line = before[index];
+  let col = 0;
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === "\\") i++;
+    else if (line[i] === "|") col++;
+  }
+  if (line.trimStart().startsWith("|")) col--;
+  const row = index === 0 ? 0 : Math.max(1, index - 1);
+  return [row, Math.max(0, col)];
 }

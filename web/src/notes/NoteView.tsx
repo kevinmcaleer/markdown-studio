@@ -16,6 +16,7 @@ import { LiveNote, type LiveStatus, type Peer } from "./live";
 import { renderMarkdown } from "./markdown";
 import { NoteTitle } from "./NoteTitle";
 import { slashMenu } from "./slashMenu";
+import { smartPaste } from "./smartPaste";
 import { useDailyGoal, useTypewriter, WritingBar } from "./WritingBar";
 import { setWriting, writingMode, writingStats, type SelectionStats } from "./writingMode";
 
@@ -96,16 +97,31 @@ function TextFile({
   const [selection, setSelection] = useState<SelectionStats>(null);
   const goal = useDailyGoal();
   const addWritten = goal.add;
+  // Pasted and dropped images go beside the note when it's yours, otherwise in your own files.
+  const folderId = role === "owner" ? file.folder_id : null;
+  const treeChanged = useRef(onRenamed);
+  treeChanged.current = onRenamed;
+  const uploadImage = useMemo(
+    () =>
+      user && canEdit
+        ? async (image: File) => {
+            const { file: stored } = await files.upload(image, folderId);
+            treeChanged.current();
+            return `/api/files/${stored.id}/content`;
+          }
+        : undefined,
+    [user, canEdit, folderId],
+  );
   const extensions = useMemo(
     () => [
       ...(live.note ? [yCollab(live.note.text, live.note.provider.awareness, { undoManager: live.note.undo }), keymap.of(yUndoManagerKeymap)] : []),
       ...comments.extensions,
-      ...(markdown ? [slashMenu()] : []),
+      ...(markdown ? [slashMenu(), smartPaste({ uploadImage })] : []),
       findReplace(),
       writingMode(),
       writingStats({ onSelection: setSelection, onWritten: addWritten }),
     ],
-    [live.note, comments.extensions, markdown, addWritten],
+    [live.note, comments.extensions, markdown, uploadImage, addWritten],
   );
   const editorView = useRef<EditorView | null>(null);
   const writing = useRef({ focus, typewriter });
