@@ -38,6 +38,12 @@ port) can live under `packages/` next to the web app.
   controls to add and remove rows and columns. **Raw** shows all the Markdown, **Split** puts
   it beside the preview, and **Preview** is read only. GFM tables, task lists, footnotes,
   fenced code with syntax highlighting, and `==highlights==` are all supported.
+- **Smart paste:** rich text from the web, Word, Google Docs or email arrives as Markdown (a
+  note under the cursor offers **Paste as plain text** instead). Cells copied from a
+  spreadsheet become a table, or fill the table you paste into. A URL pasted over selected
+  text makes it a link, and code from VS Code goes in a fence with its language. Pasted and
+  dropped images are uploaded beside the note. A bare URL's title is looked up by your
+  browser only, so the server never fetches outside URLs.
 - **Co-editing** is live: everyone editing a note sees each other's cursors and changes, merged
   without conflicts (Yjs over a WebSocket at `/api/files/{id}/live`). If you put a reverse
   proxy in front, let it pass WebSocket upgrades.
