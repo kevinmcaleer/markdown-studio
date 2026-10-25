@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deckTitle, isDeck, parseDeck, slideAtLine, STARTER_DECK } from "./deck";
+import { deckTitle, isDeck, moveSlide, parseDeck, slideAtLine, STARTER_DECK } from "./deck";
 
 describe("parseDeck", () => {
   it("splits slides on --- lines, but not inside code fences", () => {
@@ -63,5 +63,31 @@ describe("deck files", () => {
     expect(isDeck({ name: "Talk.deck.md" })).toBe(true);
     expect(isDeck({ name: "Talk.md" })).toBe(false);
     expect(deckTitle({ name: "Robots 101.deck.md" })).toBe("Robots 101");
+  });
+});
+
+describe("moveSlide", () => {
+  const text = "# One\n\n---\n\n## Two\n\n- a\n\n???\nnotes\n\n---\n\n## Three\n";
+  const titles = (t: string) => parseDeck(t).slides.map((s) => s.title);
+
+  it("moves a slide up or down, keeping its notes", () => {
+    expect(moveSlide(text, 2, 0)).toBe("## Three\n\n---\n\n# One\n\n---\n\n## Two\n\n- a\n\n???\nnotes\n");
+    expect(moveSlide(text, 0, 3)).toBe("## Two\n\n- a\n\n???\nnotes\n\n---\n\n## Three\n\n---\n\n# One\n");
+    expect(titles(moveSlide(text, 1, 0))).toEqual(["Two", "One", "Three"]);
+    expect(parseDeck(moveSlide(text, 1, 3)).slides[2].notes).toBe("notes");
+  });
+
+  it("leaves the text alone when the slide doesn't move", () => {
+    expect(moveSlide(text, 1, 1)).toBe(text);
+    expect(moveSlide(text, 1, 2)).toBe(text);
+    expect(moveSlide(text, 5, 0)).toBe(text);
+  });
+
+  it("doesn't split on --- inside code, and keeps the rest as written", () => {
+    const code = "# A\n---\n## B\n\n```\n---\n```\n---\n## C";
+    expect(titles(moveSlide(code, 1, 0))).toEqual(["B", "A", "C"]);
+    expect(moveSlide(code, 1, 0)).toContain("```\n---\n```");
+    expect(moveSlide(STARTER_DECK, 4, 1)).toMatch(/^# Untitled deck\n\nA subtitle goes here\n\n---\n\n## Code and tables/);
+    expect(titles(moveSlide(STARTER_DECK, 4, 1))).toEqual(["Untitled deck", "Code and tables", "A slide with bullets", "A section", null]);
   });
 });

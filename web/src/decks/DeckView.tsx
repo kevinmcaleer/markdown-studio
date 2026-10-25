@@ -9,7 +9,7 @@ import { files, type FileMeta, type FileRole } from "../notes/filesApi";
 import { LiveStatusBadge, Presence, useLiveNote } from "../notes/NoteView";
 import { ShareButton } from "../sharing/ShareButton";
 import { useSession } from "../session";
-import { DECK_SUFFIX, deckTitle, parseDeck, slideAtLine } from "./deck";
+import { DECK_SUFFIX, deckTitle, moveSlide, parseDeck, slideAtLine, type Deck } from "./deck";
 import { ExportMenu } from "./ExportMenu";
 import { Presentation } from "./Present";
 import { SlideView } from "./SlideView";
@@ -58,6 +58,10 @@ function OpenDeck({ file: initialFile, role, onChanged }: Loaded & { onChanged?:
   const [current, setCurrent] = useState(0);
   const [presenting, setPresenting] = useState<number | null>(null);
   const view = useRef<EditorView | null>(null);
+  const rail = useRef<HTMLOListElement | null>(null);
+  // While a thumbnail is dragged: which slide, and the gap it would drop into (before slide n).
+  const [drag, setDrag] = useState<{ from: number; before: number | null } | null>(null);
+  const refocus = useRef<number | null>(null);
   const comments = useNoteComments({ fileId: file.id, doc: text ?? "", role });
 
   // Which slide the cursor is on. Editor extensions are fixed at mount, so this reads the editor's own text.
@@ -90,10 +94,10 @@ function OpenDeck({ file: initialFile, role, onChanged }: Loaded & { onChanged?:
 
   const slide = deck.slides[Math.min(current, deck.slides.length - 1)];
 
-  function select(index: number) {
+  function select(index: number, slides: Deck = deck) {
     setCurrent(index);
     const v = view.current;
-    const target = deck.slides[index];
+    const target = slides.slides[index];
     if (!v?.dom.isConnected || !target) return;
     const line = v.state.doc.line(Math.min(target.startLine + 1, v.state.doc.lines));
     // Put the cursor on the slide's first line with text.
@@ -107,6 +111,58 @@ function OpenDeck({ file: initialFile, role, onChanged }: Loaded & { onChanged?:
     }
     v.dispatch({ selection: { anchor: pos }, effects: EditorView.scrollIntoView(pos, { y: "start", yMargin: 24 }) });
   }
+
+  // Reorders the slides in the shared text, as one change so it undoes in one step.
+  function reorder(from: number, before: number) {
+    const ytext = live.note?.text;
+    if (!ytext || !canEdit) return;
+    const old = ytext.toString();
+    const next = moveSlide(old, from, before);
+    if (next === old) return;
+    // Only rewrite the part between the common start and end, so other people's cursors and comments elsewhere stay put.
+    let a = 0;
+    while (a < old.length && a < next.length && old[a] === next[a]) a++;
+    let b = 0;
+    while (b < old.length - a && b < next.length - a && old[old.length - 1 - b] === next[next.length - 1 - b]) b++;
+    const apply = () => {
+      ytext.delete(a, old.length - a - b);
+      ytext.insert(a, next.slice(a, next.length - b));
+    };
+    if (ytext.doc) ytext.doc.transact(apply);
+    else apply();
+    const to = before > from ? before - 1 : before;
+    select(to, parseDeck(next));
+  }
+
+  function dragOver(e: React.DragEvent<HTMLLIElement>, index: number) {
+    if (!drag) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    const box = e.currentTarget.getBoundingClientRect();
+    // The rail runs across the top on phones, so the drop side follows its direction.
+    const across = rail.current && getComputedStyle(rail.current).flexDirection === "row";
+    const after = across ? e.clientX > box.left + box.width / 2 : e.clientY > box.top + box.height / 2;
+    const before = index + (after ? 1 : 0);
+    if (before !== drag.before) setDrag({ ...drag, before });
+  }
+
+  function thumbKey(e: React.KeyboardEvent<HTMLButtonElement>, index: number) {
+    if (!e.altKey || !canEdit) return;
+    const step = { ArrowUp: -1, ArrowLeft: -1, ArrowDown: 1, ArrowRight: 1 }[e.key];
+    if (!step) return;
+    e.preventDefault();
+    const to = index + step;
+    if (to < 0 || to >= deck.slides.length) return;
+    refocus.current = to;
+    reorder(index, step < 0 ? to : to + 1);
+  }
+
+  // After a keyboard move, keep focus on the slide that moved.
+  useEffect(() => {
+    if (refocus.current === null) return;
+    rail.current?.querySelectorAll<HTMLButtonElement>(".deck-thumb")[refocus.current]?.focus();
+    refocus.current = null;
+  }, [deck]);
 
   function addSlide() {
     const v = view.current;
@@ -123,6 +179,9 @@ function OpenDeck({ file: initialFile, role, onChanged }: Loaded & { onChanged?:
   const title = deckTitle(file);
   // Present starts on the selected slide, counted among the slides that are shown.
   const presentFrom = deck.slides.slice(0, current).filter((s) => !s.skipped).length;
+  // Where the drop line shows: nowhere when the drop wouldn't move the slide.
+  const dropAt = drag && drag.before !== null && drag.before !== drag.from && drag.before !== drag.from + 1 ? drag.before : null;
+  const canReorder = canEdit && deck.slides.length > 1;
 
   return (
     <article className={`note deck mode-${mode}`}>
@@ -159,17 +218,50 @@ function OpenDeck({ file: initialFile, role, onChanged }: Loaded & { onChanged?:
       ) : (
         <div className="note-main">
           <div className="deck-body">
-            <ol className="deck-rail" aria-label="Slides">
+            <ol
+              ref={rail}
+              className="deck-rail"
+              aria-label="Slides"
+              onDragOver={(e) => drag && e.preventDefault()}
+              onDrop={(e) => {
+                if (!drag) return;
+                e.preventDefault();
+                if (drag.before !== null) reorder(drag.from, drag.before);
+                setDrag(null);
+              }}
+            >
               {deck.slides.map((s) => (
-                <li key={s.index}>
-                  <button type="button" className={`deck-thumb ${s.index === current ? "current" : ""} ${s.skipped ? "skipped" : ""}`} aria-current={s.index === current} onClick={() => select(s.index)}>
+                <li
+                  key={s.index}
+                  className={[drag?.from === s.index && "dragging", dropAt === s.index && "drop-before", dropAt === deck.slides.length && s.index === deck.slides.length - 1 && "drop-after"]
+                    .filter(Boolean)
+                    .join(" ")}
+                  draggable={canReorder}
+                  onDragStart={(e) => {
+                    e.dataTransfer.effectAllowed = "move";
+                    // Firefox only starts a drag that carries some data.
+                    e.dataTransfer.setData("text/plain", s.title ?? `Slide ${s.index + 1}`);
+                    setDrag({ from: s.index, before: null });
+                  }}
+                  onDragOver={(e) => dragOver(e, s.index)}
+                  onDragEnd={() => setDrag(null)}
+                >
+                  <button
+                    type="button"
+                    className={`deck-thumb ${s.index === current ? "current" : ""} ${s.skipped ? "skipped" : ""}`}
+                    aria-current={s.index === current}
+                    aria-keyshortcuts={canReorder ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
+                    title={canReorder ? "Drag to reorder, or press Alt+Up or Alt+Down" : undefined}
+                    onClick={() => select(s.index)}
+                    onKeyDown={(e) => thumbKey(e, s.index)}
+                  >
                     <span className="deck-thumb-number">{s.index + 1}</span>
                     <SlideView slide={s} />
                   </button>
                 </li>
               ))}
               {canEdit && mode === "edit" && (
-                <li>
+                <li onDragOver={(e) => drag && (e.preventDefault(), drag.before !== deck.slides.length && setDrag({ ...drag, before: deck.slides.length }))}>
                   <button type="button" className="menu-button deck-add" onClick={addSlide}>
                     New slide
                   </button>
@@ -238,6 +330,9 @@ function DeckHelp() {
           <code>&lt;!-- transition: dissolve 1s --&gt;</code> sets the Keynote transition, and <code>&lt;!-- skipped --&gt;</code> hides a slide.
         </li>
         <li>Bullets, code, tables, quotes, images and ==highlights== all work.</li>
+        <li>
+          Drag a slide in the list to move it, or select it and press <kbd>Alt</kbd>+<kbd>↑</kbd> or <kbd>Alt</kbd>+<kbd>↓</kbd>.
+        </li>
       </ul>
     </details>
   );
