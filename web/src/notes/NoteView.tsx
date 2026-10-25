@@ -12,6 +12,7 @@ import { DownloadMenu } from "./DownloadMenu";
 import { Editor } from "./Editor";
 import { findReplace } from "./findReplace";
 import { files, formatSize, isMarkdown, isText, TABLES_MIME, withShare, type FileMeta, type FileRole } from "./filesApi";
+import { useWritingLint } from "./lint/useWritingLint";
 import { LiveNote, type LiveStatus, type Peer } from "./live";
 import { renderMarkdown } from "./markdown";
 import { NoteTitle } from "./NoteTitle";
@@ -111,6 +112,7 @@ function TextFile({
   const [typewriter, setTypewriter] = useTypewriter();
   const [selection, setSelection] = useState<SelectionStats>(null);
   const goal = useDailyGoal();
+  const lint = useWritingLint();
   const addWritten = goal.add;
   // Pasted and dropped images go beside the note when it's yours, otherwise in your own files.
   const folderId = role === "owner" ? file.folder_id : null;
@@ -138,13 +140,13 @@ function TextFile({
       ...comments.extensions,
       ...place.extensions,
       ...(markdown ? outline.extensions : []),
-      ...(markdown ? [slashMenu(), smartPaste({ uploadImage })] : []),
+      ...(markdown ? [slashMenu(), smartPaste({ uploadImage }), ...lint.extensions] : []),
       findReplace(),
       writingMode(),
       speechEditor(),
       writingStats({ onSelection: setSelection, onWritten: addWritten }),
     ],
-    [live.note, comments.extensions, place.extensions, outline.extensions, markdown, uploadImage, addWritten],
+    [live.note, comments.extensions, place.extensions, outline.extensions, markdown, uploadImage, addWritten, lint.extensions],
   );
   const editorView = useRef<EditorView | null>(null);
   const writing = useRef({ focus, typewriter });
@@ -152,15 +154,17 @@ function TextFile({
   const commentsReady = comments.onReady;
   const placeReady = place.onReady;
   const outlineReady = outline.onReady;
+  const lintReady = lint.onReady;
   const onEditorReady = useCallback(
     (view: EditorView) => {
       editorView.current = view;
       view.dispatch({ effects: setWriting.of(writing.current) });
       commentsReady(view);
       if (markdown) outlineReady(view);
+      if (markdown) lintReady(view);
       placeReady(view);
     },
-    [commentsReady, outlineReady, placeReady, markdown],
+    [commentsReady, outlineReady, placeReady, lintReady, markdown],
   );
   useWritingMode(focus, setFocus);
   const openEditor = () => (mode !== "read" && editorView.current?.dom.isConnected ? editorView.current : null);
@@ -281,6 +285,7 @@ function TextFile({
             typewriter,
             onTypewriter: setTypewriter,
             onFind: () => editorView.current && openSearchPanel(editorView.current),
+            lint: markdown ? lint.status : undefined,
           })}
         />
       )}
