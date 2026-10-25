@@ -12,6 +12,7 @@ import { Editor } from "./Editor";
 import { files, formatSize, isMarkdown, isText, TABLES_MIME, withShare, type FileMeta, type FileRole } from "./filesApi";
 import { LiveNote, type LiveStatus, type Peer } from "./live";
 import { renderMarkdown } from "./markdown";
+import { slashMenu } from "./slashMenu";
 
 type Mode = "write" | "split" | "read";
 
@@ -80,8 +81,9 @@ function TextFile({
     () => [
       ...(live.note ? [yCollab(live.note.text, live.note.provider.awareness, { undoManager: live.note.undo }), keymap.of(yUndoManagerKeymap)] : []),
       ...comments.extensions,
+      ...(markdown ? [slashMenu()] : []),
     ],
-    [live.note, comments.extensions],
+    [live.note, comments.extensions, markdown],
   );
 
   useEffect(() => {
