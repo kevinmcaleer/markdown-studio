@@ -1,5 +1,25 @@
 /* Bookmarks menu and the "Resumed where you left off" toast on the note page. */
 
+.bookmarks-button {
+  position: relative;
+}
+
+.bookmarks-count {
+  position: absolute;
+  top: 2px;
+  right: 1px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  text-align: center;
+}
+
 .bookmarks-menu .menu-list {
   right: 0;
   z-index: 20;

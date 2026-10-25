@@ -87,16 +87,20 @@ export function BookmarksMenu({
     <div className="menu bookmarks-menu" ref={ref}>
       <button
         type="button"
-        className="menu-button"
+        className="icon-button bookmarks-button"
         aria-haspopup="dialog"
         aria-expanded={open}
+        aria-label={`Bookmarks${list.bookmarks.length ? ` (${list.bookmarks.length})` : ""}`}
         title={`Bookmarks (${BOOKMARK_KEYS} to add one)`}
         onClick={() => {
           if (!open) onOpen();
           setOpen((o) => !o);
         }}
       >
-        Bookmarks{list.bookmarks.length > 0 ? ` (${list.bookmarks.length})` : ""}
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+          <path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4.5L5 21V4a1 1 0 0 1 1-1Zm1 2v12.3l5-3.2 5 3.2V5H7Z" />
+        </svg>
+        {list.bookmarks.length > 0 && <span className="bookmarks-count">{list.bookmarks.length}</span>}
       </button>
       {open && (
         <div className="menu-list bookmarks-pop" role="dialog" aria-label="Bookmarks">
