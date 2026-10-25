@@ -3,6 +3,7 @@ import { ApiError } from "../api";
 import { navigate } from "../router";
 import { FileTree, type Target, type TreeActions } from "./FileTree";
 import { files, folders, type Tree } from "./filesApi";
+import { NotesHome } from "./NotesHome";
 import { NoteView } from "./NoteView";
 import { ancestors, buildTree, descendants, folderPaths } from "./tree";
 
@@ -21,7 +22,8 @@ export function Notes({ path }: { path: string }) {
   const [renaming, setRenaming] = useState<Target | null>(null);
   const [menu, setMenu] = useState<{ target: Target; x: number; y: number } | null>(null);
   const [moving, setMoving] = useState<Target | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(currentFileId === null);
+  // On phones the home page shows the documents, so the file drawer starts closed.
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const uploadInput = useRef<HTMLInputElement>(null);
 
   const reload = useCallback(async () => {
@@ -170,7 +172,7 @@ export function Notes({ path }: { path: string }) {
           Files
         </button>
         {currentFileId === null ? (
-          <EmptyState onNew={newNote} />
+          <NotesHome tree={tree} onNew={newNote} onMenu={(file, anchor) => actions.menu({ kind: "file", item: file }, anchor)} />
         ) : (
           <NoteView
             key={currentFileId}
@@ -228,18 +230,6 @@ function readOpen(): number[] {
   } catch {
     return [];
   }
-}
-
-function EmptyState({ onNew }: { onNew: () => void }) {
-  return (
-    <div className="notes-empty">
-      <h1>Notes</h1>
-      <p className="muted">Pick a note from your files, or start a new one.</p>
-      <button type="button" className="primary" onClick={onNew}>
-        New note
-      </button>
-    </div>
-  );
 }
 
 function IconButton({ label, onClick, icon }: { label: string; onClick: () => void; icon: string }) {
