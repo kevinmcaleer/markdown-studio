@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deckTitle, isDeck, moveSlide, parseDeck, slideAtLine, STARTER_DECK } from "./deck";
+import { deckTitle, isDeck, moveSlide, parseDeck, slideAtLine, slideAtOffset, slidePin, STARTER_DECK } from "./deck";
 
 describe("parseDeck", () => {
   it("splits slides on --- lines, but not inside code fences", () => {
@@ -89,5 +89,22 @@ describe("moveSlide", () => {
     expect(moveSlide(code, 1, 0)).toContain("```\n---\n```");
     expect(moveSlide(STARTER_DECK, 4, 1)).toMatch(/^# Untitled deck\n\nA subtitle goes here\n\n---\n\n## Code and tables/);
     expect(titles(moveSlide(STARTER_DECK, 4, 1))).toEqual(["Untitled deck", "Code and tables", "A slide with bullets", "A section", null]);
+  });
+});
+
+describe("slidePin", () => {
+  const text = "# Deck\n\n---\n\n<!-- layout: section -->\n- ## Part two\n\nBody\n???\nnotes";
+  const deck = parseDeck(text);
+
+  it("pins a slide's comments to its first line of content", () => {
+    expect(slidePin(text, deck.slides[0])).toEqual({ from: 2, to: 6, text: "Deck", kind: "slide" });
+    const pin = slidePin(text, deck.slides[1]);
+    expect(pin?.text).toBe("Part two");
+    expect(text.slice(pin!.from, pin!.to)).toBe("Part two");
+  });
+
+  it("finds the slide an offset falls on", () => {
+    expect(slideAtOffset(deck, text, 3)).toBe(0);
+    expect(slideAtOffset(deck, text, text.indexOf("Body"))).toBe(1);
   });
 });

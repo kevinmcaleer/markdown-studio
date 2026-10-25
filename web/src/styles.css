@@ -1318,6 +1318,36 @@ button.quote {
   cursor: pointer;
 }
 
+/* The passage of a thread whose text was edited or deleted since. */
+.quote.removed {
+  border-left-color: var(--border);
+  text-decoration: line-through;
+}
+
+.quote .badge {
+  margin-left: 0.4rem;
+  text-decoration: none;
+  display: inline-block;
+}
+
+/* What a new comment will be pinned to, with a word/line switch. */
+.pin {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.pin-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.segmented.small button {
+  font-size: 0.75rem;
+  padding: 0.1rem 0.5rem;
+}
+
 .threads {
   list-style: none;
   margin: 0;
