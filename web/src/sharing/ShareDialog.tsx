@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ApiError } from "../api";
-import { ROLE_LABELS, sharing, shareUrl, type ShareLink, type ShareRole, type Shares } from "./api";
+import { copyText } from "../clipboard";
+import { isLocalOnly, ROLE_LABELS, sharing, shareUrl, type ShareLink, type ShareRole, type Shares } from "./api";
 
 const ROLES: ShareRole[] = ["view", "comment", "edit"];
 
@@ -34,7 +35,7 @@ export function ShareDialog({ fileId, fileName, onClose }: { fileId: number; fil
 
   async function copy(link: ShareLink) {
     try {
-      await navigator.clipboard.writeText(shareUrl(link));
+      await copyText(shareUrl(link), dialog.current);
       setCopied(link.id);
       setTimeout(() => setCopied((c) => (c === link.id ? null : c)), 2000);
     } catch {
@@ -105,6 +106,12 @@ export function ShareDialog({ fileId, fileName, onClose }: { fileId: number; fil
 
       <section>
         <h3>Links</h3>
+        {shares?.links.some((link) => isLocalOnly(link)) && (
+          <p className="muted small">
+            These links point at {window.location.hostname}, which only works on this computer. Open Markdown
+            Studio by its network address, or set PUBLIC_URL on the server, so others can use them.
+          </p>
+        )}
         <ul className="share-list">
           {shares?.links.map((link) => (
             <li key={link.id} className="share-link">

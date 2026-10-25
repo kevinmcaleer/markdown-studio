@@ -310,7 +310,7 @@ All settings are environment variables, normally set in `.env` (see `.env.exampl
 | `HTTPS` | `false` | Set `true` when served over HTTPS: cookies get the `Secure` flag. |
 | `TRUST_PROXY` | `false` | Honour `X-Forwarded-For` / `X-Forwarded-Proto` from a reverse proxy or tunnel. |
 | `COOKIE_DOMAIN` | *(empty)* | Share the login cookie with sibling subdomains, e.g. `.kevspowertools.com`. |
-| `PUBLIC_URL` | *(empty)* | The app's address as users see it. Required with `SMTP_HOST`; reset links use it. |
+| `PUBLIC_URL` | *(empty)* | The app's address as users see it. Required with `SMTP_HOST`; reset and share links use it. Empty means share links use whatever address the browser opened the app at. |
 | `SMTP_HOST` | *(empty)* | Mail server for password reset emails. Empty turns email resets off. |
 | `SMTP_SECURITY` | `starttls` | `starttls`, `ssl` (implicit TLS) or `none` (trusted local relay only). |
 | `SMTP_PORT` | `587` (`465` with `ssl`) | Mail server port. |
