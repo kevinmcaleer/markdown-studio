@@ -1,5 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { deleteColumn, deleteRow, diff, formatTable, insertColumn, insertRow, parseTable, setCell, splitRow } from "./markdownTable";
+import {
+  cellAt,
+  deleteColumn,
+  deleteRow,
+  diff,
+  formatTable,
+  insertColumn,
+  insertRow,
+  parseTable,
+  pasteCells,
+  setCell,
+  splitRow,
+  spreadsheetCells,
+  tableFromCells,
+} from "./markdownTable";
 
 const source = ["| Name | Qty |", "| :--- | ---: |", "| Apple | 3 |", "| Pear | 5 |"].join("\n");
 
@@ -82,5 +96,35 @@ describe("diff", () => {
   it("finds the smallest replacement", () => {
     expect(diff("| a | b |", "| a | bc |")).toEqual({ from: 7, to: 7, insert: "c" });
     expect(diff("same", "same")).toBeNull();
+  });
+});
+
+describe("pasting cells", () => {
+  it("reads spreadsheet cells, quoted new lines and all", () => {
+    expect(spreadsheetCells('a\t"two\nlines"\nc\td\n', "<table>")).toEqual([["a", "two\nlines"], ["c", "d"]]);
+    expect(spreadsheetCells("just text")).toBeNull();
+    expect(spreadsheetCells("one\ttwo\nthree")).toBeNull();
+  });
+
+  it("makes a table from cells", () => {
+    expect(tableFromCells([["a", "b|c"], ["1", "2"]])).toBe("| a | b\\|c |\n| --- | --- |\n| 1 | 2 |");
+  });
+
+  it("fills cells in place, keeping the other lines exactly", () => {
+    const source = "|A|B|\n|-|-|\n|1|2|";
+    expect(pasteCells(source, 1, 1, [["x"]])).toBe("|A|B|\n|-|-|\n|1| x |");
+  });
+
+  it("grows the table when cells run past its edge", () => {
+    const source = "| A | B |\n| --- | --- |\n| 1 | 2 |";
+    expect(pasteCells(source, 1, 1, [["x", "y"], ["z", "w"]])).toBe(
+      "| A | B |  |\n| --- | --- | --- |\n| 1 | x | y |\n|  | z | w |",
+    );
+  });
+
+  it("finds the cell at an offset", () => {
+    const source = "| A | B |\n| --- | --- |\n| 1 | 2 |";
+    expect(cellAt(source, source.indexOf("B"))).toEqual([0, 1]);
+    expect(cellAt(source, source.indexOf("1"))).toEqual([1, 0]);
   });
 });
