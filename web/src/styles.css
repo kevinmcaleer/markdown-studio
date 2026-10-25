@@ -1014,7 +1014,8 @@ html.writing-focus .topbar,
 html.writing-focus .notes-sidebar,
 html.writing-focus .sidebar-toggle,
 html.writing-focus .note-bar,
-html.writing-focus .note-comments {
+html.writing-focus .note-comments,
+html.writing-focus .note-outline {
   display: none !important;
 }
 
@@ -1834,4 +1835,180 @@ button.quote {
   margin: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------------------------- outline */
+
+.note-outline {
+  display: flex;
+  min-height: 0;
+}
+
+.note-outline[hidden] {
+  display: none;
+}
+
+.outline-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: 260px;
+  max-width: 100%;
+  padding: 0.75rem 0.5rem 1rem;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  overflow-y: auto;
+}
+
+.outline-panel > header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.25rem 0 0.5rem;
+}
+
+.outline-panel > header h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.outline-panel > p {
+  margin: 0;
+  padding: 0 0.5rem;
+}
+
+.outline-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.outline-item,
+.outline-end {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  border-radius: 6px;
+}
+
+.outline-item:hover {
+  background: var(--surface-2);
+}
+
+.outline-item.current {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.outline-item.current .outline-go {
+  color: var(--accent);
+}
+
+.outline-item.dragging {
+  opacity: 0.45;
+}
+
+/* The line a dropped section would land on. */
+.outline-item.drop-before::before,
+.outline-end.drop-before::before {
+  content: "";
+  position: absolute;
+  inset: -1px 0 auto 0;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+
+.outline-end {
+  justify-content: center;
+  margin-top: 0.25rem;
+  padding: 0.35rem;
+  border: 1px dashed var(--border);
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.outline-fold {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.outline-go {
+  flex: 1;
+  min-width: 0;
+  padding: 0.3rem 0.25rem;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.outline-item[draggable="true"] .outline-go {
+  cursor: grab;
+}
+
+.outline-text {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outline-text.level-1 {
+  font-weight: 600;
+}
+
+.outline-meta {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding-right: 0.4rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.outline-peers {
+  display: flex;
+}
+
+.outline-peers span {
+  width: 9px;
+  height: 9px;
+  margin-left: -3px;
+  border: 1.5px solid var(--surface);
+  border-radius: 50%;
+}
+
+.outline-comments {
+  min-width: 1.1rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--highlight) 80%, transparent);
+  color: var(--text);
+  text-align: center;
+}
+
+@media (max-width: 900px) {
+  .note-outline {
+    position: absolute;
+    inset: 0 auto 0 0;
+    z-index: 5;
+    width: min(260px, 100%);
+    box-shadow: var(--shadow);
+  }
 }
