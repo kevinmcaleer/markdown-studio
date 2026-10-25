@@ -39,10 +39,22 @@ def test_nobody_else_sees_an_unshared_file(two_users):
     assert sam.get(f"/api/files/{note['id']}/shares").status_code == 404
 
 
+def test_links_use_public_url(app_factory):
+    app = app_factory(PUBLIC_URL="https://studio.example.com/")
+    with Client(app) as kev:
+        assert kev.register("kev").status_code == 200
+        note = kev.post_json("/api/files", {"name": "Plan", "content": "# Plan"}).json()["file"]
+        link = make_link(kev, note, role="view")
+        assert link["url"] == f"https://studio.example.com/s/{link['token']}"
+        listed = kev.get(f"/api/files/{note['id']}/shares").json()["links"]
+        assert [entry["url"] for entry in listed] == [link["url"]]
+
+
 def test_anonymous_view_link(two_users):
     kev, sam, anon, note = two_users
     link = make_link(kev, note, role="view")
     assert link["path"] == f"/s/{link['token']}" and link["active"]
+    assert link["url"] is None  # no PUBLIC_URL: the browser adds its own origin
 
     opened = anon.get(f"/api/s/{link['token']}").json()
     assert opened["role"] == "view"

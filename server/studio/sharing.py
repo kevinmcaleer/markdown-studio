@@ -21,7 +21,7 @@ import sqlite3
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from powertools_auth import Auth
@@ -106,13 +106,15 @@ def create_link(
     return conn.execute("SELECT * FROM share_links WHERE id = ?", (cur.lastrowid,)).fetchone()
 
 
-def public_link(link: sqlite3.Row) -> dict:
+def public_link(link: sqlite3.Row, base_url: str = "") -> dict:
+    """base_url is PUBLIC_URL; when set, "url" is the full link to hand out."""
     now = utcnow()
     expired = link["expires_at"] is not None and link["expires_at"] <= now
     return {
         "id": link["id"],
         "token": link["token"],
         "path": f"/s/{link['token']}",
+        "url": f"{base_url}/s/{link['token']}" if base_url else None,
         "role": link["role"],
         "anonymous": bool(link["anonymous"]),
         "created_at": link["created_at"],
@@ -122,7 +124,7 @@ def public_link(link: sqlite3.Row) -> dict:
     }
 
 
-def list_shares(conn: sqlite3.Connection, file_id: int) -> dict:
+def list_shares(conn: sqlite3.Connection, file_id: int, base_url: str = "") -> dict:
     links = conn.execute(
         "SELECT * FROM share_links WHERE file_id = ? AND revoked_at IS NULL ORDER BY id",
         (file_id,),
@@ -133,7 +135,7 @@ def list_shares(conn: sqlite3.Connection, file_id: int) -> dict:
         (file_id,),
     ).fetchall()
     return {
-        "links": [public_link(link) for link in links],
+        "links": [public_link(link, base_url) for link in links],
         "members": [
             {
                 "user_id": m["user_id"],
@@ -200,6 +202,9 @@ class MemberBody(BaseModel):
 def make_router(auth: Auth, get_db) -> APIRouter:
     router = APIRouter(tags=["sharing"])
 
+    def base_url(request: Request) -> str:
+        return request.app.state.settings.public_url
+
     def owned_file(file_id: int, conn: sqlite3.Connection, user: sqlite3.Row) -> sqlite3.Row:
         """The file, if the user owns it. Anyone else gets the same 404."""
         row = conn.execute(
@@ -219,13 +224,19 @@ def make_router(auth: Auth, get_db) -> APIRouter:
         return link
 
     @router.get("/api/files/{file_id}/shares")
-    def get_shares(file_id: int, conn=Depends(get_db), user=Depends(auth.require_user)):
+    def get_shares(
+        file_id: int, request: Request, conn=Depends(get_db), user=Depends(auth.require_user)
+    ):
         owned_file(file_id, conn, user)
-        return list_shares(conn, file_id)
+        return list_shares(conn, file_id, base_url(request))
 
     @router.post("/api/files/{file_id}/shares")
     def add_link(
-        file_id: int, body: LinkBody, conn=Depends(get_db), user=Depends(auth.require_user)
+        file_id: int,
+        body: LinkBody,
+        request: Request,
+        conn=Depends(get_db),
+        user=Depends(auth.require_user),
     ):
         owned_file(file_id, conn, user)
         if body.expires_in_days is not None and not 1 <= body.expires_in_days <= 3650:
@@ -242,13 +253,14 @@ def make_router(auth: Auth, get_db) -> APIRouter:
             link = create_link(
                 conn, file_id, user["id"], body.role, body.anonymous, body.expires_in_days
             )
-        return {"link": public_link(link)}
+        return {"link": public_link(link, base_url(request))}
 
     @router.patch("/api/files/{file_id}/shares/{link_id}")
     def update_link(
         file_id: int,
         link_id: int,
         body: LinkUpdate,
+        request: Request,
         conn=Depends(get_db),
         user=Depends(auth.require_user),
     ):
@@ -260,7 +272,7 @@ def make_router(auth: Auth, get_db) -> APIRouter:
             "UPDATE share_links SET role = ?, anonymous = ? WHERE id = ?",
             (role, anonymous, link_id),
         )
-        return {"link": public_link(owned_link(file_id, link_id, conn))}
+        return {"link": public_link(owned_link(file_id, link_id, conn), base_url(request))}
 
     @router.delete("/api/files/{file_id}/shares/{link_id}")
     def revoke_link(
@@ -273,7 +285,11 @@ def make_router(auth: Auth, get_db) -> APIRouter:
 
     @router.post("/api/files/{file_id}/members")
     def add_member(
-        file_id: int, body: MemberBody, conn=Depends(get_db), user=Depends(auth.require_user)
+        file_id: int,
+        body: MemberBody,
+        request: Request,
+        conn=Depends(get_db),
+        user=Depends(auth.require_user),
     ):
         owned_file(file_id, conn, user)
         member = users.find_user(conn, body.username) if body.username.strip() else None
@@ -287,17 +303,21 @@ def make_router(auth: Auth, get_db) -> APIRouter:
             " ON CONFLICT (file_id, user_id) DO UPDATE SET role = excluded.role",
             (file_id, member["id"], body.role, user["id"], utcnow()),
         )
-        return list_shares(conn, file_id)
+        return list_shares(conn, file_id, base_url(request))
 
     @router.delete("/api/files/{file_id}/members/{member_id}")
     def remove_member(
-        file_id: int, member_id: int, conn=Depends(get_db), user=Depends(auth.require_user)
+        file_id: int,
+        member_id: int,
+        request: Request,
+        conn=Depends(get_db),
+        user=Depends(auth.require_user),
     ):
         owned_file(file_id, conn, user)
         conn.execute(
             "DELETE FROM file_members WHERE file_id = ? AND user_id = ?", (file_id, member_id)
         )
-        return list_shares(conn, file_id)
+        return list_shares(conn, file_id, base_url(request))
 
     @router.get("/api/shared-with-me")
     def shared_with_me(conn=Depends(get_db), user=Depends(auth.require_user)):

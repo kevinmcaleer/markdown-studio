@@ -10,6 +10,8 @@ export type ShareLink = {
   id: number;
   token: string;
   path: string;
+  /** The full link when the server has PUBLIC_URL set; null otherwise. */
+  url: string | null;
   role: ShareRole;
   anonymous: boolean;
   created_at: string;
@@ -50,8 +52,24 @@ export function allows(role: Role | null | undefined, needed: Role): boolean {
   return role != null && ROLE_ORDER.indexOf(role) >= ROLE_ORDER.indexOf(needed);
 }
 
-export function shareUrl(link: Pick<ShareLink, "path">, origin = window.location.origin): string {
-  return origin + link.path;
+export function shareUrl(link: Pick<ShareLink, "path" | "url">, origin = window.location.origin): string {
+  return link.url ?? origin + link.path;
+}
+
+/**
+ * True when a link built from this origin only works on this machine, e.g. the
+ * app was opened at http://0.0.0.0:8000 or localhost and PUBLIC_URL isn't set.
+ */
+export function isLocalOnly(link: Pick<ShareLink, "url">, hostname = window.location.hostname): boolean {
+  if (link.url) return false;
+  return (
+    hostname === "0.0.0.0" ||
+    hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
+    hostname === "[::1]" ||
+    hostname === "[::]" ||
+    /^127\./.test(hostname)
+  );
 }
 
 export const sharing = {
