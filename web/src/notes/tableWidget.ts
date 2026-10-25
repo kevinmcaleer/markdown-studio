@@ -1,0 +1,555 @@
+import { syntaxTree } from "@codemirror/language";
+import { StateField, type EditorState, type Range } from "@codemirror/state";
+import { Decoration, EditorView, runScopeHandlers, ViewPlugin, WidgetType, type DecorationSet } from "@codemirror/view";
+import { renderInline } from "./markdown";
+import {
+  deleteColumn,
+  deleteRow,
+  diff,
+  escapeCell,
+  formatTable,
+  insertColumn,
+  insertRow,
+  parseTable,
+  setCell,
+  type Table,
+} from "./markdownTable";
+
+// In the live view a table is drawn as a table, like Claude docs: type in its
+// cells, add a row or column from the bars below and to the right, and insert
+// or delete rows and columns from the handle on each one. Every change is an
+// edit to the Markdown underneath, so co-editing and undo work as for text.
+
+type TableRange = { from: number; to: number };
+
+/** The table blocks in the note: each one's Markdown drawn as a table widget. */
+export const tableField = StateField.define<DecorationSet>({
+  create: (state) => findTables(state),
+  update(tables, tr) {
+    if (tr.docChanged || syntaxTree(tr.state) !== syntaxTree(tr.startState) || tr.state.readOnly !== tr.startState.readOnly)
+      return findTables(tr.state);
+    return tables;
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
+
+function findTables(state: EditorState): DecorationSet {
+  const tables: Range<Decoration>[] = [];
+  syntaxTree(state).iterate({
+    enter(node) {
+      if (node.name === "Document") return true;
+      // Only top-level tables: one inside a quote or list has its markers on every line.
+      if (node.name === "Table" && node.node.parent?.name === "Document") {
+        const from = state.doc.lineAt(node.from).from;
+        const to = state.doc.lineAt(Math.max(node.from, node.to - 1)).to;
+        const source = state.sliceDoc(from, to);
+        if (parseTable(source))
+          tables.push(Decoration.replace({ widget: new TableWidget(source, !state.readOnly), block: true }).range(from, to));
+      }
+      return false;
+    },
+  });
+  return Decoration.set(tables);
+}
+
+/** The table that starts at `pos`, if there is one. */
+function tableAt(state: EditorState, pos: number): TableRange | null {
+  let found: TableRange | null = null;
+  state.field(tableField, false)?.between(pos, pos, (from, to) => {
+    if (from === pos) found = { from, to };
+  });
+  return found;
+}
+
+const views = new WeakMap<HTMLElement, TableView>();
+
+class TableWidget extends WidgetType {
+  constructor(
+    readonly source: string,
+    readonly editable: boolean,
+  ) {
+    super();
+  }
+
+  eq(other: TableWidget) {
+    return other.source === this.source && other.editable === this.editable;
+  }
+
+  toDOM(view: EditorView) {
+    const dom = document.createElement("div");
+    views.set(dom, new TableView(dom, view, this));
+    return dom;
+  }
+
+  updateDOM(dom: HTMLElement) {
+    const table = views.get(dom);
+    if (!table) return false;
+    table.update(this);
+    return true;
+  }
+
+  get estimatedHeight() {
+    return this.source.split("\n").length * 40;
+  }
+
+  // The table handles its own clicks and typing.
+  ignoreEvent() {
+    return true;
+  }
+
+  destroy(dom: HTMLElement) {
+    views.get(dom)?.destroy();
+  }
+}
+
+const ICONS = {
+  colLeft: "M6 2.5v11M2.5 6.5v3M1 8h3M9 2.5h4.5v11H9",
+  colRight: "M10 2.5v11M13.5 6.5v3M12 8h3M7 2.5H2.5v11H7",
+  rowAbove: "M2.5 6h11M6.5 2.5h3M8 1v3M2.5 9v4.5h11V9",
+  rowBelow: "M2.5 10h11M6.5 13.5h3M8 12v3M2.5 7V2.5h11V7",
+  delete: "M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.5 9h6l.5-9",
+  copy: "M5.5 5.5h8v8h-8zM10.5 5.5v-3h-8v8h3",
+};
+
+type MenuItem = { label: string; icon: string; run: () => void; disabled?: boolean };
+
+/** The DOM for one table, kept across edits so typing in a cell isn't interrupted. */
+class TableView {
+  private table: Table;
+  private source: string;
+  private editable: boolean;
+  private readonly scroller = el("div", "cm-md-table-scroll");
+  private readonly colHandle = button("cm-md-table-handle cm-md-table-colhandle", "Column options");
+  private readonly rowHandle = button("cm-md-table-handle cm-md-table-rowhandle", "Row options");
+  private readonly addCol = button("cm-md-table-add cm-md-table-addcol", "Add column");
+  private readonly addRow = button("cm-md-table-add cm-md-table-addrow", "Add row");
+  private readonly more = button("cm-md-table-more", "Table options");
+  private menu: HTMLElement | null = null;
+  private hover = { row: 0, col: 0 };
+  private closeMenuListener = (event: Event) => {
+    if (this.menu && !this.menu.contains(event.target as Node)) this.closeMenu();
+  };
+
+  constructor(
+    readonly dom: HTMLElement,
+    readonly view: EditorView,
+    widget: TableWidget,
+  ) {
+    this.source = widget.source;
+    this.editable = widget.editable;
+    this.table = parseTable(this.source)!;
+    dom.className = "cm-md-table";
+    dom.contentEditable = "false";
+    this.addCol.innerHTML = this.addRow.innerHTML = plusIcon();
+    this.more.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 8h.01M8 8h.01M12 8h.01"/></svg>';
+    this.colHandle.innerHTML = '<svg viewBox="0 0 16 8" aria-hidden="true"><path d="M4 4h.01M8 4h.01M12 4h.01"/></svg>';
+    this.rowHandle.innerHTML = '<svg viewBox="0 0 8 16" aria-hidden="true"><path d="M4 4h.01M4 8h.01M4 12h.01"/></svg>';
+    dom.append(this.scroller, this.colHandle, this.rowHandle, this.addCol, this.addRow, this.more);
+    this.render();
+
+    dom.addEventListener("mouseover", (e) => {
+      const cell = (e.target as HTMLElement).closest<HTMLElement>("th, td");
+      if (cell && !this.menu) this.setHover(Number(cell.dataset.row), Number(cell.dataset.col));
+    });
+    dom.addEventListener("focusin", (e) => {
+      const cell = e.target as HTMLElement;
+      if (!isCell(cell)) return;
+      cell.textContent = cell.dataset.raw ?? "";
+      this.setHover(Number(cell.dataset.row), Number(cell.dataset.col));
+    });
+    dom.addEventListener("focusout", (e) => {
+      const cell = e.target as HTMLElement;
+      if (isCell(cell)) cell.innerHTML = renderInline(cell.dataset.raw ?? "");
+    });
+    dom.addEventListener("input", (e) => {
+      const cell = e.target as HTMLElement;
+      if (!isCell(cell)) return;
+      const text = (cell.textContent ?? "").replace(/\n/g, " ");
+      cell.dataset.raw = escapeCell(text);
+      const row = Number(cell.dataset.row);
+      const col = Number(cell.dataset.col);
+      this.change((source) => setCell(source, row, col, text));
+    });
+    dom.addEventListener("paste", (e) => {
+      if (!isCell(e.target as HTMLElement)) return;
+      e.preventDefault();
+      const text = e.clipboardData?.getData("text/plain") ?? "";
+      document.execCommand("insertText", false, text.replace(/\r?\n/g, " "));
+    });
+    dom.addEventListener("keydown", (e) => this.keydown(e));
+    // Clicking a control shouldn't take the caret out of the cell first.
+    dom.addEventListener("mousedown", (e) => {
+      if ((e.target as HTMLElement).closest("button")) e.preventDefault();
+    });
+
+    this.addRow.addEventListener("click", () => this.structure((t) => insertRow(t, t.rows.length), this.table.rows.length, 0));
+    this.addCol.addEventListener("click", () => this.structure((t) => insertColumn(t, t.align.length), 0, this.table.align.length));
+    this.colHandle.addEventListener("click", () => this.columnMenu());
+    this.rowHandle.addEventListener("click", () => this.rowMenu());
+    this.more.addEventListener("click", () => this.tableMenu());
+  }
+
+  update(widget: TableWidget) {
+    this.source = widget.source;
+    this.editable = widget.editable;
+    this.table = parseTable(this.source)!;
+    this.render();
+  }
+
+  destroy() {
+    this.closeMenu();
+  }
+
+  /** Draws the table, reusing the cells when its shape hasn't changed. */
+  private render() {
+    const { rows, align } = this.table;
+    this.dom.classList.toggle("editable", this.editable);
+    let table = this.scroller.querySelector("table");
+    const sameShape =
+      table && table.rows.length === rows.length && Array.from(table.rows).every((tr) => tr.cells.length === align.length);
+    const focused = this.focusedCell();
+    if (!table || !sameShape) {
+      table = document.createElement("table");
+      const head = table.createTHead().insertRow();
+      const body = table.createTBody();
+      rows.forEach((cells, r) => {
+        const tr = r === 0 ? head : body.insertRow();
+        cells.forEach((_, c) => {
+          const cell = document.createElement(r === 0 ? "th" : "td");
+          cell.dataset.row = String(r);
+          cell.dataset.col = String(c);
+          tr.append(cell);
+        });
+      });
+      this.scroller.replaceChildren(table);
+    }
+    for (const tr of Array.from(table.rows)) {
+      for (const cell of Array.from(tr.cells)) {
+        const r = Number(cell.dataset.row);
+        const c = Number(cell.dataset.col);
+        const raw = rows[r][c];
+        cell.contentEditable = this.editable ? "true" : "false";
+        cell.style.textAlign = align[c] ?? "";
+        if (cell.dataset.raw === raw) continue;
+        const editing = sameShape && focused?.row === r && focused.col === c;
+        cell.dataset.raw = raw;
+        if (editing) {
+          // Someone else (or undo) changed the cell being typed in.
+          cell.textContent = raw;
+          caretAtEnd(cell);
+        } else cell.innerHTML = renderInline(raw);
+      }
+    }
+    if (focused && !sameShape) this.focusCell(Math.min(focused.row, rows.length - 1), Math.min(focused.col, align.length - 1));
+    this.setHover(Math.min(this.hover.row, rows.length - 1), Math.min(this.hover.col, align.length - 1));
+  }
+
+  private cell(row: number, col: number): HTMLElement | null {
+    return this.scroller.querySelector(`[data-row="${row}"][data-col="${col}"]`);
+  }
+
+  private focusedCell(): { row: number; col: number } | null {
+    const active = this.dom.ownerDocument.activeElement as HTMLElement | null;
+    if (!active || !isCell(active) || !this.dom.contains(active)) return null;
+    return { row: Number(active.dataset.row), col: Number(active.dataset.col) };
+  }
+
+  /** Puts the caret in a cell; `select` selects its text instead. */
+  focusCell(row: number, col: number, select = false) {
+    const cell = this.cell(row, col);
+    if (!cell || !this.editable) return;
+    cell.focus();
+    if (select) {
+      const range = document.createRange();
+      range.selectNodeContents(cell);
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    } else caretAtEnd(cell);
+  }
+
+  private setHover(row: number, col: number) {
+    this.hover = { row, col };
+    const cell = this.cell(row, col);
+    if (!cell) return;
+    const base = this.dom.getBoundingClientRect();
+    const box = cell.getBoundingClientRect();
+    const table = this.scroller.getBoundingClientRect();
+    this.colHandle.style.left = `${box.left - base.left + box.width / 2}px`;
+    this.colHandle.style.top = `${table.top - base.top}px`;
+    this.rowHandle.style.left = `${table.left - base.left}px`;
+    this.rowHandle.style.top = `${box.top - base.top + box.height / 2}px`;
+  }
+
+  /** Applies an edit to the table's Markdown as the smallest change to the note. */
+  private change(edit: (source: string) => string): TableRange | null {
+    let pos: number;
+    try {
+      pos = this.view.posAtDOM(this.dom);
+    } catch {
+      return null;
+    }
+    const range = tableAt(this.view.state, pos);
+    if (!range) return null;
+    const current = this.view.state.sliceDoc(range.from, range.to);
+    const change = diff(current, edit(current));
+    if (change)
+      this.view.dispatch({
+        changes: { from: range.from + change.from, to: range.from + change.to, insert: change.insert },
+        userEvent: "input.type.table",
+      });
+    return range;
+  }
+
+  /** Adds or removes rows or columns, then puts the caret in the given cell. */
+  private structure(edit: (table: Table) => Table, row: number, col: number) {
+    this.closeMenu();
+    const range = this.change((source) => {
+      const table = parseTable(source);
+      return table ? formatTable(edit(table)) : source;
+    });
+    if (!range) return;
+    // The edit can redraw the table as a new widget; find whichever holds it now.
+    const view = tableViewAt(this.view, range.from) ?? this;
+    const { rows, align } = view.table;
+    view.focusCell(Math.max(0, Math.min(row, rows.length - 1)), Math.max(0, Math.min(col, align.length - 1)));
+  }
+
+  private keydown(e: KeyboardEvent) {
+    const cell = e.target as HTMLElement;
+    if (!isCell(cell)) {
+      if (e.key === "Escape") this.closeMenu();
+      return;
+    }
+    const row = Number(cell.dataset.row);
+    const col = Number(cell.dataset.col);
+    const lastRow = this.table.rows.length - 1;
+    const lastCol = this.table.align.length - 1;
+    const mod = e.metaKey || e.ctrlKey;
+    if (mod && /^[zy]$/i.test(e.key)) {
+      // Undo and redo are the note's, not the cell's.
+      e.preventDefault();
+      runScopeHandlers(this.view, e, "editor");
+      return;
+    }
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (row < lastRow) this.focusCell(row + 1, col);
+      else this.structure((t) => insertRow(t, t.rows.length), row + 1, col);
+    } else if (e.key === "Tab") {
+      e.preventDefault();
+      if (e.shiftKey) {
+        if (col > 0) this.focusCell(row, col - 1);
+        else if (row > 0) this.focusCell(row - 1, lastCol);
+      } else if (col < lastCol) this.focusCell(row, col + 1);
+      else if (row < lastRow) this.focusCell(row + 1, 0);
+      else this.structure((t) => insertRow(t, t.rows.length), row + 1, 0);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (row > 0) this.focusCell(row - 1, col);
+      else this.leave(-1);
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (row < lastRow) this.focusCell(row + 1, col);
+      else this.leave(1);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      this.leave(1);
+    }
+  }
+
+  /** Moves the caret out of the table, to the line above or below it. */
+  private leave(dir: -1 | 1) {
+    let pos: number;
+    try {
+      pos = this.view.posAtDOM(this.dom);
+    } catch {
+      return;
+    }
+    const range = tableAt(this.view.state, pos);
+    if (!range) return;
+    const { doc } = this.view.state;
+    this.view.focus();
+    if (dir < 0) {
+      if (range.from > 0) this.view.dispatch({ selection: { anchor: range.from - 1 }, scrollIntoView: true });
+      else this.view.dispatch({ changes: { from: 0, insert: "\n" }, selection: { anchor: 0 }, scrollIntoView: true });
+      return;
+    }
+    // Below: onto an empty line with a blank line between it and the table,
+    // since a line of text right under a table would become one of its rows.
+    const next = range.to < doc.length ? doc.lineAt(range.to + 1) : null;
+    if (next && next.text.trim()) {
+      this.view.dispatch({ selection: { anchor: next.from }, scrollIntoView: true });
+    } else if (next && next.number < doc.lines && !doc.line(next.number + 1).text.trim()) {
+      this.view.dispatch({ selection: { anchor: doc.line(next.number + 1).from }, scrollIntoView: true });
+    } else if (next) {
+      const atEnd = next.number === doc.lines;
+      this.view.dispatch({ changes: { from: next.to, insert: atEnd ? "\n" : "\n\n" }, selection: { anchor: next.to + 1 }, scrollIntoView: true });
+    } else {
+      this.view.dispatch({ changes: { from: range.to, insert: "\n\n" }, selection: { anchor: range.to + 2 }, scrollIntoView: true });
+    }
+  }
+
+  private columnMenu() {
+    const { col } = this.hover;
+    this.openMenu(this.colHandle, [
+      { label: "Insert column left", icon: ICONS.colLeft, run: () => this.structure((t) => insertColumn(t, col), this.hover.row, col) },
+      { label: "Insert column right", icon: ICONS.colRight, run: () => this.structure((t) => insertColumn(t, col + 1), this.hover.row, col + 1) },
+      {
+        label: "Delete column",
+        icon: ICONS.delete,
+        disabled: this.table.align.length < 2,
+        run: () => this.structure((t) => deleteColumn(t, col), this.hover.row, col),
+      },
+    ]);
+    this.select((cell) => Number(cell.dataset.col) === col);
+  }
+
+  private rowMenu() {
+    const { row } = this.hover;
+    this.openMenu(this.rowHandle, [
+      // The header is always the first row, so nothing goes above it.
+      { label: "Insert row above", icon: ICONS.rowAbove, disabled: row === 0, run: () => this.structure((t) => insertRow(t, row), row, this.hover.col) },
+      { label: "Insert row below", icon: ICONS.rowBelow, run: () => this.structure((t) => insertRow(t, row + 1), row + 1, this.hover.col) },
+      {
+        label: "Delete row",
+        icon: ICONS.delete,
+        disabled: row === 0,
+        run: () => this.structure((t) => deleteRow(t, row), row - 1, this.hover.col),
+      },
+    ]);
+    this.select((cell) => Number(cell.dataset.row) === row);
+  }
+
+  private tableMenu() {
+    this.openMenu(this.more, [
+      {
+        label: "Copy as Markdown",
+        icon: ICONS.copy,
+        run: () => {
+          this.closeMenu();
+          void navigator.clipboard?.writeText(this.source);
+        },
+      },
+      {
+        label: "Delete table",
+        icon: ICONS.delete,
+        run: () => {
+          this.closeMenu();
+          const range = tableAt(this.view.state, this.view.posAtDOM(this.dom));
+          if (!range) return;
+          const { doc } = this.view.state;
+          const to = range.to < doc.length ? range.to + 1 : range.to;
+          this.view.focus();
+          this.view.dispatch({ changes: { from: range.from, to }, selection: { anchor: range.from }, userEvent: "delete.table" });
+        },
+      },
+    ]);
+  }
+
+  private select(test: (cell: HTMLElement) => boolean) {
+    this.scroller.querySelectorAll<HTMLElement>("th, td").forEach((cell) => cell.classList.toggle("selected", test(cell)));
+  }
+
+  private openMenu(anchor: HTMLElement, items: MenuItem[]) {
+    this.closeMenu();
+    if (!this.editable) return;
+    const menu = el("div", "cm-md-table-menu");
+    menu.setAttribute("role", "menu");
+    for (const item of items) {
+      const entry = button("", item.label);
+      entry.setAttribute("role", "menuitem");
+      entry.disabled = !!item.disabled;
+      entry.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="${item.icon}"/></svg><span></span>`;
+      entry.querySelector("span")!.textContent = item.label;
+      entry.removeAttribute("title");
+      entry.addEventListener("click", item.run);
+      menu.append(entry);
+    }
+    const base = this.dom.getBoundingClientRect();
+    const box = anchor.getBoundingClientRect();
+    menu.style.top = `${box.bottom - base.top + 4}px`;
+    menu.style.left = `${Math.max(0, box.left - base.left)}px`;
+    this.dom.append(menu);
+    this.dom.classList.add("menu-open");
+    this.menu = menu;
+    window.setTimeout(() => document.addEventListener("mousedown", this.closeMenuListener));
+  }
+
+  private closeMenu() {
+    if (!this.menu) return;
+    this.menu.remove();
+    this.menu = null;
+    this.dom.classList.remove("menu-open");
+    this.select(() => false);
+    document.removeEventListener("mousedown", this.closeMenuListener);
+  }
+}
+
+function tableViewAt(view: EditorView, from: number): TableView | null {
+  for (const dom of Array.from(view.contentDOM.querySelectorAll<HTMLElement>(".cm-md-table"))) {
+    try {
+      if (view.posAtDOM(dom) === from) return views.get(dom) ?? null;
+    } catch {
+      /* not in the document any more */
+    }
+  }
+  return null;
+}
+
+/**
+ * When the editor's cursor lands inside a table (the / menu just made one,
+ * say), carries on in the matching cell, with its text selected.
+ */
+export const tableCursor = ViewPlugin.define(() => ({
+  update(update) {
+    if (!(update.selectionSet || update.docChanged) || !update.view.hasFocus) return;
+    const { state, view } = update;
+    const head = state.selection.main.head;
+    let target: { from: number; row: number; col: number } | null = null;
+    state.field(tableField, false)?.between(head, head, (from, to) => {
+      if (head <= from || head > to) return;
+      const line = state.doc.lineAt(head);
+      const index = line.number - state.doc.lineAt(from).number;
+      const before = line.text.slice(0, head - line.from);
+      const pipes = (before.match(/(?<!\\)\|/g) ?? []).length;
+      const col = Math.max(0, line.text.trimStart().startsWith("|") ? pipes - 1 : pipes);
+      target = { from, row: index < 2 ? 0 : index - 1, col };
+    });
+    if (!target) return;
+    const { from, row, col } = target;
+    window.setTimeout(() => tableViewAt(view, from)?.focusCell(row, col, true));
+  },
+}));
+
+function isCell(node: HTMLElement): boolean {
+  return node.nodeType === 1 && (node.tagName === "TD" || node.tagName === "TH");
+}
+
+function el(tag: string, className: string): HTMLElement {
+  const node = document.createElement(tag);
+  node.className = className;
+  return node;
+}
+
+function button(className: string, label: string): HTMLButtonElement {
+  const node = document.createElement("button");
+  node.type = "button";
+  node.className = className;
+  node.title = label;
+  node.setAttribute("aria-label", label);
+  return node;
+}
+
+function plusIcon(): string {
+  return '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 4v8M4 8h8"/></svg>';
+}
+
+function caretAtEnd(cell: HTMLElement) {
+  const range = document.createRange();
+  range.selectNodeContents(cell);
+  range.collapse(false);
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+}

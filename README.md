@@ -33,8 +33,11 @@ port) can live under `packages/` next to the web app.
 
 - **Files and folders** live in `studio.db` (contents as blobs). Drag to move, drop files from
   your desktop to upload. `MAX_UPLOAD_MB` (default 25) caps uploads.
-- **The editor** shows Markdown with live preview: GFM tables, task lists, footnotes, fenced
-  code with syntax highlighting, and `==highlights==`.
+- **The editor** shows Markdown as it reads while you type (headings, lists, links, quotes),
+  with the Markdown syntax only on the line the cursor is on. Tables are drawn as tables, with
+  controls to add and remove rows and columns. **Raw** shows all the Markdown, **Split** puts
+  it beside the preview, and **Preview** is read only. GFM tables, task lists, footnotes,
+  fenced code with syntax highlighting, and `==highlights==` are all supported.
 - **Co-editing** is live: everyone editing a note sees each other's cursors and changes, merged
   without conflicts (Yjs over a WebSocket at `/api/files/{id}/live`). If you put a reverse
   proxy in front, let it pass WebSocket upgrades.
