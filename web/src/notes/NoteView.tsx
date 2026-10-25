@@ -1,3 +1,4 @@
+import { openSearchPanel } from "@codemirror/search";
 import { keymap, type EditorView } from "@codemirror/view";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
@@ -9,11 +10,14 @@ import { SyncBanners, SyncMenu, useNoteSync } from "../sync/Sync";
 import { useSession } from "../session";
 import { DownloadMenu } from "./DownloadMenu";
 import { Editor } from "./Editor";
+import { findReplace } from "./findReplace";
 import { files, formatSize, isMarkdown, isText, TABLES_MIME, withShare, type FileMeta, type FileRole } from "./filesApi";
 import { LiveNote, type LiveStatus, type Peer } from "./live";
 import { renderMarkdown } from "./markdown";
 import { NoteTitle } from "./NoteTitle";
 import { slashMenu } from "./slashMenu";
+import { useDailyGoal, useTypewriter, WritingBar } from "./WritingBar";
+import { setWriting, writingMode, writingStats, type SelectionStats } from "./writingMode";
 
 /** "write" is the live view (rendered as you type); "raw" shows all the Markdown. */
 type Mode = "write" | "raw" | "split" | "read";
@@ -87,23 +91,39 @@ function TextFile({
   const comments = useNoteComments({ fileId: file.id, doc: text ?? "", role, text: live.note?.text });
   // Cloud sync needs an account, so it's for signed-in people who can edit.
   const noteSync = useNoteSync(file.id, markdown && canEdit && user !== null);
+  const [focus, setFocus] = useState(false);
+  const [typewriter, setTypewriter] = useTypewriter();
+  const [selection, setSelection] = useState<SelectionStats>(null);
+  const goal = useDailyGoal();
+  const addWritten = goal.add;
   const extensions = useMemo(
     () => [
       ...(live.note ? [yCollab(live.note.text, live.note.provider.awareness, { undoManager: live.note.undo }), keymap.of(yUndoManagerKeymap)] : []),
       ...comments.extensions,
       ...(markdown ? [slashMenu()] : []),
+      findReplace(),
+      writingMode(),
+      writingStats({ onSelection: setSelection, onWritten: addWritten }),
     ],
-    [live.note, comments.extensions, markdown],
+    [live.note, comments.extensions, markdown, addWritten],
   );
   const editorView = useRef<EditorView | null>(null);
+  const writing = useRef({ focus, typewriter });
+  writing.current = { focus, typewriter };
   const commentsReady = comments.onReady;
   const onEditorReady = useCallback(
     (view: EditorView) => {
       editorView.current = view;
+      view.dispatch({ effects: setWriting.of(writing.current) });
       commentsReady(view);
     },
     [commentsReady],
   );
+  useWritingMode(focus, setFocus);
+  useEffect(() => {
+    const view = editorView.current;
+    if (view?.dom.isConnected) view.dispatch({ effects: setWriting.of({ focus, typewriter }) });
+  }, [focus, typewriter]);
   const renamed = (f: FileMeta) => (setFile(f), onRenamed());
   const title = (
     <NoteTitle file={file} canRename={role === "owner"} onRenamed={renamed} onEnter={() => editorView.current?.focus()} />
@@ -192,8 +212,41 @@ function TextFile({
         {comments.panel}
         </div>
       )}
+      {live.ready && text !== null && (
+        <WritingBar
+          text={preview}
+          selection={mode === "read" ? null : selection}
+          goal={goal}
+          focus={focus}
+          onFocus={setFocus}
+          {...(mode !== "read" && {
+            typewriter,
+            onTypewriter: setTypewriter,
+            onFind: () => editorView.current && openSearchPanel(editorView.current),
+          })}
+        />
+      )}
     </article>
   );
+}
+
+/** Focus mode hides the app around the note; Ctrl/Cmd+Shift+F toggles it and Escape leaves. */
+function useWritingMode(focus: boolean, setFocus: (update: (on: boolean) => boolean) => void) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        setFocus((on) => !on);
+      } else if (e.key === "Escape" && !e.defaultPrevented) setFocus(() => false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [setFocus]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("writing-focus", focus);
+    return () => document.documentElement.classList.remove("writing-focus");
+  }, [focus]);
 }
 
 /** Opens the note live for as long as the component is mounted. */
