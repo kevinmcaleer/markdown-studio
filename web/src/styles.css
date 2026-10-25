@@ -248,6 +248,15 @@ a:hover {
   font-weight: 600;
 }
 
+.menu-list > a .external {
+  margin-left: auto;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .menu-list > .disabled {
   color: var(--muted);
   cursor: default;

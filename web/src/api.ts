@@ -85,6 +85,6 @@ export const auth = {
     api<{ user: null }>("/api/auth/delete-account", { body: { confirm_username } }),
 };
 
-export type PowerToolApp = { id: string; name: string; url: string; description: string; status: "live" | "soon" };
+export type PowerToolApp = { id: string; name: string; url: string; description: string; status: "live" | "soon"; external: boolean };
 
 export const powertools = () => api<{ current: string; home: string; apps: PowerToolApp[] }>("/api/powertools");

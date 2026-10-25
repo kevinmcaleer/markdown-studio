@@ -96,7 +96,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = settings
     app.state.auth = auth
-    app.state.powertools = PowerTools(settings.powertools_apps_url)
+    app.state.powertools = PowerTools(settings.powertools_apps_url, hide=settings.powertools_hide)
 
     auth.install(app)
     app.include_router(auth.router)

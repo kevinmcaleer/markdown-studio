@@ -334,6 +334,7 @@ All settings are environment variables, normally set in `.env` (see `.env.exampl
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | *(empty)* | OAuth client for Google Docs sync (see above). Empty hides Google Docs. |
 | `GOOGLE_SYNC_INTERVAL` | `300` | Seconds between background syncs of linked notes. `0` syncs only on request. |
 | `POWERTOOLS_APPS_URL` | `https://kevspowertools.com/apps.json` | The shared list behind the app switcher. Empty uses the bundled copy. |
+| `POWERTOOLS_HIDE` | *(empty)* | Comma-separated app ids to leave out of the switcher, e.g. `noodleplanner,filmcolab`. |
 | `PUID` / `PGID` | `1000` | Owner of files in `./data` (Docker only). |
 | `STUDIO_TAG` | `latest` | Image tag Docker runs and `scripts/auto-update.sh` follows: `latest`, `edge` or a version. |
 | `LOG_LEVEL` | `INFO` | Logs are JSON lines on stdout. |
