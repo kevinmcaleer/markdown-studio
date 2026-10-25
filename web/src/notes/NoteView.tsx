@@ -18,6 +18,9 @@ import { NoteTitle } from "./NoteTitle";
 import { useFilePlace } from "./place/useFilePlace";
 import { slashMenu } from "./slashMenu";
 import { smartPaste } from "./smartPaste";
+import { speechEditor } from "./speech/speechEditor";
+import { useDictation } from "./speech/useDictation";
+import { useReadAloud } from "./speech/useReadAloud";
 import { useOutline } from "./useOutline";
 import { useDailyGoal, useTypewriter, WritingBar } from "./WritingBar";
 import { setWriting, writingMode, writingStats, type SelectionStats } from "./writingMode";
@@ -138,6 +141,7 @@ function TextFile({
       ...(markdown ? [slashMenu(), smartPaste({ uploadImage })] : []),
       findReplace(),
       writingMode(),
+      speechEditor(),
       writingStats({ onSelection: setSelection, onWritten: addWritten }),
     ],
     [live.note, comments.extensions, place.extensions, outline.extensions, markdown, uploadImage, addWritten],
@@ -159,6 +163,9 @@ function TextFile({
     [commentsReady, outlineReady, placeReady, markdown],
   );
   useWritingMode(focus, setFocus);
+  const openEditor = () => (mode !== "read" && editorView.current?.dom.isConnected ? editorView.current : null);
+  const dictation = useDictation({ view: openEditor, enabled: mode !== "read" && (canEdit || comments.suggesting) });
+  const readAloud = useReadAloud({ view: openEditor, doc: () => live.note?.text.toString() ?? text ?? "" });
   useEffect(() => {
     const view = editorView.current;
     if (view?.dom.isConnected) view.dispatch({ effects: setWriting.of({ focus, typewriter }) });
@@ -214,6 +221,7 @@ function TextFile({
           </div>
         )}
         {mode !== "read" && comments.suggestSwitch}
+        {dictation.button}
         {markdown && outline.button}
         {place.button}
         {comments.button}
@@ -260,6 +268,7 @@ function TextFile({
         {place.toast}
         </div>
       )}
+      {readAloud.bar}
       {live.ready && text !== null && (
         <WritingBar
           text={preview}
@@ -267,6 +276,7 @@ function TextFile({
           goal={goal}
           focus={focus}
           onFocus={setFocus}
+          {...(readAloud.supported && { reading: readAloud.reading, onReadAloud: readAloud.toggle })}
           {...(mode !== "read" && {
             typewriter,
             onTypewriter: setTypewriter,
