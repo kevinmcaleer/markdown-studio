@@ -41,6 +41,11 @@ port) can live under `packages/` next to the web app.
 - **Co-editing** is live: everyone editing a note sees each other's cursors and changes, merged
   without conflicts (Yjs over a WebSocket at `/api/files/{id}/live`). If you put a reverse
   proxy in front, let it pass WebSocket upgrades.
+- **Suggesting:** switch from **Editing** to **Suggesting** and what you type becomes
+  suggested changes (new text underlined, removed text struck through) instead of edits.
+  People with comment access are always suggesting. Anyone who can edit accepts or rejects
+  each suggestion from its hover card or the **Suggestions** tab of the comments panel, and
+  replying to one starts a comment thread on the same passage.
 - **Export** a note as Word or PDF from its Download menu. Only images stored in Markdown
   Studio are included; the server never fetches outside URLs while exporting.
 - **Install and offline:** Notes installs as its own app (Chrome, Edge and Android offer
