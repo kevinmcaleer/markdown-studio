@@ -7,11 +7,13 @@ import { Link } from "../Link";
 import { Editor } from "../notes/Editor";
 import { files, type FileMeta, type FileRole } from "../notes/filesApi";
 import { LiveStatusBadge, Presence, useLiveNote } from "../notes/NoteView";
+import { slashMenu } from "../notes/slashMenu";
 import { ShareButton } from "../sharing/ShareButton";
 import { useSession } from "../session";
 import { DECK_SUFFIX, deckTitle, moveSlide, parseDeck, slideAtLine, type Deck } from "./deck";
 import { ExportMenu } from "./ExportMenu";
 import { Presentation } from "./Present";
+import { deckCommands } from "./slashCommands";
 import { SlideView } from "./SlideView";
 
 // One deck: thumbnails down the side, the Markdown in the middle and the
@@ -79,6 +81,7 @@ function OpenDeck({ file: initialFile, role, onChanged }: Loaded & { onChanged?:
       ...(live.note ? [yCollab(live.note.text, live.note.provider.awareness, { undoManager: live.note.undo }), keymap.of(yUndoManagerKeymap)] : []),
       ...comments.extensions,
       cursor,
+      slashMenu(deckCommands),
     ],
     [live.note, comments.extensions, cursor],
   );

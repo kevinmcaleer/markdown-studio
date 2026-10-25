@@ -1,5 +1,5 @@
 import { syntaxTree } from "@codemirror/language";
-import { Prec, StateEffect, StateField, type EditorState, type Extension, type TransactionSpec } from "@codemirror/state";
+import { Facet, Prec, StateEffect, StateField, type EditorState, type Extension, type TransactionSpec } from "@codemirror/state";
 import { EditorView, keymap, showTooltip, type Tooltip } from "@codemirror/view";
 
 // Typing "/" at the start of a line (or after a space) opens a menu of
@@ -13,7 +13,7 @@ export type SlashCommand = {
   /** Other words it can be found by. */
   keywords: string[];
   /** Menu section; a divider is drawn between sections. */
-  group: "blocks" | "lists" | "inline";
+  group: string;
   /** 16×16 stroke icon path. */
   icon: string;
   /** Starts on its own line. */
@@ -191,6 +191,9 @@ export function applyCommand(state: EditorState, command: SlashCommand, from: nu
 
 // ---------------------------------------------------------------- state
 
+/** Which commands the menu offers; Notes gets the defaults, Decks adds slide commands. */
+const commandList = Facet.define<SlashCommand[], SlashCommand[]>({ combine: (lists) => lists[0] ?? slashCommands });
+
 type MenuState = { from: number; query: string; selected: number } | null;
 
 const moveSelection = StateEffect.define<number>();
@@ -232,7 +235,7 @@ const menuField = StateField.define<MenuState>({
     const query = tr.state.sliceDoc(from + 1, head);
     if (query.includes("\n") || query.length > 24) return null;
     // A space after a query nothing matches means you've moved on.
-    if (/\s$/.test(query) && !filterCommands(query).length) return null;
+    if (/\s$/.test(query) && !filterCommands(query, tr.state.facet(commandList)).length) return null;
     return { from, query, selected: query === menu.query ? menu.selected : 0 };
   },
   provide: (field) => showTooltip.from(field, (menu) => (menu ? menuTooltip(menu.from) : null)),
@@ -262,7 +265,7 @@ function menuTooltip(pos: number): Tooltip {
       const render = (state: EditorState) => {
         const menu = state.field(menuField);
         if (!menu) return;
-        const items = filterCommands(menu.query);
+        const items = filterCommands(menu.query, state.facet(commandList));
         const key = `${menu.query}\u0000${menu.selected}`;
         if (key === shown) return;
         shown = key;
@@ -305,7 +308,7 @@ function menuTooltip(pos: number): Tooltip {
 function move(step: number) {
   return (view: EditorView) => {
     const menu = view.state.field(menuField);
-    const count = menu ? filterCommands(menu.query).length : 0;
+    const count = menu ? filterCommands(menu.query, view.state.facet(commandList)).length : 0;
     if (!menu || !count) return false;
     view.dispatch({ effects: moveSelection.of((menu.selected + step + count) % count) });
     return true;
@@ -314,7 +317,7 @@ function move(step: number) {
 
 function choose(view: EditorView) {
   const menu = view.state.field(menuField);
-  const command = menu && filterCommands(menu.query)[menu.selected];
+  const command = menu && filterCommands(menu.query, view.state.facet(commandList))[menu.selected];
   if (!command) return false;
   pick(view, command);
   return true;
@@ -369,6 +372,6 @@ const menuTheme = EditorView.theme({
 });
 
 /** The "/" menu. Add it to an editable editor. */
-export function slashMenu(): Extension {
-  return [menuField, menuKeys, menuTheme];
+export function slashMenu(commands: SlashCommand[] = slashCommands): Extension {
+  return [commandList.of(commands), menuField, menuKeys, menuTheme];
 }
