@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ApiError } from "../api";
 import { useSession } from "../session";
 import { inDocumentOrder, type AnchorStatus, type Placement, type Range, type Resolver } from "./anchor";
@@ -14,7 +14,7 @@ function message(err: unknown): string {
   return err instanceof ApiError ? err.message : "Couldn't reach the server.";
 }
 
-function storedGuestName(): string {
+export function storedGuestName(): string {
   try {
     return localStorage.getItem(GUEST_NAME_KEY) ?? "";
   } catch {
@@ -22,7 +22,7 @@ function storedGuestName(): string {
   }
 }
 
-function when(iso: string): string {
+export function when(iso: string): string {
   const date = new Date(iso);
   const today = new Date().toDateString() === date.toDateString();
   return today
@@ -51,6 +51,8 @@ export function CommentsPanel({
   onFocusThread,
   onThreadsChange,
   onClose,
+  title = <h2>Comments</h2>,
+  reloadKey = 0,
 }: {
   fileId: number;
   doc: string;
@@ -61,6 +63,10 @@ export function CommentsPanel({
   onFocusThread?: (thread: Thread, range: Range | null) => void;
   onThreadsChange?: (threads: PlacedThread[]) => void;
   onClose?: () => void;
+  /** The panel's heading; the note page puts the Comments | Suggestions tabs here. */
+  title?: ReactNode;
+  /** Changing it loads the threads again (say, after a reply to a suggestion started one). */
+  reloadKey?: number;
 }) {
   const { user } = useSession();
   const [threads, setThreads] = useState<Thread[] | null>(null);
@@ -86,7 +92,7 @@ export function CommentsPanel({
       if (document.visibilityState === "visible") load();
     }, POLL_MS);
     return () => clearInterval(timer);
-  }, [load]);
+  }, [load, reloadKey]);
 
   const placed = useMemo(() => inDocumentOrder(doc, threads ?? [], resolve), [doc, threads, resolve]);
 
@@ -130,7 +136,7 @@ export function CommentsPanel({
   return (
     <aside className="comments-panel" aria-label="Comments">
       <header>
-        <h2>Comments</h2>
+        {title}
         {resolvedCount > 0 && (
           <label className="check small">
             <input type="checkbox" checked={showResolved} onChange={(e) => setShowResolved(e.target.checked)} />

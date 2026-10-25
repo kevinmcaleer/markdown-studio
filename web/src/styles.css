@@ -1704,3 +1704,134 @@ button.quote {
   justify-content: flex-end;
   margin-top: 1rem;
 }
+
+/* ------------------------------------------------------------ suggestions */
+
+/* Comments | Suggestions, in the panel's header. */
+.panel-tabs {
+  flex: 1;
+  display: flex;
+  gap: 0.25rem;
+}
+
+.panel-tabs button {
+  padding: 0.2rem 0.1rem;
+  margin-right: 0.6rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.panel-tabs button[aria-selected="true"] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.panel-tab {
+  display: flex;
+  min-height: 0;
+}
+
+.panel-tab[hidden] {
+  display: none;
+}
+
+.sugg-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.sugg-tools .check {
+  margin-right: auto;
+}
+
+.sugg-badge {
+  align-self: center;
+}
+
+/* A suggested change in the editor: old text struck, new text underlined, in the author's colour. */
+.sugg-del {
+  text-decoration: line-through;
+  text-decoration-color: var(--sugg, var(--accent));
+  text-decoration-thickness: 2px;
+  color: color-mix(in srgb, var(--text) 55%, transparent);
+  cursor: pointer;
+}
+
+.sugg-ins {
+  color: var(--sugg, var(--accent));
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+  background: color-mix(in srgb, var(--sugg, var(--accent)) 10%, transparent);
+  white-space: pre-wrap;
+  cursor: pointer;
+}
+
+.sugg-del.active,
+.sugg-del.active + .sugg-ins {
+  background: color-mix(in srgb, var(--sugg, var(--accent)) 16%, transparent);
+}
+
+/* The change itself, on a card in the panel. */
+.sugg-change {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.sugg-change del,
+.sugg-card del {
+  color: var(--muted);
+}
+
+.sugg-change ins,
+.sugg-card ins {
+  color: var(--accent);
+  text-decoration-thickness: 2px;
+}
+
+.sugg-change .badge {
+  margin-left: 0.4rem;
+}
+
+.sugg-replies {
+  align-self: flex-start;
+  margin-left: -0.4rem;
+}
+
+/* The hover card over a suggestion in the editor. */
+.cm-tooltip.cm-tooltip-hover:has(.sugg-card) {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: var(--shadow);
+}
+
+.sugg-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-width: 320px;
+  padding: 0.6rem 0.75rem;
+  font-family: var(--font, inherit);
+}
+
+.sugg-card p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

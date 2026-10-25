@@ -89,7 +89,7 @@ function TextFile({
   const [text, setText] = useState<string | null>(null);
   const preview = useDeferredValue(text ?? "");
   const html = useMemo(() => (markdown && (mode === "split" || mode === "read") ? renderMarkdown(preview) : ""), [markdown, mode, preview]);
-  const comments = useNoteComments({ fileId: file.id, doc: text ?? "", role, text: live.note?.text });
+  const comments = useNoteComments({ fileId: file.id, doc: text ?? "", role, text: live.note?.text, suggestions: true });
   // Cloud sync needs an account, so it's for signed-in people who can edit.
   const noteSync = useNoteSync(file.id, markdown && canEdit && user !== null);
   const [focus, setFocus] = useState(false);
@@ -175,7 +175,7 @@ function TextFile({
     <article className={`note mode-${mode}`}>
       <header className="note-bar">
         <FileName file={file} canRename={role === "owner"} onRenamed={renamed} />
-        <LiveStatusBadge status={live.status} readOnly={!canEdit} />
+        <LiveStatusBadge status={live.status} readOnly={!canEdit && !comments.suggesting} />
         <div className="spacer" />
         <Presence peers={live.peers} />
         {markdown && (
@@ -187,6 +187,7 @@ function TextFile({
             ))}
           </div>
         )}
+        {mode !== "read" && comments.suggestSwitch}
         {comments.button}
         {role === "owner" && <ShareButton fileId={file.id} fileName={file.name} />}
         <SyncMenu note={file} role={role} sync={noteSync} currentText={() => live.note?.text.toString() ?? text ?? ""} />
@@ -210,7 +211,8 @@ function TextFile({
               {title}
               <Editor
                 initialDoc={live.note!.text.toString()}
-                readOnly={!canEdit}
+                // Commenters type in Suggesting mode; what they type becomes suggestions, not edits.
+                readOnly={!canEdit && !comments.suggesting}
                 history={false}
                 livePreview={markdown && mode === "write"}
                 extensions={extensions}
