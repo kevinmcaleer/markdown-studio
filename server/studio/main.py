@@ -24,7 +24,7 @@ from starlette.routing import WebSocketRoute
 from powertools_auth import Auth, AuthSettings, SmtpMailer
 from powertools_auth.security import SECURITY_HEADERS
 
-from . import __version__, collab, comments, db, files, sharing, sync
+from . import __version__, collab, comments, db, files, sharing, sync, user_state
 from .config import Settings, load_settings_or_exit
 from .gdocs import Google
 from .logging_config import configure_logging
@@ -108,6 +108,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.router.routes.append(WebSocketRoute(collab.PATH, collab.make_endpoint(auth, rooms)))
     app.include_router(sharing.make_router(auth, get_db))
     app.include_router(comments.make_router(auth, get_db))
+    app.include_router(user_state.make_router(auth, get_db))
     google = None
     if settings.google_client_id:
         google = Google(settings.google_client_id, settings.google_client_secret)

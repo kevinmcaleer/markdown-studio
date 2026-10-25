@@ -13,6 +13,7 @@ import { files, formatSize, isMarkdown, isText, TABLES_MIME, withShare, type Fil
 import { LiveNote, type LiveStatus, type Peer } from "./live";
 import { renderMarkdown } from "./markdown";
 import { NoteTitle } from "./NoteTitle";
+import { useFilePlace } from "./place/useFilePlace";
 import { slashMenu } from "./slashMenu";
 import { smartPaste } from "./smartPaste";
 
@@ -103,22 +104,30 @@ function TextFile({
         : undefined,
     [user, canEdit, folderId],
   );
+  // Where this person left off, their bookmarks and folds, and how they like this note opened.
+  const place = useFilePlace({ fileId: file.id, signedIn: user !== null, text: live.note?.text, folds: markdown });
+  useEffect(() => {
+    if (markdown && isMode(place.view)) setMode(place.view);
+  }, [markdown, place.view]);
   const extensions = useMemo(
     () => [
       ...(live.note ? [yCollab(live.note.text, live.note.provider.awareness, { undoManager: live.note.undo }), keymap.of(yUndoManagerKeymap)] : []),
       ...comments.extensions,
+      ...place.extensions,
       ...(markdown ? [slashMenu(), smartPaste({ uploadImage })] : []),
     ],
-    [live.note, comments.extensions, markdown, uploadImage],
+    [live.note, comments.extensions, place.extensions, markdown, uploadImage],
   );
   const editorView = useRef<EditorView | null>(null);
   const commentsReady = comments.onReady;
+  const placeReady = place.onReady;
   const onEditorReady = useCallback(
     (view: EditorView) => {
       editorView.current = view;
       commentsReady(view);
+      placeReady(view);
     },
-    [commentsReady],
+    [commentsReady, placeReady],
   );
   const renamed = (f: FileMeta) => (setFile(f), onRenamed());
   const title = (
@@ -143,13 +152,16 @@ function TextFile({
     return () => window.clearTimeout(timer);
   }, [text, live.status, file.id]);
 
-  useEffect(() => {
+  // The choice becomes this note's view, and the default for notes without one.
+  const chooseMode = (next: Mode) => {
+    setMode(next);
+    place.rememberView(next);
     try {
-      if (markdown) localStorage.setItem(MODE_KEY, mode);
+      localStorage.setItem(MODE_KEY, next);
     } catch {
       /* private mode */
     }
-  }, [markdown, mode]);
+  };
 
   return (
     <article className={`note mode-${mode}`}>
@@ -161,12 +173,13 @@ function TextFile({
         {markdown && (
           <div className="segmented" role="group" aria-label="View">
             {MODES.map((m) => (
-              <button key={m.mode} type="button" title={m.title} aria-pressed={mode === m.mode} onClick={() => setMode(m.mode)}>
+              <button key={m.mode} type="button" title={m.title} aria-pressed={mode === m.mode} onClick={() => chooseMode(m.mode)}>
                 {m.label}
               </button>
             ))}
           </div>
         )}
+        {place.button}
         {comments.button}
         {role === "owner" && <ShareButton fileId={file.id} fileName={file.name} />}
         <SyncMenu note={file} role={role} sync={noteSync} currentText={() => live.note?.text.toString() ?? text ?? ""} />
@@ -178,7 +191,7 @@ function TextFile({
           <p className="error">This note was deleted, or you no longer have access to it.</p>
           <Link href="/notes">Back to your files</Link>
         </div>
-      ) : !live.ready || text === null ? (
+      ) : !live.ready || text === null || !place.loaded ? (
         <div className="notes-empty muted" aria-busy="true">
           {live.status === "offline" ? "You're offline, and this note hasn't been opened on this device before." : ""}
         </div>
@@ -206,6 +219,7 @@ function TextFile({
           )}
         </div>
         {comments.panel}
+        {place.toast}
         </div>
       )}
     </article>
@@ -324,10 +338,14 @@ function BinaryFile({ file }: { file: FileMeta }) {
   );
 }
 
+function isMode(value: unknown): value is Mode {
+  return value === "write" || value === "raw" || value === "split" || value === "read";
+}
+
 function readMode(): Mode {
   try {
     const value = localStorage.getItem(MODE_KEY);
-    if (value === "write" || value === "raw" || value === "split" || value === "read") return value;
+    if (isMode(value)) return value;
   } catch {
     /* private mode */
   }

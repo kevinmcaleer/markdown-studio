@@ -1,0 +1,156 @@
+/* Bookmarks menu and the "Resumed where you left off" toast on the note page. */
+
+.bookmarks-menu .menu-list {
+  right: 0;
+  z-index: 20;
+  width: min(360px, calc(100vw - 32px));
+  max-height: min(60vh, 480px);
+  overflow: auto;
+}
+
+.bookmarks-menu .menu-list > button.bookmark-here {
+  margin-top: 0.25rem;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 8px 8px;
+  justify-content: space-between;
+}
+
+.bookmarks-empty {
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  line-height: 1.5;
+}
+
+.bookmark-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.bookmark-list > li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.1rem 0.25rem;
+  padding: 0.35rem 0.35rem 0.45rem;
+  border-radius: 8px;
+}
+
+.bookmark-list > li:hover {
+  background: var(--surface-2);
+}
+
+.bookmark-jump {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.15rem 0.3rem;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bookmark-line {
+  flex: none;
+  min-width: 2ch;
+  font-variant-numeric: tabular-nums;
+}
+
+.bookmark-text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.bookmark-note {
+  grid-column: 1;
+  margin-left: calc(2ch + 0.8rem);
+  padding: 0.15rem 0.35rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.bookmark-note::placeholder {
+  color: var(--muted);
+}
+
+.bookmark-note:hover,
+.bookmark-note:focus {
+  border-color: var(--border);
+  background: var(--surface);
+  outline: none;
+}
+
+.bookmark-remove {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: start;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.bookmark-remove:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+
+.resume-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 1.25rem;
+  transform: translateX(-50%);
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: calc(100% - 32px);
+  padding: 0.35rem 0.4rem 0.35rem 0.9rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.12);
+  font-size: 0.875rem;
+  animation: resume-toast-in 160ms ease-out;
+}
+
+.resume-toast-close {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--muted);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.resume-toast-close:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+@keyframes resume-toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .resume-toast {
+    animation: none;
+  }
+}
