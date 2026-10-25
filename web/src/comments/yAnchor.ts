@@ -7,13 +7,13 @@ import type { Resolved } from "./anchor";
 
 type Stored = { y: { from: string; to: string } };
 
-function toBase64(bytes: Uint8Array): string {
+export function toBase64(bytes: Uint8Array): string {
   let s = "";
   for (const b of bytes) s += String.fromCharCode(b);
   return btoa(s);
 }
 
-function fromBase64(text: string): Uint8Array {
+export function fromBase64(text: string): Uint8Array {
   return Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
 }
 
