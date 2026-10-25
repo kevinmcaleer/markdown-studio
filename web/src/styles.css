@@ -927,6 +927,137 @@ textarea.note-title::placeholder {
   }
 }
 
+/* ------------------------------------------------- note page: writing mode */
+
+.writing-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 32px;
+  padding: 0.2rem 0.75rem 0.2rem 1rem;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+  transition: opacity 0.2s ease;
+}
+
+.writing-stats {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-right: 0.5rem;
+}
+
+.writing-toggle {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  font: inherit;
+  color: var(--muted);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.writing-toggle:hover,
+.writing-toggle[aria-expanded="true"] {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.writing-toggle[aria-pressed="true"] {
+  color: var(--accent);
+}
+
+.writing-toggle.goal-done {
+  color: var(--success);
+}
+
+.goal-track {
+  display: block;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.goal-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+.goal-done .goal-fill {
+  background: var(--success);
+}
+
+.goal-popover {
+  bottom: calc(100% + 6px);
+  top: auto;
+  left: 0;
+  z-index: 20;
+  width: 260px;
+  gap: 0.5rem;
+  padding: 0.75rem;
+}
+
+.goal-popover p {
+  margin: 0;
+}
+
+/* Focus mode: only the note is left, and the status bar fades until you need it. */
+html.writing-focus .topbar,
+html.writing-focus .notes-sidebar,
+html.writing-focus .sidebar-toggle,
+html.writing-focus .note-bar,
+html.writing-focus .note-comments {
+  display: none !important;
+}
+
+html.writing-focus .app-page {
+  height: 100vh;
+  height: 100dvh;
+}
+
+html.writing-focus .notes {
+  grid-template-columns: 1fr;
+}
+
+html.writing-focus .note .cm-editor {
+  font-size: 17px;
+}
+
+html.writing-focus .note .cm-content,
+html.writing-focus .note .note-title-wrap,
+html.writing-focus .note h1.note-title {
+  max-width: 40rem;
+}
+
+html.writing-focus .writing-bar {
+  border-top-color: transparent;
+  opacity: 0.35;
+}
+
+html.writing-focus .writing-bar:hover,
+html.writing-focus .writing-bar:focus-within {
+  opacity: 1;
+}
+
+@media (max-width: 760px) {
+  /* Room for the floating files button. */
+  .writing-bar {
+    padding-right: 6.5rem;
+  }
+
+  .typewriter-toggle {
+    display: none;
+  }
+}
+
 /* ---------------------------------------------------------- rendered notes */
 
 .prose {
