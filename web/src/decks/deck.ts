@@ -1,5 +1,6 @@
 import MarkdownIt from "markdown-it";
 import mark from "markdown-it-mark";
+import { lineRange, type Pin } from "../comments/pin";
 
 // A deck is a Markdown file whose name ends in .deck.md. Slides are separated
 // by a line holding only `---`, slide settings go in HTML comments, and
@@ -433,6 +434,28 @@ export function slideAtLine(deck: Deck, line: number): number {
     else break;
   }
   return found;
+}
+
+/** The line a comment on the whole slide is pinned to: its first line of content (usually the title). */
+export function slidePin(text: string, slide: Slide): Pin | null {
+  let offset = 0;
+  const lines = text.split("\n");
+  for (let n = 0; n < lines.length && n <= slide.endLine; n++) {
+    const line = lines[n];
+    if (n >= slide.startLine && !/^\s*(---|\?\?\?|<!--.*-->)\s*$/.test(line)) {
+      const range = lineRange({ from: offset, text: line });
+      if (range) return { ...range, kind: "slide" };
+    }
+    offset += line.length + 1;
+  }
+  return null;
+}
+
+/** The slide that character `offset` of the deck's text belongs to. */
+export function slideAtOffset(deck: Deck, text: string, offset: number): number {
+  let line = 0;
+  for (let i = text.indexOf("\n"); i !== -1 && i < offset; i = text.indexOf("\n", i + 1)) line++;
+  return slideAtLine(deck, line);
 }
 
 export function isDeck(file: { name: string }): boolean {

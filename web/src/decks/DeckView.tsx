@@ -10,7 +10,7 @@ import { LiveStatusBadge, Presence, useLiveNote } from "../notes/NoteView";
 import { slashMenu } from "../notes/slashMenu";
 import { ShareButton } from "../sharing/ShareButton";
 import { useSession } from "../session";
-import { DECK_SUFFIX, deckTitle, moveSlide, parseDeck, slideAtLine, type Deck } from "./deck";
+import { DECK_SUFFIX, deckTitle, moveSlide, parseDeck, slideAtLine, slideAtOffset, slidePin, type Deck } from "./deck";
 import { ExportMenu } from "./ExportMenu";
 import { Presentation } from "./Present";
 import { deckCommands } from "./slashCommands";
@@ -71,7 +71,31 @@ function OpenDeck({ file: initialFile, role, onChanged }: Loaded & { onChanged?:
   // While a thumbnail is dragged: which slide, and the gap it would drop into (before slide n).
   const [drag, setDrag] = useState<{ from: number; before: number | null } | null>(null);
   const refocus = useRef<number | null>(null);
-  const comments = useNoteComments({ fileId: file.id, doc: text ?? "", role });
+  // With no editor (or the cursor on a blank line), a comment goes on the slide being shown.
+  const pinSlide = deck.slides[Math.min(current, deck.slides.length - 1)];
+  const fallbackPins = useMemo(() => {
+    const pin = pinSlide && text !== null ? slidePin(text, pinSlide) : null;
+    return pin ? [pin] : [];
+  }, [text, pinSlide]);
+  const comments = useNoteComments({
+    fileId: file.id,
+    doc: text ?? "",
+    role,
+    text: live.note?.text,
+    fallbackPins,
+    onFocusRange: (range) => text !== null && setCurrent(slideAtOffset(deck, text, range.from)),
+  });
+  // How many open comments are on each slide, for the thumbnails.
+  const commentCounts = useMemo(() => {
+    const counts = new Map<number, number>();
+    if (text === null) return counts;
+    for (const { range } of comments.placed) {
+      if (!range) continue;
+      const index = slideAtOffset(deck, text, range.from);
+      counts.set(index, (counts.get(index) ?? 0) + 1);
+    }
+    return counts;
+  }, [comments.placed, deck, text]);
 
   // Which slide the cursor is on. Editor extensions are fixed at mount, so this reads the editor's own text.
   const cursor = useMemo(
@@ -266,6 +290,11 @@ function OpenDeck({ file: initialFile, role, onChanged }: Loaded & { onChanged?:
                     onKeyDown={(e) => thumbKey(e, s.index)}
                   >
                     <span className="deck-thumb-number">{s.index + 1}</span>
+                    {commentCounts.has(s.index) && (
+                      <span className="deck-thumb-comments" title={`${commentCounts.get(s.index)} comment${commentCounts.get(s.index) === 1 ? "" : "s"}`}>
+                        {commentCounts.get(s.index)}
+                      </span>
+                    )}
                     <SlideView slide={s} />
                   </button>
                 </li>

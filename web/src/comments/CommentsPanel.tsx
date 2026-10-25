@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiError } from "../api";
 import { useSession } from "../session";
-import { inDocumentOrder, type Range } from "./anchor";
+import { inDocumentOrder, type AnchorStatus, type Placement, type Range, type Resolver } from "./anchor";
 import { comments as api, type Comment, type Thread } from "./api";
+import { PIN_LABELS, type Pin } from "./pin";
 
 const POLL_MS = 15_000;
 const GUEST_NAME_KEY = "ms.guestName";
 
-export type Selection = { from: number; to: number; text: string };
-export type PlacedThread = { thread: Thread; range: Range | null };
+export type PlacedThread = { thread: Thread } & Placement;
 
 function message(err: unknown): string {
   return err instanceof ApiError ? err.message : "Couldn't reach the server.";
@@ -31,17 +31,22 @@ function when(iso: string): string {
 }
 
 /**
- * The comments side panel, in the style of Claude's artifact comments: select
- * some text, write a comment, and reply in threads that can be resolved.
+ * The comments side panel, in the style of Claude's artifact comments: put
+ * the cursor on a word or line (or select some text), write a comment, and
+ * reply in threads that can be resolved.
  *
- * The editor owns the text and the selection; this panel tells it where each
- * thread's passage is now (``onThreadsChange``) so it can highlight them, and
- * asks it to jump to one (``onFocusThread``).
+ * The editor owns the text and the cursor; it says what a new comment would
+ * be pinned to (``pins``, best first) and how to anchor it (``makeAnchor``)
+ * and find it again (``resolve``). This panel tells it where each thread's
+ * passage is now (``onThreadsChange``) so it can highlight them, and asks it
+ * to jump to one (``onFocusThread``).
  */
 export function CommentsPanel({
   fileId,
   doc,
-  selection,
+  pins,
+  resolve,
+  makeAnchor,
   activeThreadId,
   onFocusThread,
   onThreadsChange,
@@ -49,7 +54,9 @@ export function CommentsPanel({
 }: {
   fileId: number;
   doc: string;
-  selection: Selection | null;
+  pins: Pin[];
+  resolve?: Resolver;
+  makeAnchor?: (from: number, to: number) => string;
   activeThreadId?: number | null;
   onFocusThread?: (thread: Thread, range: Range | null) => void;
   onThreadsChange?: (threads: PlacedThread[]) => void;
@@ -81,7 +88,7 @@ export function CommentsPanel({
     return () => clearInterval(timer);
   }, [load]);
 
-  const placed = useMemo(() => inDocumentOrder(doc, threads ?? []), [doc, threads]);
+  const placed = useMemo(() => inDocumentOrder(doc, threads ?? [], resolve), [doc, threads, resolve]);
 
   useEffect(() => {
     onThreadsChange?.(placed.filter((p) => !p.thread.resolved));
@@ -152,14 +159,15 @@ export function CommentsPanel({
 
       {canComment && (
         <Composer
-          selection={selection}
-          onSubmit={(body) =>
+          pins={pins}
+          onSubmit={(body, pin) =>
             act(() =>
               api.start(fileId, {
                 body,
-                anchor_from: selection?.from ?? 0,
-                anchor_to: selection?.to ?? 0,
-                quote: selection?.text ?? "",
+                anchor_from: pin?.from ?? 0,
+                anchor_to: pin?.to ?? 0,
+                quote: pin?.text ?? "",
+                anchor: pin && makeAnchor ? makeAnchor(pin.from, pin.to) : null,
                 author_name: authorName,
               }),
             )
@@ -170,16 +178,16 @@ export function CommentsPanel({
       {threads === null && !error && <p className="muted small">Loading comments…</p>}
       {threads !== null && visible.length === 0 && (
         <p className="muted small">
-          {canComment ? "No comments yet. Select some text to start a thread." : "No comments yet."}
+          {canComment ? "No comments yet. Put the cursor on a word or line, or select some text, to start a thread." : "No comments yet."}
         </p>
       )}
 
       <ol className="threads">
-        {visible.map(({ thread, range }) => (
+        {visible.map(({ thread, range, status }) => (
           <ThreadCard
             key={thread.id}
             thread={thread}
-            detached={range === null}
+            status={status}
             active={thread.id === activeThreadId}
             onFocus={() => onFocusThread?.(thread, range)}
             onReply={(body) => act(() => api.reply(thread.id, body, authorName))}
@@ -193,25 +201,48 @@ export function CommentsPanel({
   );
 }
 
-function Composer({ selection, onSubmit }: { selection: Selection | null; onSubmit: (body: string) => Promise<boolean> }) {
+function Composer({ pins, onSubmit }: { pins: Pin[]; onSubmit: (body: string, pin: Pin | null) => Promise<boolean> }) {
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
-  const quote = selection?.text.trim();
+  // Which kind of pin they picked (word or line); kept as the cursor moves.
+  const [kind, setKind] = useState<Pin["kind"] | null>(null);
+  const pin = pins.find((p) => p.kind === kind) ?? pins[0] ?? null;
+  const quote = pin?.text.trim();
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (!body.trim()) return;
     setBusy(true);
-    if (await onSubmit(body)) setBody("");
+    if (await onSubmit(body, pin)) setBody("");
     setBusy(false);
   }
 
   return (
     <form className="composer" onSubmit={submit}>
-      {quote ? <blockquote className="quote">{quote}</blockquote> : <p className="muted small">Select text in the document to comment on it, or comment on the whole note.</p>}
+      {quote ? (
+        <div className="pin">
+          <div className="pin-head">
+            <span className="small muted">Pinned to</span>
+            {pins.length > 1 ? (
+              <div className="segmented small" role="group" aria-label="Pin the comment to">
+                {pins.map((p) => (
+                  <button key={p.kind} type="button" aria-pressed={p === pin} onClick={() => setKind(p.kind)}>
+                    {PIN_LABELS[p.kind]}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <span className="small muted">{PIN_LABELS[pin!.kind].toLowerCase()}</span>
+            )}
+          </div>
+          <blockquote className="quote">{quote}</blockquote>
+        </div>
+      ) : (
+        <p className="muted small">Put the cursor on a word or line, or select some text, to pin your comment to it. Otherwise it's on the whole document.</p>
+      )}
       <textarea
         aria-label="New comment"
-        placeholder={quote ? "Comment on the selection" : "Add a comment"}
+        placeholder={quote ? `Comment on this ${PIN_LABELS[pin!.kind].toLowerCase()}` : "Add a comment"}
         value={body}
         rows={2}
         onChange={(e) => setBody(e.target.value)}
@@ -228,9 +259,15 @@ function Composer({ selection, onSubmit }: { selection: Selection | null; onSubm
   );
 }
 
+const STATUS_NOTE: Record<AnchorStatus, string> = {
+  ok: "Show in the document",
+  edited: "This text has been edited since the comment",
+  removed: "This text was deleted from the document",
+};
+
 function ThreadCard({
   thread,
-  detached,
+  status,
   active,
   onFocus,
   onReply,
@@ -239,7 +276,7 @@ function ThreadCard({
   onDelete,
 }: {
   thread: Thread;
-  detached: boolean;
+  status: AnchorStatus;
   active: boolean;
   onFocus: () => void;
   onReply: (body: string) => Promise<boolean>;
@@ -258,9 +295,9 @@ function ThreadCard({
   return (
     <li className={classes} data-thread-card={thread.id}>
       {thread.quote && (
-        <button type="button" className="quote" onClick={onFocus} title={detached ? "This passage was changed or removed" : "Show in the document"}>
+        <button type="button" className={`quote ${status}`} onClick={onFocus} title={STATUS_NOTE[status]}>
           {thread.quote}
-          {detached && <span className="badge">changed</span>}
+          {status !== "ok" && <span className="badge">{status}</span>}
         </button>
       )}
       {thread.comments.map((c) => (

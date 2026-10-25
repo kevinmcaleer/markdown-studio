@@ -84,7 +84,7 @@ function TextFile({
   const [text, setText] = useState<string | null>(null);
   const preview = useDeferredValue(text ?? "");
   const html = useMemo(() => (markdown && (mode === "split" || mode === "read") ? renderMarkdown(preview) : ""), [markdown, mode, preview]);
-  const comments = useNoteComments({ fileId: file.id, doc: text ?? "", role });
+  const comments = useNoteComments({ fileId: file.id, doc: text ?? "", role, text: live.note?.text });
   // Cloud sync needs an account, so it's for signed-in people who can edit.
   const noteSync = useNoteSync(file.id, markdown && canEdit && user !== null);
   const extensions = useMemo(
