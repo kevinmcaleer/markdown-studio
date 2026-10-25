@@ -14,6 +14,7 @@ import { LiveNote, type LiveStatus, type Peer } from "./live";
 import { renderMarkdown } from "./markdown";
 import { NoteTitle } from "./NoteTitle";
 import { slashMenu } from "./slashMenu";
+import { smartPaste } from "./smartPaste";
 
 /** "write" is the live view (rendered as you type); "raw" shows all the Markdown. */
 type Mode = "write" | "raw" | "split" | "read";
@@ -87,13 +88,28 @@ function TextFile({
   const comments = useNoteComments({ fileId: file.id, doc: text ?? "", role, text: live.note?.text });
   // Cloud sync needs an account, so it's for signed-in people who can edit.
   const noteSync = useNoteSync(file.id, markdown && canEdit && user !== null);
+  // Pasted and dropped images go beside the note when it's yours, otherwise in your own files.
+  const folderId = role === "owner" ? file.folder_id : null;
+  const treeChanged = useRef(onRenamed);
+  treeChanged.current = onRenamed;
+  const uploadImage = useMemo(
+    () =>
+      user && canEdit
+        ? async (image: File) => {
+            const { file: stored } = await files.upload(image, folderId);
+            treeChanged.current();
+            return `/api/files/${stored.id}/content`;
+          }
+        : undefined,
+    [user, canEdit, folderId],
+  );
   const extensions = useMemo(
     () => [
       ...(live.note ? [yCollab(live.note.text, live.note.provider.awareness, { undoManager: live.note.undo }), keymap.of(yUndoManagerKeymap)] : []),
       ...comments.extensions,
-      ...(markdown ? [slashMenu()] : []),
+      ...(markdown ? [slashMenu(), smartPaste({ uploadImage })] : []),
     ],
-    [live.note, comments.extensions, markdown],
+    [live.note, comments.extensions, markdown, uploadImage],
   );
   const editorView = useRef<EditorView | null>(null);
   const commentsReady = comments.onReady;

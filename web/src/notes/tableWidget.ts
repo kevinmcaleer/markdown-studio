@@ -11,7 +11,9 @@ import {
   insertColumn,
   insertRow,
   parseTable,
+  pasteCells,
   setCell,
+  spreadsheetCells,
   type Table,
 } from "./markdownTable";
 
@@ -171,9 +173,20 @@ class TableView {
       this.change((source) => setCell(source, row, col, text));
     });
     dom.addEventListener("paste", (e) => {
-      if (!isCell(e.target as HTMLElement)) return;
+      const cell = e.target as HTMLElement;
+      if (!isCell(cell)) return;
       e.preventDefault();
       const text = e.clipboardData?.getData("text/plain") ?? "";
+      // Cells from a spreadsheet fill the table from this cell, growing it if they need to.
+      const cells = spreadsheetCells(text, e.clipboardData?.getData("text/html"));
+      if (cells) {
+        const row = Number(cell.dataset.row);
+        const col = Number(cell.dataset.col);
+        const range = this.change((source) => pasteCells(source, row, col, cells));
+        const view = range ? (tableViewAt(this.view, range.from) ?? this) : this;
+        view.focusCell(Math.min(row + cells.length - 1, view.table.rows.length - 1), Math.min(col + cells[0].length - 1, view.table.align.length - 1));
+        return;
+      }
       document.execCommand("insertText", false, text.replace(/\r?\n/g, " "));
     });
     dom.addEventListener("keydown", (e) => this.keydown(e));
