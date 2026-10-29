@@ -109,17 +109,19 @@ export const renderedCodeField = StateField.define<DecorationSet>({
 });
 
 export const renderedCodeTheme = EditorView.theme({
+  // No box of its own: the drawing sits on the page's background, with an
+  // outline on hover to show it can be clicked.
   ".cm-md-rendered": {
     margin: "0.5rem 0",
     padding: "0.75rem",
     borderRadius: "10px",
-    border: "1px solid var(--border)",
-    backgroundColor: "var(--surface)",
+    border: "1px solid transparent",
+    backgroundColor: "transparent",
     cursor: "pointer",
     overflowX: "auto",
     textAlign: "center",
   },
-  ".cm-md-rendered:hover": { borderColor: "color-mix(in srgb, var(--accent) 45%, var(--border))" },
+  ".cm-md-rendered:hover": { borderColor: "var(--border)" },
   ".cm-md-rendered svg": { maxWidth: "100%", height: "auto" },
   ".cm-md-rendered-error": { margin: "0", textAlign: "left", whiteSpace: "pre-wrap", color: "var(--muted)", fontSize: "0.85em" },
 });
