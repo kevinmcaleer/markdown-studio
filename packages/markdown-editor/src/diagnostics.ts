@@ -1,4 +1,4 @@
-import { StateEffect, StateField, type EditorState, type Extension } from "@codemirror/state";
+import { Prec, StateEffect, StateField, type EditorState, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, hoverTooltip, type DecorationSet } from "@codemirror/view";
 
 // One layer for every "here's something about your writing" mark in the
@@ -56,7 +56,10 @@ export const diagnosticsField = StateField.define<Sets>({
       }
     return sets;
   },
-  provide: (f) => EditorView.decorations.from(f, decorate),
+  // High precedence puts the underline inside the live view's marks, so a
+  // misspelt word in a link splits the underline, not the link's element
+  // (the host styles links by that element, as chips for instance).
+  provide: (f) => Prec.high(EditorView.decorations.from(f, decorate)),
 });
 
 const marks: Record<DiagnosticSource, Decoration> = {

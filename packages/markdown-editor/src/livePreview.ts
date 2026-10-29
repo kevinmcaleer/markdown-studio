@@ -429,7 +429,11 @@ export function buildDecorations(state: EditorState, ranges: readonly { from: nu
           case "Link":
             if (!isActive(node.from)) {
               const marks = node.node.getChildren("LinkMark");
-              if (marks.length >= 2) decorations.push(Decoration.mark({ class: "cm-md-link" }).range(marks[0].to, marks[1].from));
+              // data-href lets a host style links by where they go (a parts
+              // catalog link as a chip, say), as it can the rendered <a>s.
+              const url = node.node.getChildren("URL").pop();
+              const attributes = url ? { "data-href": state.sliceDoc(url.from, url.to) } : undefined;
+              if (marks.length >= 2) decorations.push(Decoration.mark({ class: "cm-md-link", attributes }).range(marks[0].to, marks[1].from));
             }
             return;
           case "LinkMark":
