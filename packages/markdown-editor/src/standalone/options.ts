@@ -66,7 +66,14 @@ export type ToolbarItem = BuiltInTool | ToolbarButton;
 /** Status bar items, in the order given. */
 export type StatusItem = "words" | "chars" | "reading" | "lines" | "cursor" | "draft" | "language" | "lint" | "read-aloud";
 
-export type ImageInfo = { url: string; alt?: string; thumb?: string };
+export type ImageInfo = {
+  url: string;
+  alt?: string;
+  thumb?: string;
+  /** Marks the image as already in the text. Left out, the picker checks
+   *  the text for the image's URL itself. */
+  used?: boolean;
+};
 
 export type Pane = "edit" | "preview" | "split";
 
