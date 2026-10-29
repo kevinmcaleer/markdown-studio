@@ -36,7 +36,13 @@ function request<T>(path: string, options?: { body?: unknown }): Promise<T> {
   return api ? api<T>(path, options) : Promise.reject(Object.assign(new Error("No language server"), { status: 0 }));
 }
 
-export type LanguageFeatures = { lookup: boolean; grammar: boolean; translate: boolean };
+export type LanguageFeatures = {
+  lookup: boolean;
+  grammar: boolean;
+  translate: boolean;
+  /** Why there's nothing: no server configured, the server can't be reached, or it wants you signed in. */
+  unavailable?: "none" | "offline" | "signin";
+};
 
 export type Sense = { definition: string; examples: string[]; synonyms: string[] };
 export type Definition = { word: string; lemma: string; entries: { pos: string; lemma: string; senses: Sense[] }[] };
@@ -47,12 +53,13 @@ export type GrammarMatch = { offset: number; length: number; message: string; sh
 const NONE: LanguageFeatures = { lookup: false, grammar: false, translate: false };
 let features: Promise<LanguageFeatures> | null = null;
 
-/** What this server offers. Asked once; offline, it's nothing. */
+/** What this server offers. Asked once while it answers; a failure is asked again next time. */
 export function languageFeatures(): Promise<LanguageFeatures> {
   if (!features) {
-    features = request<LanguageFeatures>("/api/language").catch(() => {
+    features = request<LanguageFeatures>("/api/language").catch((err) => {
       features = null;
-      return NONE;
+      const unavailable = !api ? "none" : err?.status === 401 || err?.status === 403 ? "signin" : "offline";
+      return { ...NONE, unavailable };
     });
   }
   return features;

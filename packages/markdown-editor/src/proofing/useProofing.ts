@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { personalDictionary } from "./dictionary";
 import { languageFeatures, type LanguageFeatures } from "./languageApi";
 import type { ProofingSettings } from "./settings";
@@ -10,6 +10,15 @@ import type { ProofLanguage } from "./speller";
 const LANGUAGE_KEY = "notes.language";
 const SPELLING_KEY = "notes.spelling";
 const GRAMMAR_KEY = "notes.grammar";
+const RETRY_FIRST = 15_000;
+const RETRY_MAX = 5 * 60_000;
+
+/** What the right-click menu says in place of Look Up and Translate when the server can't give them. */
+export function languageNote(features: LanguageFeatures): string {
+  if (features.unavailable === "offline") return "Look Up and Synonyms need the language server, which can't be reached right now.";
+  if (features.unavailable === "signin") return "Sign in to use Look Up and Synonyms.";
+  return "";
+}
 
 function read(key: string): string | null {
   try {
@@ -46,11 +55,37 @@ export function useProofing(signedIn: boolean, defaultLanguage: ProofLanguage = 
   const [spelling, setSpelling] = useStored(SPELLING_KEY, true, isBool, (raw) => raw === "true");
   const [grammar, setGrammar] = useStored(GRAMMAR_KEY, true, isBool, (raw) => raw === "true");
   const [features, setFeatures] = useState<LanguageFeatures>({ lookup: false, grammar: false, translate: false });
+  const current = useRef(features);
+  current.current = features;
   useEffect(() => {
+    // A server that couldn't be reached is asked again, less and less often, and
+    // straight away when the window gets focus or the browser comes back online.
     let live = true;
-    languageFeatures().then((f) => live && setFeatures(f));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let delay = RETRY_FIRST;
+    const check = () =>
+      languageFeatures().then((f) => {
+        if (!live) return;
+        setFeatures(f);
+        clearTimeout(timer);
+        if (f.unavailable === "offline") {
+          timer = setTimeout(check, delay);
+          delay = Math.min(delay * 2, RETRY_MAX);
+        }
+      });
+    const again = () => {
+      if (current.current.unavailable !== "offline") return;
+      delay = RETRY_FIRST;
+      void check();
+    };
+    void check();
+    window.addEventListener("online", again);
+    window.addEventListener("focus", again);
     return () => {
       live = false;
+      clearTimeout(timer);
+      window.removeEventListener("online", again);
+      window.removeEventListener("focus", again);
     };
   }, []);
   const dictionarySize = useSyncExternalStore(
@@ -69,6 +104,8 @@ export function useProofing(signedIn: boolean, defaultLanguage: ProofLanguage = 
       remoteGrammar: features.grammar && signedIn,
       lookup: features.lookup,
       translate: features.translate && signedIn,
+      translateOffered: features.translate,
+      languageNote: languageNote(features),
       translateHint: !features.translate ? "Translation isn't set up on this server" : "Sign in to translate",
     }),
     [language, spelling, grammar, features, signedIn],

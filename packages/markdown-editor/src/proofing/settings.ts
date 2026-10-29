@@ -13,8 +13,12 @@ export type ProofingSettings = {
   lookup: boolean;
   /** The server has LibreTranslate, and you're signed in. */
   translate: boolean;
+  /** The server has LibreTranslate at all, so Translate belongs in the menu. */
+  translateOffered: boolean;
   /** Why Translate is off, for its tooltip. */
   translateHint: string;
+  /** Why the server's tools (Look Up, Synonyms, Translate) aren't there; empty when they are, or there's no server. */
+  languageNote: string;
   /** Leave spelling to the browser's own checker (and keep grammar and Look Up). */
   native?: boolean;
 };
@@ -26,7 +30,9 @@ export const defaultProofing: ProofingSettings = {
   remoteGrammar: false,
   lookup: false,
   translate: false,
+  translateOffered: false,
   translateHint: "Translation isn't set up on this server",
+  languageNote: "",
 };
 
 export const LANGUAGE_NAMES: Record<ProofLanguage, string> = { "en-GB": "English (UK)", "en-US": "English (US)" };
