@@ -1,4 +1,5 @@
 import nspell from "nspell";
+import { MAKER_WORDS } from "./makerWords";
 
 // The spelling rules shared by the worker and the tests: what counts as a word
 // worth checking, how a Hunspell answer is softened for real writing (names
@@ -7,7 +8,9 @@ import nspell from "nspell";
 export type Speller = ReturnType<typeof nspell>;
 
 export function createSpeller(aff: string | Uint8Array, dic: string | Uint8Array): Speller {
-  return nspell(aff, dic);
+  const speller = nspell(aff, dic);
+  for (const word of MAKER_WORDS) speller.add(word);
+  return speller;
 }
 
 /** Curly apostrophes are how most people type, but the dictionaries use straight ones. */
