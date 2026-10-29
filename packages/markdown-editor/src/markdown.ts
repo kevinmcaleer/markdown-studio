@@ -5,6 +5,8 @@ import mark from "markdown-it-mark";
 import taskLists from "markdown-it-task-lists";
 import { calloutPlugin } from "./callouts";
 import "./callouts.css";
+import { imageSizePlugin } from "./imageSize";
+import "./image-sizes.css";
 import "./prose.css";
 
 // The preview renderer. Raw HTML in a note is shown as text rather than run
@@ -23,7 +25,7 @@ function escapeHtml(text: string): string {
 
 /**
  * A markdown-it set up the way notes render: GFM, footnotes, ==highlight==,
- * task lists, callouts and highlighted code. `configure` can add plugins or change
+ * task lists, callouts, image sizes (`{small}`) and highlighted code. `configure` can add plugins or change
  * options (a host's `preview.markdownIt`); it can't turn raw HTML back on
  * without the host meaning to, since that's its own option.
  */
@@ -34,7 +36,8 @@ export function createMarkdownIt(configure?: (md: MarkdownItInstance) => Markdow
     .use(mark)
     .use(footnote)
     .use(taskLists, { enabled: false, label: true })
-    .use(calloutPlugin);
+    .use(calloutPlugin)
+    .use(imageSizePlugin);
 
   // Links open in a new tab, so following one never loses the note you're on.
   const defaultLinkOpen = md.renderer.rules.link_open ?? ((tokens, i, options, _env, self) => self.renderToken(tokens, i, options));

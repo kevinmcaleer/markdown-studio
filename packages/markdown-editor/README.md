@@ -152,6 +152,7 @@ A host's own button is an object:
 
 The image button opens the image picker when there's an `uploadImage` or `imageLibrary`
 (the library, an upload button and a URL field); otherwise it inserts an image link to fill in.
+The picker also asks what size the image shows at (see [Image sizes](#image-sizes)).
 
 ### Status bar
 
@@ -206,6 +207,27 @@ The preview's markup is `div.callout.callout-<type>` (or `details`/`summary` whe
 foldable) holding `.callout-title` (`.callout-icon`, `.callout-title-text`) and
 `.callout-content`. Its stylesheet is `src/callouts.css`, which also works on its
 own, so a page that renders the same Markdown elsewhere can look the same.
+
+### Image sizes
+
+A `{size}` straight after an image says how big it shows:
+
+```markdown
+![Chassis](/img/chassis.jpg){small}
+```
+
+| Modifier | Shows |
+| --- | --- |
+| none | At its own size, no wider than the text |
+| `{full}` | The width of the text |
+| `{half}` | Half the size (two on one line sit side by side) |
+| `{cover}` | A full-width banner 200px tall, cropped to fit |
+| `{small}` | A quarter of the size |
+
+The preview renders it as a class on the `img` (`image-half`…) and drops the
+modifier. In the live view, hovering an image shows its sizes and picking one
+rewrites the modifier. The stylesheet is `src/image-sizes.css`, which also works
+on its own, like `callouts.css`.
 
 ### Shortcuts
 

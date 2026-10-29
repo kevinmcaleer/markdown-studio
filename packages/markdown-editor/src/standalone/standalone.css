@@ -606,3 +606,31 @@
   width: 16px;
   height: 16px;
 }
+
+/* The picker's size buttons: what a picked image's `{size}` is. */
+.mde-image-size {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.mde-image-size .muted {
+  margin-right: 0.25rem;
+}
+
+.mde-image-size button {
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85em;
+  cursor: pointer;
+}
+
+.mde-image-size button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-text);
+}

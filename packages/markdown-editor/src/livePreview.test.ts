@@ -32,6 +32,12 @@ describe("live preview", () => {
     expect(hiddenText("see [docs](https://x.y) now")).toEqual(["[", "]", "(", "https://x.y", ")"]);
   });
 
+  it("draws an image with its size modifier, and shows both on the cursor's line", () => {
+    expect(hiddenText("![Chassis](/c.jpg){small} after")).toEqual(["![Chassis](/c.jpg){small}"]);
+    expect(hiddenText("![Chassis](/c.jpg){huge}")).toEqual(["![Chassis](/c.jpg)"]);
+    expect(hiddenText("![Chassis](/c.jpg){small}", [1])).toEqual([]);
+  });
+
   it("swaps bullets and task markers for widgets", () => {
     expect(hiddenText("- one\n- [x] done")).toEqual(["-", "- [x] "]);
     expect(hiddenText("- one\n- [x] done", [2])).toEqual(["-"]);
