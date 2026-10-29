@@ -194,9 +194,13 @@ export function applyCommand(state: EditorState, command: SlashCommand, from: nu
 /** Which commands the menu offers; Notes gets the defaults, Decks adds slide commands. */
 const commandList = Facet.define<SlashCommand[], SlashCommand[]>({ combine: (lists) => lists[0] ?? slashCommands });
 
-type MenuState = { from: number; query: string; selected: number } | null;
+// `scroll` is set when the keyboard moved the highlight, so the menu brings it into view;
+// a mouse hover leaves the list where the user scrolled it.
+// `tooltip` is kept for as long as the menu stays at `from`: CodeMirror rebuilds a tooltip
+// whenever it gets a new object, which would reset the list's scroll on every highlight change.
+type MenuState = { from: number; query: string; selected: number; scroll?: boolean; tooltip: Tooltip } | null;
 
-const moveSelection = StateEffect.define<number>();
+const moveSelection = StateEffect.define<{ index: number; scroll: boolean }>();
 const closeMenu = StateEffect.define<null>();
 
 /** Where "/" may open the menu: not in code, links or URLs, where a slash is just a slash. */
@@ -216,7 +220,7 @@ const menuField = StateField.define<MenuState>({
   update(menu, tr) {
     for (const e of tr.effects) {
       if (e.is(closeMenu)) return null;
-      if (e.is(moveSelection) && menu) menu = { ...menu, selected: e.value };
+      if (e.is(moveSelection) && menu) menu = { ...menu, selected: e.value.index, scroll: e.value.scroll };
     }
     const head = tr.state.selection.main.head;
     if (!menu) {
@@ -226,7 +230,7 @@ const menuField = StateField.define<MenuState>({
       tr.changes.iterChanges((_fa, _ta, fromB, toB, text) => {
         if (text.toString() === "/" && toB === head) typed = fromB;
       });
-      return typed !== null && slashAllowed(tr.state, typed) ? { from: typed, query: "", selected: 0 } : null;
+      return typed !== null && slashAllowed(tr.state, typed) ? { from: typed, query: "", selected: 0, tooltip: menuTooltip(typed) } : null;
     }
     if (!tr.docChanged && !tr.selection) return menu;
     const from = tr.changes.mapPos(menu.from, 1);
@@ -236,9 +240,10 @@ const menuField = StateField.define<MenuState>({
     if (query.includes("\n") || query.length > 24) return null;
     // A space after a query nothing matches means you've moved on.
     if (/\s$/.test(query) && !filterCommands(query, tr.state.facet(commandList)).length) return null;
-    return { from, query, selected: query === menu.query ? menu.selected : 0 };
+    const tooltip = from === menu.from ? menu.tooltip : menuTooltip(from);
+    return { from, query, selected: query === menu.query ? menu.selected : 0, tooltip };
   },
-  provide: (field) => showTooltip.from(field, (menu) => (menu ? menuTooltip(menu.from) : null)),
+  provide: (field) => showTooltip.from(field, (menu) => menu?.tooltip ?? null),
 });
 
 function pick(view: EditorView, command: SlashCommand) {
@@ -261,14 +266,28 @@ function menuTooltip(pos: number): Tooltip {
       dom.setAttribute("aria-label", "Insert");
       // Keep focus in the editor while clicking items.
       dom.addEventListener("mousedown", (e) => e.preventDefault());
-      let shown = "";
+      let shownQuery: string | null = null;
+      let shownSelected = -1;
+      let rows: HTMLElement[] = [];
       const render = (state: EditorState) => {
         const menu = state.field(menuField);
         if (!menu) return;
-        const items = filterCommands(menu.query, state.facet(commandList));
-        const key = `${menu.query}\u0000${menu.selected}`;
-        if (key === shown) return;
-        shown = key;
+        if (menu.query !== shownQuery) {
+          shownQuery = menu.query;
+          shownSelected = -1;
+          build(menu.query, state);
+          dom.scrollTop = 0;
+        }
+        if (menu.selected === shownSelected) return;
+        shownSelected = menu.selected;
+        // Only the highlight changes here: rebuilding the rows would reset the scroll position.
+        rows.forEach((row, i) => row.setAttribute("aria-selected", String(i === menu.selected)));
+        const row = rows[menu.selected];
+        if (row && menu.scroll) row.scrollIntoView({ block: "nearest" });
+      };
+      const build = (query: string, state: EditorState) => {
+        const items = filterCommands(query, state.facet(commandList));
+        rows = [];
         dom.replaceChildren();
         if (!items.length) {
           const empty = document.createElement("div");
@@ -278,7 +297,7 @@ function menuTooltip(pos: number): Tooltip {
           return;
         }
         items.forEach((command, i) => {
-          if (i > 0 && !menu.query.trim() && command.group !== items[i - 1].group) {
+          if (i > 0 && !query.trim() && command.group !== items[i - 1].group) {
             const hr = document.createElement("div");
             hr.className = "cm-slash-divider";
             hr.setAttribute("role", "separator");
@@ -287,16 +306,15 @@ function menuTooltip(pos: number): Tooltip {
           const item = document.createElement("div");
           item.className = "cm-slash-item";
           item.setAttribute("role", "option");
-          item.setAttribute("aria-selected", String(i === menu.selected));
           item.innerHTML = `<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="${command.icon}" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
           item.append(command.label);
           item.addEventListener("mousemove", () => {
             const current = view.state.field(menuField);
-            if (current && current.selected !== i) view.dispatch({ effects: moveSelection.of(i) });
+            if (current && current.selected !== i) view.dispatch({ effects: moveSelection.of({ index: i, scroll: false }) });
           });
           item.addEventListener("click", () => pick(view, command));
           dom.append(item);
-          if (i === menu.selected) requestAnimationFrame(() => item.scrollIntoView({ block: "nearest" }));
+          rows.push(item);
         });
       };
       render(view.state);
@@ -310,7 +328,7 @@ function move(step: number) {
     const menu = view.state.field(menuField);
     const count = menu ? filterCommands(menu.query, view.state.facet(commandList)).length : 0;
     if (!menu || !count) return false;
-    view.dispatch({ effects: moveSelection.of((menu.selected + step + count) % count) });
+    view.dispatch({ effects: moveSelection.of({ index: (menu.selected + step + count) % count, scroll: true }) });
     return true;
   };
 }
