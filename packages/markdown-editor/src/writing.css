@@ -66,7 +66,9 @@
   background: var(--success);
 }
 
-.goal-popover {
+/* Opens upwards from the status bar. Specific enough to beat the bundle's
+   `.mde .menu-list`, which drops menus downwards. */
+.menu > .menu-list.goal-popover {
   bottom: calc(100% + 6px);
   top: auto;
   left: 0;
@@ -87,7 +89,8 @@
   gap: 0.35rem;
 }
 
-.language-popover {
+/* Opens upwards too (see .goal-popover). */
+.menu > .menu-list.language-popover {
   bottom: calc(100% + 6px);
   top: auto;
   left: 0;
