@@ -83,6 +83,14 @@ describe("spelling", () => {
     expect(suggestions(us, "colour")).toContain("color");
   });
 
+  it("knows makers' words", () => {
+    for (const word of ["Wifi", "Wi", "Fi", "Pico", "Pico's", "Dupont", "microcontrollers", "Neopixels"]) {
+      expect(isCorrect(gb, word) && isCorrect(us, word)).toBe(true);
+    }
+    expect(checkable("WiFi")).toBe(false);
+    expect(suggestions(gb, "Picco")).toContain("Pico");
+  });
+
   it("leaves some words alone", () => {
     expect(checkable("NASA")).toBe(false);
     expect(checkable("iPhone")).toBe(false);
