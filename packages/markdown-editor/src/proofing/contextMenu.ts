@@ -185,27 +185,28 @@ function menuEntries(view: EditorView, pos: number, speller: (l: ProofLanguage) 
   const target = selected.trim() || word?.word || "";
   if (target) {
     const lookup = selected.trim() && selected.trim().split(/\s+/).length <= 3 ? selected.trim() : (word?.word ?? "");
-    if (lookup) {
-      entries.push({
-        label: `Look Up “${short(lookup)}”`,
-        disabled: !settings.lookup,
-        title: settings.lookup ? "Show the dictionary definition" : "The dictionary isn't installed on this server",
-        run: () => showLookup(view, lookup),
-      });
+    const before = entries.length;
+    if (settings.languageNote) {
+      // Say why, rather than offering items that can't work.
+      entries.push({ note: settings.languageNote });
+    } else {
+      if (lookup && settings.lookup) entries.push({ label: `Look Up “${short(lookup)}”`, title: "Show the dictionary definition", run: () => showLookup(view, lookup) });
+      // The thesaurus: one word under the cursor (or selected), swapped for the synonym you pick.
+      // Not for a misspelt word: the suggestions above are what it needs.
+      const one = misspelt ? null : selected.trim() ? (/^[\p{L}'’-]+$/u.test(selected.trim()) ? { word: selected.trim(), from: sel.from, to: sel.to } : null) : word;
+      if (one && editable && settings.lookup) {
+        entries.push({ note: "Synonyms" }, { loading: "Finding synonyms…", empty: "No synonyms", items: synonymItems(view, one) });
+      }
+      if (settings.translateOffered) {
+        entries.push({
+          label: `Translate “${short(target)}”`,
+          disabled: !settings.translate,
+          title: settings.translate ? "Translate with the server's translation service" : settings.translateHint,
+          run: () => showTranslate(view, target, selected.trim() ? { from: sel.from, to: sel.to } : word!),
+        });
+      }
     }
-    // The thesaurus: one word under the cursor (or selected), swapped for the synonym you pick.
-    // Not for a misspelt word: the suggestions above are what it needs.
-    const one = misspelt ? null : selected.trim() ? (/^[\p{L}'’-]+$/u.test(selected.trim()) ? { word: selected.trim(), from: sel.from, to: sel.to } : null) : word;
-    if (one && editable && settings.lookup) {
-      entries.push({ note: "Synonyms" }, { loading: "Finding synonyms…", empty: "No synonyms", items: synonymItems(view, one) });
-    }
-    entries.push({
-      label: `Translate “${short(target)}”`,
-      disabled: !settings.translate,
-      title: settings.translate ? "Translate with the server's translation service" : settings.translateHint,
-      run: () => showTranslate(view, target, selected.trim() ? { from: sel.from, to: sel.to } : word!),
-    });
-    entries.push("separator");
+    if (entries.length > before) entries.push("separator");
   }
 
   const mod = isMac ? "⌘" : "Ctrl+";
