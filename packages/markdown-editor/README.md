@@ -294,12 +294,13 @@ host overrides them there:
 The tokens: `--bg`, `--surface`, `--surface-2`, `--text`, `--muted`, `--border`, `--accent`,
 `--accent-text`, `--danger`, `--success`, `--radius`, `--shadow`, `--font-sans`,
 `--font-serif`, `--font-mono`, `--highlight`, `--code-bg`, `--code-text`, `--syntax-*`, and
-`--mde-min-height`, `--mde-max-height`, `--mde-split-height`, `--mde-sticky-top`. `theme: "dark"` (or `"auto"`
+`--mde-min-height`, `--mde-max-height`, `--mde-split-height`, `--mde-sticky-top`, `--mde-sticky-bottom`. `theme: "dark"` (or `"auto"`
 on a dark system) swaps in the dark set; override those with `.mde[data-theme="dark"]`.
 
-The toolbar sticks to the top of the viewport while the page scrolls through a long
-document. On a page with its own fixed header, set `--mde-sticky-top` to the header's height
-so the toolbar stops below it.
+The toolbar sticks to the top of the viewport, and the status bar to the bottom, while the
+page scrolls through a long document. On a page with its own fixed header, set
+`--mde-sticky-top` to the header's height so the toolbar stops below it; `--mde-sticky-bottom`
+does the same for a fixed footer.
 
 ## Reproducing the kevsrobots.com EasyMDE toolbar
 
