@@ -38,6 +38,7 @@ export type BuiltInTool =
   | "find"
   | "outline"
   | "raw"
+  | "line-numbers"
   | "preview"
   | "side-by-side"
   | "fullscreen"
@@ -173,6 +174,8 @@ export type MountOptions = {
   codeEditors?: Record<string, CodeEditor>;
   /** Which view to open in. Defaults to "edit". */
   pane?: Pane;
+  /** Line numbers beside the live view too (the Raw view has its own, see `raw.lineNumbers`). The "line-numbers" button toggles them. */
+  lineNumbers?: boolean;
   /** Start in the Raw view (all the Markdown, line numbers) rather than the live one. */
   raw?: { start?: boolean; lineNumbers?: boolean; tabSize?: number; indentWithTabs?: boolean };
 
@@ -221,6 +224,8 @@ export interface MarkdownEditor {
   setReadOnly(readOnly: boolean): void;
   setPane(pane: Pane): void;
   setFullscreen(on: boolean): void;
+  /** Line numbers beside the live view (the Raw view keeps its own). */
+  setLineNumbers(on: boolean): void;
   /** Forgets the stored draft: call it once the host has saved. */
   clearDraft(): void;
   openLinkPopover(): void;

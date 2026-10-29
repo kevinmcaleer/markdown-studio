@@ -1,7 +1,7 @@
 import { redoDepth, undoDepth } from "@codemirror/commands";
 import { indentUnit } from "@codemirror/language";
 import { openSearchPanel } from "@codemirror/search";
-import { EditorState, Prec, type Extension } from "@codemirror/state";
+import { Compartment, EditorState, Prec, type Extension } from "@codemirror/state";
 import { EditorView, highlightActiveLineGutter, keymap, lineNumbers } from "@codemirror/view";
 import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { codeEditors, codeRenderers } from "../codeRenderers";
@@ -50,6 +50,7 @@ export type Bridge = {
     setReadOnly(on: boolean): void;
     setPane(pane: Pane): void;
     setFullscreen(on: boolean): void;
+    setLineNumbers(on: boolean): void;
     clearDraft(): void;
     openImagePicker(anchor?: HTMLElement): void;
     refreshPreview(): void;
@@ -102,6 +103,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
   const initialDoc = useRef(options.doc ?? "").current;
   const [readOnly, setReadOnly] = useState(options.readOnly ?? false);
   const [raw, setRaw] = useState(options.raw?.start ?? false);
+  const [lineNumbersOn, setLineNumbers] = useState(options.lineNumbers ?? false);
   const previewEnabled = options.preview !== false;
   const [pane, setPane] = useState<Pane>(previewEnabled ? (options.pane ?? "edit") : "edit");
   const [fullscreen, setFullscreen] = useState(false);
@@ -192,6 +194,10 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
 
   // ------------------------------------------------------------ the editor's extensions (built once)
   const shortcutKeys = { ...VIEW_SHORTCUTS, ...options.shortcuts };
+  // The line-number gutter: in the Raw view (unless raw.lineNumbers is false), and wherever line numbers are turned on.
+  const gutter = useRef(new Compartment()).current;
+  const gutterShown = lineNumbersOn || (raw && options.raw?.lineNumbers !== false);
+  const gutterExtensions = (on: boolean) => (on ? [lineNumbers(), highlightActiveLineGutter()] : []);
   const viewActions = useRef({
     fullscreen: () => setFullscreen((on) => !on),
     preview: () => previewEnabled && setPane((p) => (p === "preview" ? "edit" : "preview")),
@@ -224,6 +230,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
       EditorState.tabSize.of(tabSize),
       indentUnit.of(options.raw?.indentWithTabs ? "\t" : " ".repeat(tabSize)),
       direction === "auto" ? EditorView.perLineTextDirection.of(true) : EditorView.contentAttributes.of({ dir: direction }),
+      gutter.of(gutterExtensions(gutterShown)),
       Prec.high(keymap.of(viewKeys)),
       // Last, so menus and popovers get Escape first.
       Prec.lowest(
@@ -263,7 +270,9 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
       ...(options.extensions ?? []),
     ];
   }, []);
-  const rawExtensions = useMemo(() => (options.raw?.lineNumbers === false ? [] : [lineNumbers(), highlightActiveLineGutter()]), []);
+  useLayoutEffect(() => {
+    view.current?.dispatch({ effects: gutter.reconfigure(gutterExtensions(gutterShown)) });
+  }, [gutterShown]);
 
   const openEditor = () => (view.current?.dom.isConnected ? view.current : null);
   const dictation = useDictation({ view: openEditor, enabled: Boolean(options.speech) && !readOnly });
@@ -343,6 +352,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
       setReadOnly,
       setPane: (p) => setPane(previewEnabled ? p : "edit"),
       setFullscreen,
+      setLineNumbers,
       clearDraft: () => {
         setRecovered(null);
         if (keeper) {
@@ -380,6 +390,9 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
         break;
       case "raw":
         setRaw((r) => !r);
+        break;
+      case "line-numbers":
+        setLineNumbers((on) => !on);
         break;
       case "preview":
         viewActions.current.preview();
@@ -419,7 +432,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
       {toolbar && active && (
         <Toolbar
           items={toolbar}
-          state={{ active, readOnly, pane, fullscreen, outline: outlineOpen, raw, previewEnabled, canUndo: history.undo, canRedo: history.redo }}
+          state={{ active, readOnly, pane, fullscreen, outline: outlineOpen, raw, lineNumbers: lineNumbersOn, previewEnabled, canUndo: history.undo, canRedo: history.redo }}
           onFormat={onFormat}
           onHeading={(block) => view.current && runFormat(view.current, { block })}
           onTool={onTool}
@@ -449,7 +462,6 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
             history={options.history ?? true}
             livePreview={!raw}
             extensions={extensions}
-            rawExtensions={rawExtensions}
             placeholder={options.placeholder}
             spellcheck={spellcheck !== "off"}
             label="Markdown"
