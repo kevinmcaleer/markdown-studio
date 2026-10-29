@@ -1,0 +1,71 @@
+{
+  "name": "@markdown-studio/markdown-editor",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Markdown Studio's Notes editor as a drop-in bundle: live preview, / menu, toolbars, smart paste, proofing, outline, preview and drafts.",
+  "type": "module",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "main": "./dist/markdown-editor.mjs",
+  "module": "./dist/markdown-editor.mjs",
+  "types": "./dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "source": "./src/index.ts",
+      "types": "./dist/types/index.d.ts",
+      "default": "./dist/markdown-editor.mjs"
+    },
+    "./collab": {
+      "source": "./src/collab.ts",
+      "types": "./dist/types/collab.d.ts",
+      "default": "./dist/collab.mjs"
+    },
+    "./markdown-editor.css": "./dist/markdown-editor.css",
+    "./dictionaries/*": "./dist/dictionaries/*"
+  },
+  "sideEffects": [
+    "*.css"
+  ],
+  "scripts": {
+    "build": "vite build && vite build --mode standalone && tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@codemirror/commands": "6.11.1",
+    "@codemirror/lang-markdown": "6.5.2",
+    "@codemirror/language": "6.13.1",
+    "@codemirror/language-data": "6.5.2",
+    "@codemirror/search": "6.7.2",
+    "@codemirror/state": "6.7.6",
+    "@codemirror/view": "6.43.15",
+    "@lezer/highlight": "1.2.5",
+    "@lezer/markdown": "1.8.1",
+    "dictionary-en": "4.0.0",
+    "dictionary-en-gb": "3.0.0",
+    "highlight.js": "11.12.0",
+    "markdown-it": "15.0.3",
+    "markdown-it-footnote": "4.0.0",
+    "markdown-it-mark": "4.0.0",
+    "markdown-it-task-lists": "2.1.1",
+    "nspell": "2.1.5",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "y-codemirror.next": "0.3.6",
+    "yjs": "13.6.33"
+  },
+  "devDependencies": {
+    "@types/markdown-it": "14.2.0",
+    "@types/markdown-it-footnote": "3.0.4",
+    "@types/node": "22.20.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.2",
+    "happy-dom": "20.14.5",
+    "typescript": "7.0.2",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
+  }
+}

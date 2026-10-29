@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Y from "yjs";
 import type { PlacedThread } from "../comments/CommentsPanel";
 import type { LiveNote } from "./live";
-import { downTarget, headingKeys, moveSection, parseOutline, sectionAt, shiftLevel, upTarget, type Change, type Heading } from "./outline";
+import { downTarget, headingKeys, moveSection, parseOutline, sectionAt, shiftLevel, upTarget, type Change, type Heading } from "@markdown-studio/markdown-editor";
 
 // The Outline panel: the note's headings, to jump to, fold, and move whole
 // sections around. It's all worked out from the Markdown as it is now; the

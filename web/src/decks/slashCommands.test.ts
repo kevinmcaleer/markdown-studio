@@ -1,6 +1,6 @@
 import { EditorState } from "@codemirror/state";
 import { describe, expect, it } from "vitest";
-import { applyCommand, filterCommands } from "../notes/slashMenu";
+import { applyCommand, filterCommands } from "@markdown-studio/markdown-editor";
 import { parseDeck } from "./deck";
 import { deckCommands } from "./slashCommands";
 

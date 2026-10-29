@@ -8,9 +8,12 @@ FROM --platform=$BUILDPLATFORM node:25-bookworm-slim AS web
 WORKDIR /build
 COPY package.json package-lock.json ./
 COPY web/package.json web/
+COPY packages/markdown-editor/package.json packages/markdown-editor/
 RUN npm ci --no-audit --no-fund
+COPY packages/markdown-editor/ packages/markdown-editor/
 COPY web/ web/
-RUN npm run build
+# The app builds the editor package from its source, so only the app is built here.
+RUN npm run build -w web
 
 # ---- Stage 2: Python runtime
 FROM python:3.13-slim-bookworm AS runtime

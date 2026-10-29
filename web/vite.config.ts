@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
-import { defineConfig, type Plugin } from "vite";
+import { defaultClientConditions, defaultServerConditions, defineConfig, type Plugin } from "vite";
 
 // keynotejs ships 16 Keynote themes, and Vite copies them all into the build.
 // Decks only uses Basic White (src/decks/keynote.ts), so only that is precached.
@@ -35,7 +35,8 @@ function serviceWorker(): Plugin {
 // The Keynote theme files that ship with keynotejs, imported with ?url (see src/decks/keynote.ts).
 const keynoteTemplates = join(dirname(createRequire(import.meta.url).resolve("@kevsmac/keynotejs")), "../templates");
 
-// Hunspell dictionaries for spelling, imported with ?url (see src/notes/proofing/spellWorker.ts).
+// Hunspell dictionaries for spelling, imported with ?url by the editor package
+// (packages/markdown-editor/src/proofing/dictionaryUrls.ts and spellWorker.ts).
 // Their packages only export a Node entry point, so this reaches the files directly.
 const dictionary = (name: string) => dirname(createRequire(import.meta.url).resolve(name));
 
@@ -46,12 +47,16 @@ const api = process.env.STUDIO_API ?? "http://127.0.0.1:8000";
 export default defineConfig({
   plugins: [react(), serviceWorker()],
   resolve: {
+    // The editor package is built from its source here, not from its dist (see its package.json "source" exports).
+    conditions: ["source", ...defaultClientConditions],
     alias: [
       { find: /^@keynote-templates\//, replacement: `${keynoteTemplates}/` },
       { find: /^@dictionaries\/en-gb\//, replacement: `${dictionary("dictionary-en-gb")}/` },
       { find: /^@dictionaries\/en\//, replacement: `${dictionary("dictionary-en")}/` },
     ],
   },
+  // The same for the tests, which run the app's modules in Node.
+  ssr: { resolve: { conditions: ["source", ...defaultServerConditions], externalConditions: ["source"] } },
   server: {
     port: 5173,
     proxy: {

@@ -23,6 +23,7 @@ own home network.
 | --- | --- | --- |
 | Server | `server/studio` | Python 3.13 + FastAPI. JSON API, SQLite (WAL), serves the built web app. |
 | Shared login | `packages/powertools-auth` | The mermaid-factory login as a reusable package: argon2id passwords, server-side sessions, CSRF, rate limiting. |
+| Markdown editor | `packages/markdown-editor` | The Notes editor as a package: Notes and Decks build on it, and any web page can drop it in with one `<script>` and one `<link>` ([its README](packages/markdown-editor/README.md)). |
 | Web app | `web` | React + TypeScript + Vite. The suite shell (sign in, app launcher, account) that Notes, Tables and Decks plug into. |
 | Deployment | `Dockerfile`, `docker-compose.yml`, `docker-stack.yml` | One multi-arch image (amd64 + arm64). |
 

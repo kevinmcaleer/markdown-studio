@@ -1,0 +1,299 @@
+# @markdown-studio/markdown-editor
+
+Markdown Studio's Notes editor, as a drop-in for any web page: one `<link>`, one
+`<script>`, and `MarkdownEditor.mount(element)`. React is bundled inside, so the host
+page doesn't need it (or any bundler).
+
+What you get with no configuration:
+
+- **Live preview**: Markdown shows as it reads while you type, with its syntax only on the line you're on. A Raw view shows all of it, with line numbers.
+- **`/` menu** for headings, lists, tables, code, images, links, dates, and the host's own commands.
+- **Toolbar** (undo/redo, text style, marks, lists, inserts, preview, side by side, full screen, Markdown guide) and a **selection toolbar** over selected text, with Clear formatting.
+- **Tables** you edit as a grid, **smart paste** (rich text, spreadsheet cells, code from an IDE and URLs arrive as Markdown) and **image upload** by paste, drop or picker.
+- **Proofing**: Hunspell spelling (offline, en-GB and en-US), basic grammar, and a right-click menu with suggestions; Look Up, LanguageTool grammar and translation when pointed at a Markdown Studio server.
+- **Writing hints** (passive voice, long sentences, readability), **outline**, **find and replace**, counts, cursor position.
+- **Preview and side by side** with synced scrolling, rendered by the built-in renderer or the host's own.
+- **Drafts**: with a `draft.key`, unsaved text survives a crash or reload and is offered back.
+- **Full screen** (`Ctrl/⌘+Shift+F`, Escape leaves), **link popover** on `Ctrl/⌘+K`, heading cycle on `Ctrl/⌘+Alt+=` and `Ctrl/⌘+Alt+-`, and a **"?" cheat sheet** of Markdown, shortcuts and `/` commands.
+
+## Quick start
+
+```html
+<link rel="stylesheet" href="/vendor/markdown-editor/markdown-editor.css" />
+<script src="/vendor/markdown-editor/markdown-editor.js"></script>
+
+<div id="editor"></div>
+<script>
+  const editor = MarkdownEditor.mount("#editor", {
+    doc: "# Hello\n\nStart writing…",
+    onChange: (markdown) => console.log(markdown.length),
+    uploadImage: async (file) => {
+      const body = new FormData();
+      body.append("file", file);
+      const res = await fetch("/api/uploads", { method: "POST", body });
+      if (!res.ok) throw new Error("Upload failed");
+      return (await res.json()).url; // the image's URL
+    },
+    draft: { key: "post-42" },
+  });
+</script>
+```
+
+Or mount it on a form's `<textarea>`: the textarea is hidden and kept in sync, so the form
+posts the Markdown as before, and a submit clears the draft.
+
+```html
+<form method="post">
+  <textarea name="body"># Draft</textarea>
+  <button>Save</button>
+</form>
+<script>
+  MarkdownEditor.mount(document.querySelector("textarea[name=body]"), { draft: { key: "blog-new" } });
+</script>
+```
+
+`demo/index.html` is a working page with both (build first, then serve the package folder:
+`npm run build -w packages/markdown-editor && python3 -m http.server -d packages/markdown-editor`,
+and open `/demo/`).
+
+### Hosting the files
+
+Copy everything in `dist/` that the script needs and serve it together:
+
+| File | What |
+| --- | --- |
+| `markdown-editor.js` | The editor, as one script that sets `window.MarkdownEditor`. The spell checker's worker is inside it. |
+| `markdown-editor.css` | Its styles, all scoped to `.mde`. |
+| `dictionaries/en-GB.dic`, `dictionaries/en-US.dic` | The Hunspell word lists, found beside the script (`proofing.dictionaryBase` moves them). They're fetched once, from the worker, when spelling first runs; with them served from your own site (or cached by its service worker) spelling works offline. |
+
+If the script is served from another origin (a CDN), that origin must send
+`Access-Control-Allow-Origin` for the `.dic` files, since the worker fetches them.
+
+Bundlers can use the ESM build instead: `import { mount } from "@markdown-studio/markdown-editor"`
+and `import "@markdown-studio/markdown-editor/markdown-editor.css"`; the `dictionaries/`
+folder needs to sit beside the built chunk, or set `proofing.dictionaryBase`.
+
+## Options
+
+Every option is optional.
+
+| Option | Default | What |
+| --- | --- | --- |
+| `doc` | `""` (a textarea's value) | The Markdown to start with. |
+| `onChange(markdown)` | | Called after every edit. |
+| `readOnly` | `false` | Shows the document without letting it be changed. |
+| `placeholder` | `"Start writing…"` | Shown while the document is empty. |
+| `autofocus` | `false` | Puts the cursor in the editor on mount. |
+| `minHeight`, `maxHeight` | `12rem`, none | CSS lengths (numbers are pixels). With a maximum, the text scrolls inside the editor. |
+| `theme` | `"auto"` | `"light"`, `"dark"`, or `"auto"` to follow the system. |
+| `direction` | `"auto"` | `"ltr"`, `"rtl"`, or `"auto"` (each line by its own script). |
+| `spellcheck` | `"built-in"` | `"built-in"` (Hunspell, grammar, Look Up), `"native"` (the browser's spell checker, our grammar), or `"off"`. |
+| `toolbar` | `DEFAULT_TOOLBAR` | Buttons in order; `"|"` is a separator; `false` hides the toolbar. See [Toolbar](#toolbar). |
+| `selectionToolbar` | `true` | The floating toolbar over selected text. |
+| `status` | `DEFAULT_STATUS` | Status bar items in order, or `false`. See [Status bar](#status-bar). |
+| `slashCommands` | | Commands added to the `/` menu, or `(defaults) => commands` to replace the list. See [`/` commands](#-commands). |
+| `insertTexts` | | EasyMDE-style templates: `{ link, image, table, horizontalRule, code }`, each `[before, after]` the cursor. |
+| `shortcuts` | | Keys by action, e.g. `{ bold: "Mod-b", link: null }`. `null` turns one off. See [Shortcuts](#shortcuts). |
+| `uploadImage(file)` | | Stores an image and resolves to its URL. Without it, images can only be linked by URL. |
+| `imageLibrary()` | | Resolves to `{ url, alt?, thumb? }[]`, the images the picker offers. |
+| `images.maxBytes` | 25 MB | Bigger images are turned away with a note under the cursor. |
+| `images.accept` | `"image/*"` | Which images are taken, as an `<input accept>` list. |
+| `images.onError(message, file)` | | Called when an image is turned away or its upload fails. |
+| `preview.render(markdown, element)` | built-in | The host's renderer: return HTML (or a promise of it), or fill `element` and return nothing. |
+| `preview.markdownIt(md)` | | Adds plugins or options to the built-in markdown-it renderer. |
+| `preview.afterRender(element)` | | Runs after each render (to run mermaid on it, say). |
+| `preview.className` | `"prose"` | Classes on the rendered HTML's element (use your site's article class to match the published look). |
+| `preview` | on | `false` hides Preview and Side by side. |
+| `pane` | `"edit"` | Opens in `"edit"`, `"preview"` or `"split"`. |
+| `raw.start` | `false` | Opens in the Raw view rather than the live one. |
+| `raw.lineNumbers` | `true` | Line numbers in the Raw view. |
+| `raw.tabSize` | `2` | |
+| `raw.indentWithTabs` | `false` | |
+| `draft.key` | off | Keeps a draft of unsaved text in this browser and offers it back after a reload. One key per document. |
+| `draft.delayMs` | `1000` | How long typing pauses before the draft is written. |
+| `proofing.languageApiBase` | none | A Markdown Studio server (`https://studio.example.com`) for Look Up, LanguageTool grammar and translation. It's called with credentials, so it needs CORS for your origin. |
+| `proofing.dictionaryBase` | `dictionaries/` beside the script | Where `en-GB.dic` and `en-US.dic` are. |
+| `proofing.language` | `"en-GB"` | The proofing language until the writer picks one in the status bar. |
+| `lint` | `true` | Writing hints in the status bar. |
+| `outline` | `false` | Opens the outline beside the text (the `outline` toolbar button toggles it). |
+| `speech` | `false` | Dictation (toolbar) and read aloud (status bar), where the browser can. |
+| `extensions` | | More CodeMirror 6 extensions. |
+| `history` | `true` | CodeMirror's undo history; turn it off when an extension brings its own (co-editing does). |
+
+### Toolbar
+
+`DEFAULT_TOOLBAR` is
+
+```js
+["undo", "redo", "|", "heading", "|", "bold", "italic", "strike", "highlight", "code", "link", "|",
+ "bullet", "numbered", "checklist", "outdent", "indent", "|",
+ "quote", "codeBlock", "table", "image", "divider", "|",
+ "preview", "side-by-side", "fullscreen", "|", "guide"]
+```
+
+Also available: `headingBigger`, `headingSmaller`, `clear`, `find`, `outline`, `raw`, and
+`dictate` (with `speech: true`).
+
+A host's own button is an object:
+
+```js
+{
+  id: "diagram",                // also its class: .mde-tool-diagram
+  label: "Insert a diagram",   // tooltip and accessible name
+  icon: "M2.5 2.5h4v4h-4z…",   // a 16×16 stroke path, an "<svg>…</svg>" string, or text
+  run(editor, button) { … },   // the mounted editor's API, and the button to anchor a menu to
+  active(editor) { return false }, // optional: shows it pressed
+}
+```
+
+The image button opens the image picker when there's an `uploadImage` or `imageLibrary`
+(the library, an upload button and a URL field); otherwise it inserts an image link to fill in.
+
+### Status bar
+
+`DEFAULT_STATUS` is `["words", "chars", "reading", "cursor", "draft", "language", "lint"]`.
+Also available: `lines` and `read-aloud` (with `speech: true`).
+
+### `/` commands
+
+```js
+slashCommands: [
+  {
+    id: "diagram",
+    label: "Diagram",
+    keywords: ["mermaid", "flowchart"],
+    group: "insert",              // the menu draws a line between groups
+    icon: "M2.5 2.5h4v4h-4z…",
+    block: true,                  // starts on its own line
+    // Either insert text (the placeholder is selected)…
+    insert: () => ({ before: "```mermaid\n", placeholder: "flowchart LR", after: "\n```\n" }),
+    // …or run something with the CodeMirror view, once "/diagram" is gone.
+    run: (view) => openMyDiagramPicker(view),
+  },
+]
+```
+
+`MarkdownEditor.slashCommands` is the built-in list.
+
+### Shortcuts
+
+`Mod` is ⌘ on a Mac and Ctrl elsewhere. The names and defaults:
+
+| Name | Key | Name | Key |
+| --- | --- | --- | --- |
+| `bold` | `Mod-b` | `headingBigger` | `Mod-Alt-=` |
+| `italic` | `Mod-i` | `headingSmaller` | `Mod-Alt--` |
+| `strike` | `Mod-Shift-x` | `bullet` | `Mod-Shift-8` |
+| `highlight` | `Mod-Shift-h` | `numbered` | `Mod-Shift-7` |
+| `code` | `Mod-e` | `checklist` | `Mod-Shift-9` |
+| `link` | `Mod-k` | `indent` / `outdent` | `Mod-]` / `Mod-[` |
+| `paragraph` | `Mod-Alt-0` | `clear` | `Mod-\` |
+| `h1`, `h2`, `h3` | `Mod-Alt-1`…`3` | `fullscreen` | `Mod-Shift-f` |
+| `preview` | `Mod-Shift-p` | `sideBySide` | `F9` |
+
+Undo, redo and find and replace keep CodeMirror's usual keys.
+
+## The editor's API
+
+`mount(elementOrSelector, options)` returns:
+
+| | |
+| --- | --- |
+| `getDoc()` / `setDoc(markdown)` | Read or replace the whole document (a dropped `README.md`, say); a replace is one undo step. |
+| `getSelection()` / `replaceSelection(text)` | The selected text, or put text in its place (or at the cursor). |
+| `focus()` | |
+| `setReadOnly(on)` | |
+| `setPane("edit" \| "preview" \| "split")`, `setFullscreen(on)` | |
+| `openLinkPopover()`, `openImagePicker(anchorElement?)` | The same as the Link and image buttons. |
+| `refreshPreview()` | Renders the preview again (after the host's renderer has changed). |
+| `clearDraft()` | Forget the stored draft: call it once the host has saved. |
+| `on(event, listener)` | Returns a function that removes the listener; `off(event, listener)` does too. |
+| `destroy()` | Takes the editor out; a textarea comes back with the latest Markdown. |
+| `element`, `view` | The `.mde` root, and the CodeMirror `EditorView` for anything else. |
+
+Events: `change` (the Markdown), `stats` (`{ words, chars, readingMinutes, lines }`), `draft`
+(`{ status: "clean" | "pending" | "saved" | "unavailable", savedAt }`), `focus`, `blur`,
+`pane`, `fullscreen`.
+
+`window.MarkdownEditor` also has `createMarkdownIt(configure?)` and `renderMarkdown(markdown)`
+(the built-in renderer, for rendering a document the same way elsewhere),
+`DEFAULT_TOOLBAR`, `DEFAULT_STATUS`, `slashCommands`, `configureLanguageApi`,
+`setDictionaryBase` and `version`.
+
+## Theming
+
+The editor's colours and fonts are CSS custom properties set on the `.mde` element, so a
+host overrides them there:
+
+```css
+.mde {
+  --accent: #0b7285;          /* buttons, links, the cursor */
+  --font-serif: Georgia, serif; /* headings */
+  --mde-min-height: 20rem;
+}
+```
+
+The tokens: `--bg`, `--surface`, `--surface-2`, `--text`, `--muted`, `--border`, `--accent`,
+`--accent-text`, `--danger`, `--success`, `--radius`, `--shadow`, `--font-sans`,
+`--font-serif`, `--font-mono`, `--highlight`, `--code-bg`, `--code-text`, `--syntax-*`, and
+`--mde-min-height`, `--mde-max-height`, `--mde-split-height`. `theme: "dark"` (or `"auto"`
+on a dark system) swaps in the dark set; override those with `.mde[data-theme="dark"]`.
+
+## Reproducing the kevsrobots.com EasyMDE toolbar
+
+```js
+const editor = MarkdownEditor.mount("#project-body", {
+  doc: project.markdown,
+  draft: { key: `project-${project.id}` },
+  uploadImage,                                  // POSTs to the projects API, resolves to the URL
+  imageLibrary: () => fetch(`/api/projects/${project.id}/images`).then((r) => r.json()),
+  toolbar: [
+    "undo", "redo", "|", "heading", "|", "bold", "italic", "code", "link", "|",
+    "bullet", "numbered", "checklist", "|", "quote", "codeBlock", "table",
+    { id: "insert-image", label: "Insert image", icon: imageIcon, run: (ed, button) => ed.openImagePicker(button) },
+    { id: "diagram", label: "Diagram", icon: diagramIcon, run: (ed, button) => showDiagramMenu(ed, button) },
+    "|", "preview", "side-by-side", "fullscreen", "|", "guide",
+  ],
+  preview: {
+    render: (markdown) => siteRenderer.render(markdown), // the site's own renderer, shortcodes and all
+    afterRender: (el) => mermaid.run({ nodes: el.querySelectorAll(".mermaid") }),
+    className: "project-content",
+  },
+});
+// Dropping a README.md onto the page replaces the document.
+dropZone.addEventListener("drop", async (e) => editor.setDoc(await e.dataTransfer.files[0].text()));
+// After a successful save:
+editor.clearDraft();
+```
+
+## Co-editing
+
+Co-editing stays out of the main bundle. With a bundler and your own Yjs:
+
+```js
+import { mount } from "@markdown-studio/markdown-editor";
+import { collab } from "@markdown-studio/markdown-editor/collab";
+
+mount(el, { history: false, extensions: [collab({ text: ydoc.getText("doc"), awareness: provider.awareness })] });
+```
+
+Comments and suggestions are tied to Markdown Studio's server, so they stay in the Notes
+app rather than this package.
+
+## Inside Markdown Studio
+
+Notes and Decks build their pages from the same parts this package exports (`Editor`,
+`useFormatting`, `slashMenu`, `smartPaste`, `proofing`, `WritingBar`…), compiled from source
+through the package's `source` export condition, so there is one editor. Language features
+reach the server through `configureLanguageApi`, which the app points at its own API.
+
+## Developing
+
+```bash
+npm run build -w packages/markdown-editor      # dist/: ESM, the IIFE script, CSS, dictionaries, types
+npm test -w packages/markdown-editor
+npm run typecheck -w packages/markdown-editor
+```
+
+The word lists are Hunspell's en-GB and en-US dictionaries (`dictionary-en-gb`,
+`dictionary-en`); their licences are copied beside them in `dist/dictionaries/`.

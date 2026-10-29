@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { DECK_SUFFIX } from "../decks/deck";
 import { Link } from "../Link";
 import { files, isMarkdown, type FileMeta, type Tree } from "./filesApi";
-import { renderMarkdown } from "./markdown";
+import { renderMarkdown } from "@markdown-studio/markdown-editor";
 import "./notesHome.css";
 
 // The Notes home page, shown at /notes when no note is open: a tile to start a
