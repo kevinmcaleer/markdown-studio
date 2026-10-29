@@ -17,6 +17,7 @@ import { createMarkdownIt } from "../markdown";
 import { proofing as proofingExtension, setProofing } from "../proofing/proofing";
 import { useProofing } from "../proofing/useProofing";
 import { slashCommands as defaultCommands, slashMenu, withInsertTexts, type SlashCommand } from "../slashMenu";
+import { imageSizeMarkdown, type ImageSize } from "../imageSize";
 import { insertImages, smartPaste, type SmartPasteOptions } from "../smartPaste";
 import { cellCaretRect, inTable } from "../tableWidget";
 import { speechEditor } from "../speech/speechEditor";
@@ -80,9 +81,9 @@ const SHORTCUT_LABELS: Record<ShortcutName, string> = {
  * An image's Markdown on a line of its own, below the cursor's line when that
  * has text; in a table's cell, at the cursor.
  */
-function insertImageLink(view: EditorView, image: ImageInfo) {
+function insertImageLink(view: EditorView, image: ImageInfo, size?: ImageSize) {
   const alt = (image.alt ?? image.url.split(/[/?#]/).filter(Boolean).pop() ?? "").replace(/\.\w+$/, "").replace(/[[\]]/g, "");
-  const markdown = `![${alt}](${image.url.replace(/[()\s]/g, encodeURIComponent)})`;
+  const markdown = `![${alt}](${image.url.replace(/[()\s]/g, encodeURIComponent)})${imageSizeMarkdown(size)}`;
   const { from, to, head } = view.state.selection.main;
   if (inTable(view.state, head)) {
     // Focused first, so the table carries on in the cell.
@@ -486,9 +487,9 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
           doc={view.current?.state.doc.toString() ?? ""}
           canUpload={canUpload}
           accept={options.images?.accept ?? "image/*"}
-          onPick={(image) => {
+          onPick={(image, size) => {
             setPicker(null);
-            if (view.current && !live.current.readOnly) insertImageLink(view.current, image);
+            if (view.current && !live.current.readOnly) insertImageLink(view.current, image, size);
           }}
           onUpload={(files) => {
             setPicker(null);

@@ -14,6 +14,7 @@ const SYNTAX: [string, string][] = [
   ["`code`", "Inline code"],
   ["[text](https://…)", "Link"],
   ["![alt](https://…)", "Image"],
+  ["![alt](https://…){small}", "Image size: {half}, {cover} or {small}"],
   ["- item", "Bulleted list"],
   ["1. item", "Numbered list"],
   ["- [ ] task", "Checklist"],

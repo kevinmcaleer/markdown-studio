@@ -58,6 +58,7 @@ export { useReadAloud } from "./speech/useReadAloud";
 // ---------------------------------------------------------------- Markdown
 export { renderMarkdown, renderInline, titleOf, createMarkdownIt, type MarkdownItInstance } from "./markdown";
 export { calloutPlugin, calloutKinds, parseCalloutHeader, type CalloutKind, type CalloutHeader } from "./callouts";
+export { imageSizePlugin, imageSizes, parseImageSize, imageSizeMarkdown, imageSizeClass, type ImageSize } from "./imageSize";
 export {
   parseOutline,
   sectionAt,

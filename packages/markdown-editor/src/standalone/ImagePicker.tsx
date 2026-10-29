@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { imageSizes, type ImageSize } from "../imageSize";
 import type { ImageInfo } from "./options";
 import { Popover, type Anchor } from "./Popover";
 
 // The image picker, behind the toolbar's image button and "/image": the
-// host's library to pick from, an upload button, and a URL field.
+// host's library to pick from, an upload button, and a URL field, with the
+// size the picked image shows at (its `{size}`, see imageSize.ts).
 
 /** Whether ``image`` already appears in ``doc``: the host's ``used`` when it
  *  says, otherwise whether the text contains the image's URL. */
@@ -26,7 +28,7 @@ export function ImagePicker({
   library?: () => Promise<ImageInfo[]>;
   canUpload: boolean;
   accept: string;
-  onPick: (image: ImageInfo) => void;
+  onPick: (image: ImageInfo, size: ImageSize) => void;
   onUpload: (files: File[]) => void;
   /** The text, so images already in it can be marked. */
   doc?: string;
@@ -34,6 +36,7 @@ export function ImagePicker({
   const [images, setImages] = useState<ImageInfo[] | null>(library ? null : []);
   const [error, setError] = useState("");
   const [url, setUrl] = useState("");
+  const [size, setSize] = useState<ImageSize>("full");
   const file = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -56,6 +59,14 @@ export function ImagePicker({
 
   return (
     <Popover anchor={anchor} onClose={onClose} className="mde-images" label="Insert an image">
+      <div className="mde-image-size" role="group" aria-label="Size">
+        <span className="muted small">Size</span>
+        {imageSizes.map((s) => (
+          <button key={s.size} type="button" title={s.title} aria-pressed={size === s.size} onClick={() => setSize(s.size)}>
+            {s.label}
+          </button>
+        ))}
+      </div>
       {canUpload && (
         <div className="row">
           <button type="button" className="primary" onClick={() => file.current?.click()}>
@@ -94,7 +105,7 @@ export function ImagePicker({
                     type="button"
                     className={used ? "used" : undefined}
                     title={used ? `${name(image)} (already in the text)` : name(image)}
-                    onClick={() => onPick(image)}
+                    onClick={() => onPick(image, size)}
                   >
                     <img src={image.thumb || image.url} alt="" loading="lazy" />
                     {used && <em className="mde-image-used">In text</em>}
@@ -112,7 +123,7 @@ export function ImagePicker({
         className="mde-image-url"
         onSubmit={(e) => {
           e.preventDefault();
-          if (url.trim()) onPick({ url: url.trim() });
+          if (url.trim()) onPick({ url: url.trim() }, size);
         }}
       >
         <input

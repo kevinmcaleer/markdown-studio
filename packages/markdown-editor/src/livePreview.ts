@@ -4,6 +4,8 @@ import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, typ
 import { parseCalloutHeader } from "./callouts";
 import "./callouts.css";
 import { copyText } from "./clipboard";
+import "./image-sizes.css";
+import { imageSizeClass, imageSizeMarkdown, imageSizes, parseImageSize, type ImageSize } from "./imageSize";
 import { renderedCodeField, renderedCodeTheme } from "./codeRenderers";
 import { tableCursor, tableField } from "./tableWidget";
 
@@ -148,31 +150,73 @@ class FenceLabelWidget extends WidgetType {
   }
 }
 
+/**
+ * An image, drawn as the picture at its `{size}` (see imageSize.ts). Hovering
+ * it shows its sizes, and picking one rewrites the modifier after its Markdown.
+ */
 class ImageWidget extends WidgetType {
   constructor(
     readonly src: string,
     readonly alt: string,
+    readonly size: ImageSize | null,
+    /** How long the image's Markdown is, without its modifier, and how long the modifier is. */
+    readonly markdownLength: number,
+    readonly modifierLength: number,
+    /** No size buttons when the text can't be changed. */
+    readonly readOnly: boolean,
   ) {
     super();
   }
   eq(other: ImageWidget) {
-    return other.src === this.src && other.alt === this.alt;
+    return (
+      other.src === this.src &&
+      other.alt === this.alt &&
+      other.size === this.size &&
+      other.markdownLength === this.markdownLength &&
+      other.modifierLength === this.modifierLength &&
+      other.readOnly === this.readOnly
+    );
   }
-  toDOM() {
+  toDOM(view: EditorView) {
     if (!/^(https?:|data:image\/|\/)/i.test(this.src)) {
       const span = document.createElement("span");
       span.className = "cm-md-image-alt";
       span.textContent = this.alt || this.src;
       return span;
     }
+    const wrap = document.createElement("span");
+    wrap.className = this.size ? `cm-md-image-wrap cm-md-image-sized ${imageSizeClass(this.size)}` : "cm-md-image-wrap";
     const img = document.createElement("img");
     img.className = "cm-md-image";
     img.src = this.src;
     img.alt = this.alt;
-    return img;
+    wrap.append(img);
+    if (this.readOnly) return wrap;
+
+    const bar = document.createElement("span");
+    bar.className = "cm-md-image-sizes";
+    bar.setAttribute("role", "group");
+    bar.setAttribute("aria-label", "Image size");
+    const current = this.size ?? "full";
+    for (const { size, label, title } of imageSizes) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = label;
+      button.title = title;
+      button.setAttribute("aria-pressed", String(size === current));
+      button.addEventListener("mousedown", (e) => e.preventDefault());
+      button.addEventListener("click", (e) => {
+        e.preventDefault();
+        const from = view.posAtDOM(wrap) + this.markdownLength;
+        view.dispatch({ changes: { from, to: from + this.modifierLength, insert: imageSizeMarkdown(size) }, userEvent: "input.image-size" });
+      });
+      bar.append(button);
+    }
+    wrap.append(bar);
+    return wrap;
   }
-  ignoreEvent() {
-    return false;
+  ignoreEvent(event: Event) {
+    return event.target instanceof Element && !!event.target.closest(".cm-md-image-sizes");
   }
 }
 
@@ -338,9 +382,13 @@ export function buildDecorations(state: EditorState, ranges: readonly { from: nu
             const url = node.node.getChild("URL");
             const marks = node.node.getChildren("LinkMark");
             const alt = marks.length >= 2 ? state.sliceDoc(marks[0].to, marks[1].from) : "";
+            const modifier = parseImageSize(state.sliceDoc(node.to, Math.min(doc.lineAt(node.to).to, node.to + 8)));
+            const length = modifier?.length ?? 0;
             if (url)
               decorations.push(
-                Decoration.replace({ widget: new ImageWidget(state.sliceDoc(url.from, url.to), alt) }).range(node.from, node.to),
+                Decoration.replace({
+                  widget: new ImageWidget(state.sliceDoc(url.from, url.to), alt, modifier?.size ?? null, node.to - node.from, length, state.readOnly),
+                }).range(node.from, node.to + length),
               );
             return false;
           }
@@ -588,6 +636,44 @@ const liveTheme = EditorView.theme({
   },
   ".cm-md-rule": { display: "inline-block", width: "100%", verticalAlign: "middle", borderTop: "1px solid var(--border)" },
   ".cm-md-image": { maxWidth: "100%", borderRadius: "6px", verticalAlign: "bottom" },
+  // An image's sizes show on its top edge while it's hovered. A sized
+  // image's wrapper takes the size, and the picture fills it.
+  ".cm-md-image-wrap": { position: "relative", display: "inline-block", maxWidth: "100%", verticalAlign: "bottom" },
+  ".cm-md-image-sized .cm-md-image": { width: "100%" },
+  ".cm-md-image-wrap.image-full, .cm-md-image-wrap.image-cover": { width: "100%" },
+  ".cm-md-image-wrap.image-half": { width: "calc(50% - 0.3em)" },
+  ".cm-md-image-wrap.image-small": { width: "calc(25% - 0.3em)" },
+  ".cm-md-image-wrap.image-cover .cm-md-image": { height: "200px", objectFit: "cover", borderRadius: "5px" },
+  ".cm-md-image-sizes": {
+    position: "absolute",
+    top: "6px",
+    left: "6px",
+    display: "flex",
+    width: "max-content",
+    gap: "2px",
+    padding: "2px",
+    borderRadius: "6px",
+    background: "var(--surface)",
+    boxShadow: "0 1px 4px rgba(0, 0, 0, 0.2)",
+    fontFamily: "var(--font-sans)",
+    fontSize: "0.72rem",
+    lineHeight: "1",
+    opacity: "0",
+    transition: "opacity 0.12s",
+  },
+  ".cm-md-image-wrap:hover .cm-md-image-sizes, .cm-md-image-sizes:focus-within": { opacity: "1" },
+  ".cm-md-image-sizes button": {
+    padding: "0.3em 0.55em",
+    border: "0",
+    borderRadius: "4px",
+    background: "transparent",
+    color: "var(--text)",
+    font: "inherit",
+    whiteSpace: "nowrap",
+    cursor: "pointer",
+  },
+  ".cm-md-image-sizes button:hover": { background: "var(--surface-2)" },
+  ".cm-md-image-sizes button[aria-pressed=true]": { background: "var(--accent)", color: "var(--accent-text)" },
   ".cm-md-image-alt": { color: "var(--muted)", fontStyle: "italic" },
 
   // Tables, drawn like Claude docs: a hover handle on each row and column,
