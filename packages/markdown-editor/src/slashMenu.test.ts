@@ -15,6 +15,14 @@ function run(id: string, doc: string) {
   return { doc: next.doc.toString(), selected: next.sliceDoc(anchor, end), cursor: end };
 }
 
+describe("callout commands", () => {
+  it("insert a titled callout with the cursor on its title", () => {
+    const out = run("callout-tip", "Intro\n/tip|");
+    expect(out.doc).toBe("Intro\n\n> [!tip] Tip\n> ");
+    expect(out.selected).toBe("Tip");
+  });
+});
+
 describe("filterCommands", () => {
   it("lists everything for an empty query", () => {
     expect(filterCommands("")).toHaveLength(slashCommands.length);
@@ -32,6 +40,12 @@ describe("filterCommands", () => {
 
   it("matches later words in a label", () => {
     expect(filterCommands("list").map((c) => c.id)).toEqual(["bullet", "numbered", "checklist"]);
+  });
+
+  it("finds callouts by type, alias and 'callout'", () => {
+    expect(filterCommands("warn")[0].id).toBe("callout-warning");
+    expect(filterCommands("caution")[0].id).toBe("callout-warning");
+    expect(filterCommands("callout").map((c) => c.id)).toEqual(slashCommands.filter((c) => c.group === "callouts").map((c) => c.id));
   });
 
   it("returns nothing for nonsense", () => {
