@@ -12,10 +12,9 @@ import { tableCursor, tableField } from "./tableWidget";
 // and rules hide their Markdown except on the line the cursor is on, where
 // it all shows so it can be edited. A fenced code block hides its fences
 // (showing just its language and a copy button) until the cursor is anywhere
-// inside it. Tables
-// are drawn as tables throughout (see tableWidget.ts). Callouts (`> [!note]`,
-// see callouts.ts) are drawn as boxes, their `[!type]` an icon, and a
-// foldable one folds from its chevron. Raw mode is the editor without this.
+// inside it. Tables are drawn as tables throughout (see tableWidget.ts).
+// Callouts (`> [!note]`, see callouts.ts) are drawn as boxes, their `[!type]`
+// an icon, and a foldable one folds from its chevron. Raw mode is the editor without this.
 
 const hidden = Decoration.replace({});
 
