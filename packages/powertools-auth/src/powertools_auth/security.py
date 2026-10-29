@@ -105,7 +105,9 @@ CONTENT_SECURITY_POLICY = "; ".join(
         "script-src 'self'",
         # Mermaid injects <style> into each rendered SVG.
         "style-src 'self' 'unsafe-inline'",
-        "img-src 'self' data: blob:",
+        # Markdown images may point at any https host. Referrer-Policy keeps
+        # the page URL from leaking to those hosts.
+        "img-src 'self' data: blob: https:",
         "font-src 'self' data:",
         "connect-src 'self'",
         "object-src 'none'",

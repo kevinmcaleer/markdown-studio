@@ -14,6 +14,13 @@ def test_health(client):
     assert response.headers["X-Content-Type-Options"] == "nosniff"
 
 
+def test_csp_allows_external_https_images(client):
+    csp = client.get("/health").headers["Content-Security-Policy"]
+    img_src = next(d for d in csp.split("; ") if d.startswith("img-src"))
+    assert "https:" in img_src.split()
+    assert "http:" not in img_src.split()
+
+
 def test_migrations_are_recorded_per_component(tmp_path):
     path = tmp_path / "studio.db"
     db.init_db(path)
