@@ -32,6 +32,7 @@
   --mde-max-height: none;
   --mde-split-height: 70vh;
   --mde-sticky-top: 0px;
+  --mde-sticky-bottom: 0px;
   color-scheme: light;
 }
 
@@ -317,6 +318,20 @@
 
 .mde-fullscreen .writing-bar {
   border-radius: 0;
+}
+
+/* Like the toolbar, the status bar stays in view: it sticks to the bottom of
+   the viewport (or --mde-sticky-bottom above it) while the page scrolls
+   through a long document. */
+.mde .mde-status {
+  position: sticky;
+  bottom: var(--mde-sticky-bottom);
+  z-index: 10;
+  background: var(--bg);
+}
+
+.mde.mde-fullscreen .mde-status {
+  bottom: 0;
 }
 
 .mde-status-item {
