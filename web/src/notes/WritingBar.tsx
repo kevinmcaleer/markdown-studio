@@ -93,7 +93,7 @@ export function WritingBar({
   goal: ReturnType<typeof useDailyGoal>;
   focus: boolean;
   onFocus: (on: boolean) => void;
-  /** Left out where there's no editor (Preview). */
+  /** Left out where there's no editor. */
   typewriter?: boolean;
   onTypewriter?: (on: boolean) => void;
   onFind?: () => void;
