@@ -374,9 +374,12 @@ export function buildDecorations(state: EditorState, ranges: readonly { from: nu
           case "LinkTitle":
             if ((parent === "Link" || parent === "Autolink") && !isActive(node.from)) hide(node.from, node.to);
             return;
-          case "URL":
-            if (parent === "Link" && !isActive(node.from)) hide(node.from, node.to);
+          case "URL": {
+            // Only the target after "](" — a bare URL used as the link's text is a URL node too.
+            const marks = parent === "Link" ? node.node.parent!.getChildren("LinkMark") : [];
+            if (marks.length >= 2 && node.from >= marks[1].to && !isActive(node.from)) hide(node.from, node.to);
             return;
+          }
           case "Image": {
             if (isActive(node.from)) return false;
             const url = node.node.getChild("URL");
@@ -534,7 +537,7 @@ const linkClicks = EditorView.domEventHandlers({
     if (pos === null) return false;
     for (let node: ReturnType<typeof syntaxTree>["topNode"] | null = syntaxTree(view.state).resolveInner(pos, 1); node; node = node.parent) {
       const url =
-        node.name === "Link" ? node.getChild("URL") : node.name === "URL" || node.name === "Autolink" ? node : null;
+        node.name === "Link" ? node.getChildren("URL").pop() ?? null : node.name === "URL" || node.name === "Autolink" ? node : null;
       if (!url) continue;
       const href = view.state.sliceDoc(url.from, url.to).replace(/^<|>$/g, "");
       if (!/^(https?:|mailto:)/i.test(href)) return false;
