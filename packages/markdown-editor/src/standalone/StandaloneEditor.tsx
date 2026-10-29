@@ -167,6 +167,8 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
       maxBytes: options.images?.maxBytes,
       accept: options.images?.accept,
       onError: options.images?.onError,
+      addImages: options.addImages,
+      libraryName: options.images?.libraryName,
       noUpload: "Images can't be added here.",
     }),
     [],

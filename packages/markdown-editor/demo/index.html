@@ -97,6 +97,9 @@ Written in a plain *HTML form*.</textarea>
       window.projectEditor = MarkdownEditor.mount("#project-editor", {
         doc: "# My robot\n\nA two-wheeled robot that follows a line.\n\n## Parts\n\n- Raspberry Pi Pico\n- 2 × N20 motors\n\n## Wiring\n\nType **/** for blocks, or use the toolbar.\n",
         uploadImage,
+        // Several images dropped at once go here instead of into the text.
+        addImages: (files) => Promise.all(files.map(uploadImage)).then(() => {}),
+        images: { libraryName: "the gallery" },
         imageLibrary: async () => uploaded,
         draft: { key: "demo-project" },
         maxHeight: "28rem",

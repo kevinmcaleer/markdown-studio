@@ -3,6 +3,7 @@ import { StateEffect, StateField, type EditorState, type Extension } from "@code
 import { EditorView, keymap, showTooltip, type Tooltip } from "@codemirror/view";
 import { fence, htmlToMarkdown } from "./htmlToMarkdown";
 import { cellAt, diff, pasteCells, spreadsheetCells, tableFromCells } from "./markdownTable";
+import { dropGap, imageDropIndicator } from "./imageDrop";
 import { inTable } from "./tableWidget";
 
 // Smart paste: what's on the clipboard arrives as Markdown. Rich text becomes
@@ -26,6 +27,13 @@ export type SmartPasteOptions = {
   onError?: (message: string, file: File) => void;
   /** What the note says when an image is pasted and there's no `uploadImage`. */
   noUpload?: string;
+  /**
+   * Keeps several images dropped at once without linking them (a gallery).
+   * Without it, they're all linked where they're dropped.
+   */
+  addImages?: (files: File[]) => Promise<void>;
+  /** What `addImages` keeps them in, for the notes: "the gallery". Defaults to "the image library". */
+  libraryName?: string;
 };
 
 export const DEFAULT_MAX_IMAGE_BYTES = 25 * 1024 * 1024;
@@ -342,26 +350,24 @@ function imageName(file: File): File {
   return new File([file], `Pasted image ${stamp}.${ext}`, { type: file.type });
 }
 
-/** Uploads the images and links them at `at`, with a placeholder while they upload. */
-export function insertImages(view: EditorView, images: File[], at: number, options: SmartPasteOptions) {
+/**
+ * Uploads the images and links them at `at`, with a placeholder while they
+ * upload. A selection starting at `at` is replaced, unless `to` says otherwise.
+ */
+export function insertImages(view: EditorView, images: File[], at: number, options: SmartPasteOptions, to?: number) {
   const upload = options.uploadImage;
   if (!upload) {
     noticeAt(view, at, options.noUpload ?? "Sign in to add images to a note.");
     return;
   }
-  const problems = images.map((f) => [f, imageProblem(f, options)] as const).filter(([, p]) => p);
-  for (const [file, problem] of problems) options.onError?.(problem!, file);
-  images = images.filter((f) => !problems.some(([bad]) => bad === f));
-  if (!images.length) {
-    if (problems.length) noticeAt(view, at, problems.length === 1 ? problems[0][1]! : `${problems.length} images couldn't be added: ${problems[0][1]}`);
-    return;
-  }
+  images = usable(view, images, at, options);
+  if (!images.length) return;
   const named = images.map(imageName);
   const placeholders = named.map((f) => `![Uploading ${f.name.replace(/[[\]]/g, "")}…]()`);
   const ids = named.map(() => nextId++);
   const state = view.state;
   const from = at;
-  const to = at === state.selection.main.from ? state.selection.main.to : at;
+  to ??= at === state.selection.main.from ? state.selection.main.to : at;
   // In a table's cell they go inline, side by side; elsewhere each on its own line.
   const cell = inTable(state, from);
   const gap = cell ? " " : "\n\n";
@@ -444,13 +450,47 @@ export function apply(view: EditorView, plan: PastePlan, options: SmartPasteOpti
   }
 }
 
+/** Images that pass, after telling `onError` about the ones that don't; a note at `at` if none do. */
+function usable(view: EditorView, images: File[], at: number, options: SmartPasteOptions): File[] {
+  const problems = images.map((f) => [f, imageProblem(f, options)] as const).filter(([, p]) => p);
+  for (const [file, problem] of problems) options.onError?.(problem!, file);
+  const ok = images.filter((f) => !problems.some(([bad]) => bad === f));
+  if (!ok.length && problems.length) noticeAt(view, at, problems.length === 1 ? problems[0][1]! : `${problems.length} images couldn't be added: ${problems[0][1]}`);
+  return ok;
+}
+
+function plural(n: number) {
+  return n === 1 ? "1 image" : `${n} images`;
+}
+
+/** Hands several images to the host's library, saying so under where they were dropped. */
+export function addToLibrary(view: EditorView, images: File[], at: number, options: SmartPasteOptions) {
+  const add = options.addImages!;
+  const name = options.libraryName ?? "the image library";
+  images = usable(view, images, at, options);
+  if (!images.length) return;
+  noticeAt(view, at, `Adding ${plural(images.length)} to ${name}…`, false);
+  add(images.map(imageName)).then(
+    () => noticeAt(view, Math.min(at, view.state.doc.length), `Added ${plural(images.length)} to ${name}`, false),
+    (error: unknown) => {
+      const reason = error instanceof Error && error.message ? error.message : "Something went wrong.";
+      noticeAt(view, Math.min(at, view.state.doc.length), `Couldn't add the images to ${name}: ${reason}`);
+    },
+  );
+}
+
 function drop(view: EditorView, event: DragEvent, options: SmartPasteOptions): boolean {
   const images = imagesIn(event.dataTransfer?.files);
   if (!images.length || view.state.readOnly) return false;
-  const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
-  if (pos === null || inCode(view.state, pos)) return false;
   event.preventDefault();
-  insertImages(view, images, pos, options);
+  // Several at once go to the library, where there is one; one goes between the lines it was dropped between.
+  if (images.length > 1 && options.addImages) {
+    addToLibrary(view, images, view.posAtCoords({ x: event.clientX, y: event.clientY }) ?? view.state.selection.main.head, options);
+    return true;
+  }
+  const { pos } = dropGap(view, event.clientY);
+  view.focus();
+  insertImages(view, images, pos, options, pos);
   return true;
 }
 
@@ -504,6 +544,11 @@ export function smartPaste(options: SmartPasteOptions = {}): Extension {
     noticeTooltip,
     noticeKeys,
     pasteTheme,
+    imageDropIndicator({
+      single: Boolean(options.uploadImage),
+      many: Boolean(options.addImages),
+      libraryName: options.libraryName ?? "the image library",
+    }),
     EditorView.domEventHandlers({
       paste: (event, view) => paste(view, event, options),
       drop: (event, view) => drop(view, event, options),
