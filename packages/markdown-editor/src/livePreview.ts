@@ -6,7 +6,8 @@ import { tableCursor, tableField } from "./tableWidget";
 // The live view: Markdown shown as it reads, and still edited as text, like
 // Obsidian's live preview. Headings, emphasis, links, list bullets, quotes
 // and rules hide their Markdown except on the line the cursor is on, where
-// it all shows so it can be edited. Tables are drawn as tables throughout
+// it all shows so it can be edited. A fenced code block hides its fences
+// (showing just its language) until the cursor is anywhere inside it. Tables are drawn as tables throughout
 // (see tableWidget.ts). Raw mode is the editor without this.
 
 const hidden = Decoration.replace({});
@@ -61,6 +62,25 @@ class RuleWidget extends WidgetType {
   toDOM() {
     const span = document.createElement("span");
     span.className = "cm-md-rule";
+    return span;
+  }
+  ignoreEvent() {
+    return false;
+  }
+}
+
+/** A fenced block's language, small, in place of its opening fence. */
+class FenceLabelWidget extends WidgetType {
+  constructor(readonly language: string) {
+    super();
+  }
+  eq(other: FenceLabelWidget) {
+    return other.language === this.language;
+  }
+  toDOM() {
+    const span = document.createElement("span");
+    span.className = "cm-md-fence-label";
+    span.textContent = this.language;
     return span;
   }
   ignoreEvent() {
@@ -225,7 +245,24 @@ export function buildDecorations(state: EditorState, ranges: readonly { from: nu
           case "HorizontalRule":
             if (!isActive(node.from)) decorations.push(Decoration.replace({ widget: new RuleWidget() }).range(node.from, node.to));
             return;
-          case "FencedCode":
+          case "FencedCode": {
+            lines(node.from, Math.max(node.from, node.to - 1), "cm-md-code");
+            const open = doc.lineAt(node.from);
+            const close = doc.lineAt(Math.max(node.from, node.to - 1));
+            for (let n = open.number; n <= close.number; n++) if (active.has(n)) return;
+            const info = node.node.getChild("CodeInfo");
+            decorations.push(lineClass("cm-md-fence cm-md-fence-open").range(open.from));
+            decorations.push(
+              Decoration.replace({ widget: new FenceLabelWidget(info ? state.sliceDoc(info.from, info.to) : "") }).range(open.from, open.to),
+            );
+            const marks = node.node.getChildren("CodeMark");
+            const end = marks.length >= 2 ? marks[marks.length - 1] : null;
+            if (end && close.number > open.number && end.from >= close.from) {
+              decorations.push(lineClass("cm-md-fence").range(close.from));
+              hide(close.from, close.to);
+            }
+            return;
+          }
           case "CodeBlock":
             lines(node.from, Math.max(node.from, node.to - 1), "cm-md-code");
             return;
@@ -297,6 +334,11 @@ const liveTheme = EditorView.theme({
   },
   ".cm-line.cm-md-code-first": { borderTopLeftRadius: "10px", borderTopRightRadius: "10px", paddingTop: "0.5rem" },
   ".cm-line.cm-md-code-last": { borderBottomLeftRadius: "10px", borderBottomRightRadius: "10px", paddingBottom: "0.5rem" },
+  // A fence line while the cursor is outside its block: the language, small
+  // and to the right, on the opening line; the closing line all but gone.
+  ".cm-line.cm-md-fence": { fontSize: "0.7em", lineHeight: "1.2" },
+  ".cm-line.cm-md-fence-open": { textAlign: "right" },
+  ".cm-md-fence-label": { color: "var(--muted)", fontFamily: "var(--font-sans)", letterSpacing: "0.02em" },
   ".cm-md-rule": { display: "inline-block", width: "100%", verticalAlign: "middle", borderTop: "1px solid var(--border)" },
   ".cm-md-image": { maxWidth: "100%", borderRadius: "6px", verticalAlign: "bottom" },
   ".cm-md-image-alt": { color: "var(--muted)", fontStyle: "italic" },
