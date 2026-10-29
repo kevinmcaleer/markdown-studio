@@ -1,6 +1,7 @@
 import { syntaxTree } from "@codemirror/language";
 import { Facet, Prec, StateEffect, StateField, type EditorState, type Extension, type TransactionSpec } from "@codemirror/state";
 import { EditorView, keymap, showTooltip, type Tooltip } from "@codemirror/view";
+import { calloutKinds } from "./callouts";
 
 // Typing "/" at the start of a line (or after a space) opens a menu of
 // Markdown blocks, like Claude docs. Typing more filters it; arrows move,
@@ -16,6 +17,8 @@ export type SlashCommand = {
   group: string;
   /** 16×16 stroke icon path. */
   icon: string;
+  /** The icon's viewBox, when it isn't drawn on 16×16 ("0 0 24 24", say). */
+  viewBox?: string;
   /** Starts on its own line. */
   block?: boolean;
   /** Needs an empty line above it to parse (a table, a fence, a rule). */
@@ -70,12 +73,26 @@ export const slashCommands: SlashCommand[] = [
   {
     id: "quote",
     label: "Quote",
-    keywords: ["blockquote", "callout", ">"],
+    keywords: ["blockquote", ">"],
     group: "blocks",
     icon: "M3.5 4v8M6.5 5h6.5M6.5 8h6.5M6.5 11h4",
     block: true,
     insert: () => ({ before: "> " }),
   },
+  ...(["note", "info", "tip", "success", "question", "warning", "danger", "example"] as const).map((type): SlashCommand => {
+    const kind = calloutKinds.find((k) => k.type === type)!;
+    return {
+      id: `callout-${type}`,
+      label: `${kind.label} callout`,
+      keywords: ["callout", "admonition", "alert", "box", type, ...kind.aliases],
+      group: "callouts",
+      icon: kind.icon,
+      viewBox: "0 0 24 24",
+      block: true,
+      blankBefore: true,
+      insert: () => ({ before: `> [!${type}] `, placeholder: kind.label, after: "\n> " }),
+    };
+  }),
   {
     id: "bullet",
     label: "Bulleted list",
@@ -337,7 +354,10 @@ function menuTooltip(pos: number): Tooltip {
           const item = document.createElement("div");
           item.className = "cm-slash-item";
           item.setAttribute("role", "option");
-          item.innerHTML = `<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="${command.icon}" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+          const viewBox = command.viewBox ?? "0 0 16 16";
+          // The same 1.3px line whatever the icon was drawn on.
+          const stroke = (1.3 * Number(viewBox.split(/\s+/)[2] ?? 16)) / 16;
+          item.innerHTML = `<svg width="16" height="16" viewBox="${viewBox}" aria-hidden="true"><path d="${command.icon}" fill="none" stroke="currentColor" stroke-width="${stroke}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
           item.append(command.label);
           item.addEventListener("mousemove", () => {
             const current = view.state.field(menuField);

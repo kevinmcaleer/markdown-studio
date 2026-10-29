@@ -3,7 +3,7 @@ import { ensureSyntaxTree } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { describe, expect, it } from "vitest";
 import { Highlight } from "./highlightSyntax";
-import { buildDecorations } from "./livePreview";
+import { buildDecorations, closedCallouts } from "./livePreview";
 
 /** The text each hidden or replaced range covers, given which lines the cursor is on. */
 function hiddenText(doc: string, activeLines: number[] = []): string[] {
@@ -52,5 +52,29 @@ describe("live preview", () => {
 
   it("hides quote marks", () => {
     expect(hiddenText("> quoted")).toEqual(["> "]);
+  });
+
+  it("draws a callout's [!type] as a widget, except on its line", () => {
+    expect(hiddenText("> [!warning] Hot\n> Don't touch")).toEqual(["> [!warning] ", "> "]);
+    expect(hiddenText("> [!warning] Hot\n> Don't touch", [1])).toEqual(["> "]);
+    expect(hiddenText("> [!tip]-\n> body")).toEqual(["> [!tip]-", "> "]);
+  });
+
+  it("classes a callout's lines by type", () => {
+    const doc = "> [!faq]- Why?\n> Because.";
+    const state = EditorState.create({ doc, extensions: markdown({ base: markdownLanguage, extensions: [Highlight] }) });
+    ensureSyntaxTree(state, doc.length, 5000);
+    const classes: string[] = [];
+    buildDecorations(state, [{ from: 0, to: doc.length }], new Set()).between(0, doc.length, (_f, _t, deco) => {
+      if (deco.spec.class) classes.push(deco.spec.class);
+    });
+    expect(classes).toEqual(expect.arrayContaining(["cm-md-callout cm-md-callout-first", "callout-question", "cm-md-callout-title", "cm-md-callout cm-md-callout-last"]));
+    expect(classes).not.toContain("cm-md-quote");
+  });
+
+  it("finds callouts that start folded", () => {
+    const doc = "> [!note]- Closed\n> one\n> two\n\n> [!note]+ Open\n> three\n\n> [!tip]-\n\ntext";
+    const state = EditorState.create({ doc });
+    expect(closedCallouts(state).map(({ from, to }) => state.sliceDoc(from, to))).toEqual(["\n> one\n> two"]);
   });
 });
