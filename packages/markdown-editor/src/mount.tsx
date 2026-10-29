@@ -86,6 +86,7 @@ export function mount(target: HTMLElement | string, options: MountOptions = {}):
     setReadOnly: (on) => bridge.actions?.setReadOnly(on),
     setPane: (pane) => bridge.actions?.setPane(pane),
     setFullscreen: (on) => bridge.actions?.setFullscreen(on),
+    setLineNumbers: (on) => bridge.actions?.setLineNumbers(on),
     clearDraft: () => bridge.actions?.clearDraft(),
     openLinkPopover: () => void openLinkPopover(view),
     openImagePicker: (anchor) => bridge.actions?.openImagePicker(anchor),

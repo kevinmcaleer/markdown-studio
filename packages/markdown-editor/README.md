@@ -6,7 +6,7 @@ page doesn't need it (or any bundler).
 
 What you get with no configuration:
 
-- **Live preview**: Markdown shows as it reads while you type, with its syntax only on the line you're on. A Raw view shows all of it, with line numbers.
+- **Live preview**: Markdown shows as it reads while you type, with its syntax only on the line you're on. A Raw view shows all of it, with line numbers, and line numbers can be turned on in the live view too.
 - **`/` menu** for headings, lists, tables, code, images, links, dates, and the host's own commands.
 - **Toolbar** (undo/redo, text style, marks, lists, inserts, preview, side by side, full screen, Markdown guide) and a **selection toolbar** over selected text, with Clear formatting.
 - **Tables** you edit as a grid, **smart paste** (rich text, spreadsheet cells, code from an IDE and URLs arrive as Markdown) and **image upload** by paste, drop or picker.
@@ -109,6 +109,7 @@ Every option is optional.
 | `codeRenderers` | | Fenced blocks drawn in the live view, by language: `{ mermaid: (source, element) => … }` shows a ```` ```mermaid ```` block as its diagram, and as its source while the cursor is in it. A renderer fills `element` and can return a promise. |
 | `codeEditors` | | Editors for fenced blocks, by language, shown in place of the block's lines while the cursor is in it: `{ mermaid: ({ element, source, onChange, onExit, focus }) => handle }`. Call `onChange(code)` after each edit and `onExit("before" \| "after")` to hand the cursor back; return `{ setSource, focus, destroy }`. With `codeRenderers`, a ```` ```mermaid ```` block shows its diagram until clicked and then, say, a split code + diagram editor (Mermaid Factory's `mountEditor`). |
 | `pane` | `"edit"` | Opens in `"edit"`, `"preview"` or `"split"`. |
+| `lineNumbers` | `false` | Line numbers beside the live view too (the `line-numbers` toolbar button toggles them). |
 | `raw.start` | `false` | Opens in the Raw view rather than the live one. |
 | `raw.lineNumbers` | `true` | Line numbers in the Raw view. |
 | `raw.tabSize` | `2` | |
@@ -136,7 +137,7 @@ Every option is optional.
  "preview", "side-by-side", "fullscreen", "|", "guide"]
 ```
 
-Also available: `headingBigger`, `headingSmaller`, `clear`, `find`, `outline`, `raw`, and
+Also available: `headingBigger`, `headingSmaller`, `clear`, `find`, `outline`, `raw`, `line-numbers`, and
 `dictate` (with `speech: true`).
 
 A host's own button is an object:
@@ -260,7 +261,7 @@ Undo, redo and find and replace keep CodeMirror's usual keys.
 | `getSelection()` / `replaceSelection(text)` | The selected text, or put text in its place (or at the cursor). |
 | `focus()` | |
 | `setReadOnly(on)` | |
-| `setPane("edit" \| "preview" \| "split")`, `setFullscreen(on)` | |
+| `setPane("edit" \| "preview" \| "split")`, `setFullscreen(on)`, `setLineNumbers(on)` | |
 | `openLinkPopover()`, `openImagePicker(anchorElement?)` | The same as the Link and image buttons. |
 | `refreshPreview()` | Renders the preview again (after the host's renderer has changed). |
 | `clearDraft()` | Forget the stored draft: call it once the host has saved. |

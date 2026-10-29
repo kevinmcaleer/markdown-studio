@@ -17,10 +17,11 @@ const HEADINGS: { block: Block; label: string }[] = [
 type ViewTool = { id: string; label: string; keys?: string; icon: string };
 
 /** The buttons that change the view rather than the text. */
-export const VIEW_TOOLS: Record<"find" | "outline" | "raw" | "preview" | "side-by-side" | "fullscreen" | "guide", ViewTool> = {
+export const VIEW_TOOLS: Record<"find" | "outline" | "raw" | "line-numbers" | "preview" | "side-by-side" | "fullscreen" | "guide", ViewTool> = {
   find: { id: "find", label: "Find and replace", keys: "Mod-F", icon: "M7 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM10.75 10.75 14 14" },
   outline: { id: "outline", label: "Outline", icon: "M2.5 4h11M5 8h8.5M7.5 12h6" },
   raw: { id: "raw", label: "Raw Markdown", icon: "M3.5 1.5h6l3 3v10h-9zM9.5 1.5v3h3M6.5 8 5 9.75l1.5 1.75M9.5 8 11 9.75l-1.5 1.75" },
+  "line-numbers": { id: "line-numbers", label: "Line numbers", icon: "M2.5 3.5h1v3M2 6.5h2M2 9.5h1.75L2 12.5h2M6.5 4.5h7.5M6.5 8h7.5M6.5 11.5h7.5" },
   preview: { id: "preview", label: "Preview", keys: "Mod-Shift-P", icon: "M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8zM8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" },
   "side-by-side": { id: "side-by-side", label: "Side by side", keys: "F9", icon: "M2.5 3h11v10h-11zM8 3v10" },
   fullscreen: { id: "fullscreen", label: "Full screen", keys: "Mod-Shift-F", icon: "M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" },
@@ -34,6 +35,7 @@ export type ToolbarState = {
   fullscreen: boolean;
   outline: boolean;
   raw: boolean;
+  lineNumbers: boolean;
   previewEnabled: boolean;
   canUndo: boolean;
   canRedo: boolean;
@@ -96,6 +98,8 @@ export function Toolbar({
         return state.outline;
       case "raw":
         return state.raw;
+      case "line-numbers":
+        return state.lineNumbers;
       default:
         return undefined;
     }

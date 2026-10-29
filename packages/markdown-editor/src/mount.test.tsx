@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { flushSync } from "react-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readDraft, writeDraft } from "./draft";
 import { mount } from "./mount";
@@ -70,6 +71,22 @@ describe("mount", () => {
     el.querySelector<HTMLButtonElement>(".mde-tool-diagram")!.click();
     expect(run).toHaveBeenCalledWith(editor, el.querySelector(".mde-tool-diagram"));
     editor.destroy();
+  });
+
+  it("turns line numbers on and off in the live view", () => {
+    const el = host();
+    const editor = mount(el, { doc: "one\ntwo", toolbar: ["line-numbers"] });
+    expect(el.querySelector(".cm-lineNumbers")).toBeNull();
+    const button = el.querySelector<HTMLButtonElement>(".mde-tool-line-numbers")!;
+    flushSync(() => button.click());
+    expect(el.querySelector(".cm-lineNumbers")).not.toBeNull();
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+    flushSync(() => editor.setLineNumbers(false));
+    expect(el.querySelector(".cm-lineNumbers")).toBeNull();
+    editor.destroy();
+    const numbered = mount(host(), { lineNumbers: true });
+    expect(numbered.element.querySelector(".cm-lineNumbers")).not.toBeNull();
+    numbered.destroy();
   });
 
   it("offers a stored draft back, and restores it", () => {
