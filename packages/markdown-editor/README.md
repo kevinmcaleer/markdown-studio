@@ -174,6 +174,8 @@ slashCommands: [
     insert: () => ({ before: "```mermaid\n", placeholder: "flowchart LR", after: "\n```\n" }),
     // …or run something with the CodeMirror view, once "/diagram" is gone.
     run: (view) => openMyDiagramPicker(view),
+    // Optional: leave it out of the menu while this returns true.
+    hidden: (state) => state.doc.toString().includes("```mermaid"),
   },
 ]
 ```
