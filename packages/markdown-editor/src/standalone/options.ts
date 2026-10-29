@@ -1,6 +1,6 @@
 import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
-import type { CodeRenderer } from "../codeRenderers";
+import type { CodeEditor, CodeRenderer } from "../codeRenderers";
 import type { DraftOptions, DraftState } from "../draft";
 import type { ShortcutName } from "../format/formatting";
 import type { MarkdownItInstance } from "../markdown";
@@ -164,6 +164,13 @@ export type MountOptions = {
    * draws `source` into `element` (and may finish later).
    */
   codeRenderers?: Record<string, CodeRenderer>;
+  /**
+   * Editors for fenced blocks, by language: while the cursor is in a ```mermaid
+   * block, say, it shows as this editor (code beside its live diagram) in place
+   * of its lines. Each one mounts into `element`, reports edits with `onChange`
+   * and can hand the cursor back with `onExit("before" | "after")`.
+   */
+  codeEditors?: Record<string, CodeEditor>;
   /** Which view to open in. Defaults to "edit". */
   pane?: Pane;
   /** Start in the Raw view (all the Markdown, line numbers) rather than the live one. */
