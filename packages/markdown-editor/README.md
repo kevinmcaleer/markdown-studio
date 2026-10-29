@@ -104,6 +104,7 @@ Every option is optional.
 | `preview.afterRender(element)` | | Runs after each render (to run mermaid on it, say). |
 | `preview.className` | `"prose"` | Classes on the rendered HTML's element (use your site's article class to match the published look). |
 | `preview` | on | `false` hides Preview and Side by side. |
+| `codeRenderers` | | Fenced blocks drawn in the live view, by language: `{ mermaid: (source, element) => … }` shows a ```` ```mermaid ```` block as its diagram, and as its source while the cursor is in it. A renderer fills `element` and can return a promise. |
 | `pane` | `"edit"` | Opens in `"edit"`, `"preview"` or `"split"`. |
 | `raw.start` | `false` | Opens in the Raw view rather than the live one. |
 | `raw.lineNumbers` | `true` | Line numbers in the Raw view. |

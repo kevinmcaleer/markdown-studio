@@ -1,6 +1,7 @@
 import { syntaxTree } from "@codemirror/language";
 import type { EditorState, Extension, Range } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
+import { renderedCodeField, renderedCodeTheme } from "./codeRenderers";
 import { tableCursor, tableField } from "./tableWidget";
 
 // The live view: Markdown shown as it reads, and still edited as text, like
@@ -437,5 +438,14 @@ const liveTheme = EditorView.theme({
 
 /** The live view, for a Markdown editor. Leave it out for raw Markdown. */
 export function livePreview(): Extension {
-  return [EditorView.editorAttributes.of({ class: "cm-live" }), inlinePreview, tableField, tableCursor, linkClicks, liveTheme];
+  return [
+    EditorView.editorAttributes.of({ class: "cm-live" }),
+    inlinePreview,
+    tableField,
+    tableCursor,
+    renderedCodeField,
+    linkClicks,
+    liveTheme,
+    renderedCodeTheme,
+  ];
 }
