@@ -108,6 +108,7 @@ Every option is optional.
 | `preview` | on | `false` hides Preview and Side by side. |
 | `codeRenderers` | | Fenced blocks drawn in the live view, by language: `{ mermaid: (source, element) => … }` shows a ```` ```mermaid ```` block as its diagram, and as its source while the cursor is in it. A renderer fills `element` and can return a promise. |
 | `codeEditors` | | Editors for fenced blocks, by language, shown in place of the block's lines while the cursor is in it: `{ mermaid: ({ element, source, onChange, onExit, focus }) => handle }`. Call `onChange(code)` after each edit and `onExit("before" \| "after")` to hand the cursor back; return `{ setSource, focus, destroy }`. With `codeRenderers`, a ```` ```mermaid ```` block shows its diagram until clicked and then, say, a split code + diagram editor (Mermaid Factory's `mountEditor`). |
+| `tableRenderer` | | Draws a table another way in the live view: `({ rows, heading }) => element \| null`. `rows` is the header row then the body rows (each cell's Markdown) and `heading` the text of the heading the table sits under. The element shows in place of the grid until the table is clicked or the caret moves in, and comes back when the focus leaves; return `null` to keep the grid. A Videos table drawn as thumbnail cards, say. |
 | `pane` | `"edit"` | Opens in `"edit"`, `"preview"` or `"split"`. |
 | `lineNumbers` | `false` | Line numbers beside the live view too (the `line-numbers` toolbar button toggles them). |
 | `raw.start` | `false` | Opens in the Raw view rather than the live one. |

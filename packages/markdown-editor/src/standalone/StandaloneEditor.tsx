@@ -19,7 +19,7 @@ import { useProofing } from "../proofing/useProofing";
 import { slashCommands as defaultCommands, slashMenu, withInsertTexts, type SlashCommand } from "../slashMenu";
 import { imageSizeMarkdown, type ImageSize } from "../imageSize";
 import { insertImages, smartPaste, type SmartPasteOptions } from "../smartPaste";
-import { cellCaretRect, inTable } from "../tableWidget";
+import { cellCaretRect, inTable, tableRenderers } from "../tableWidget";
 import { speechEditor } from "../speech/speechEditor";
 import { useDictation } from "../speech/useDictation";
 import { useReadAloud } from "../speech/useReadAloud";
@@ -222,6 +222,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
       codeRenderers.of(
         Object.fromEntries(Object.entries(options.codeRenderers ?? {}).map(([language, render]) => [language.toLowerCase(), render])),
       ),
+      options.tableRenderer ? tableRenderers.of(options.tableRenderer) : [],
       codeEditors.of(
         Object.fromEntries(Object.entries(options.codeEditors ?? {}).map(([language, mount]) => [language.toLowerCase(), mount])),
       ),

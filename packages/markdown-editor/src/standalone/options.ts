@@ -7,6 +7,7 @@ import type { MarkdownItInstance } from "../markdown";
 import type { LanguageRequest } from "../proofing/languageApi";
 import type { ProofLanguage } from "../proofing/speller";
 import type { InsertTexts, SlashCommand } from "../slashMenu";
+import type { TableRenderer } from "../tableWidget";
 
 // The options `mount()` takes, and the editor it hands back. Every option has
 // a default, so `mount(el)` alone gives the full editor.
@@ -165,6 +166,13 @@ export type MountOptions = {
    * draws `source` into `element` (and may finish later).
    */
   codeRenderers?: Record<string, CodeRenderer>;
+  /**
+   * Draws a table some other way in the live view: a Videos table as a gallery
+   * of thumbnails, say. It's given the table's cells and the heading it sits
+   * under, and returns an element, or null to keep the grid. The drawing shows
+   * until the table is clicked or the caret moves in, then the grid to edit.
+   */
+  tableRenderer?: TableRenderer;
   /**
    * Editors for fenced blocks, by language: while the cursor is in a ```mermaid
    * block, say, it shows as this editor (code beside its live diagram) in place
