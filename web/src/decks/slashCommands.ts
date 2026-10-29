@@ -1,4 +1,4 @@
-import { slashCommands, type SlashCommand } from "../notes/slashMenu";
+import { slashCommands, type SlashCommand } from "@markdown-studio/markdown-editor";
 import { LAYOUTS, type Layout } from "./deck";
 
 // The "/" menu in Decks: the Notes commands that make sense on a slide, plus

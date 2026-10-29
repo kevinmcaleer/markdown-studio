@@ -1,5 +1,26 @@
 import { openSearchPanel } from "@codemirror/search";
 import { keymap, type EditorView } from "@codemirror/view";
+import {
+  Editor,
+  findReplace,
+  useFormatting,
+  useWritingLint,
+  slashMenu,
+  smartPaste,
+  proofing as proofingExtension,
+  setProofing,
+  useProofing,
+  speechEditor,
+  useDictation,
+  useReadAloud,
+  useDailyGoal,
+  useTypewriter,
+  WritingBar,
+  setWriting,
+  writingMode,
+  writingStats,
+  type SelectionStats,
+} from "@markdown-studio/markdown-editor";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import { ApiError } from "../api";
@@ -9,24 +30,11 @@ import { ShareButton } from "../sharing/ShareButton";
 import { SyncBanners, SyncMenu, useNoteSync } from "../sync/Sync";
 import { useSession } from "../session";
 import { DownloadMenu } from "./DownloadMenu";
-import { Editor } from "./Editor";
-import { findReplace } from "./findReplace";
-import { useFormatting } from "./format/FormatToolbar";
 import { files, formatSize, isMarkdown, isText, TABLES_MIME, withShare, type FileMeta, type FileRole } from "./filesApi";
-import { useWritingLint } from "./lint/useWritingLint";
 import { LiveNote, type LiveStatus, type Peer } from "./live";
 import { NoteTitle } from "./NoteTitle";
 import { useFilePlace } from "./place/useFilePlace";
-import { slashMenu } from "./slashMenu";
-import { smartPaste } from "./smartPaste";
-import { proofing as proofingExtension, setProofing } from "./proofing/proofing";
-import { useProofing } from "./proofing/useProofing";
-import { speechEditor } from "./speech/speechEditor";
-import { useDictation } from "./speech/useDictation";
-import { useReadAloud } from "./speech/useReadAloud";
 import { useOutline } from "./useOutline";
-import { useDailyGoal, useTypewriter, WritingBar } from "./WritingBar";
-import { setWriting, writingMode, writingStats, type SelectionStats } from "./writingMode";
 
 /** "write" is the live view (rendered as you type); "raw" shows all the Markdown. */
 type Mode = "write" | "raw";

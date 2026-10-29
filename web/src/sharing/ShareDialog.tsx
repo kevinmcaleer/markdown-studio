@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ApiError } from "../api";
-import { copyText } from "../clipboard";
+import { copyText } from "@markdown-studio/markdown-editor";
 import { isLocalOnly, ROLE_LABELS, sharing, shareUrl, type ShareLink, type ShareRole, type Shares } from "./api";
 
 const ROLES: ShareRole[] = ["view", "comment", "edit"];

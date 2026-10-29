@@ -1,0 +1,73 @@
+/// <reference path="./proofing/nspell.d.ts" />
+/// <reference path="./markdown-it-plugins.d.ts" />
+/// <reference path="./globals.d.ts" />
+
+// @markdown-studio/markdown-editor: the Notes editor.
+//
+// Hosts that just want an editor on a page use `mount` (see README.md). The
+// rest is what Markdown Studio's own apps build their note pages from: the
+// React editor, its CodeMirror extensions, and the toolbars and status bar.
+
+export {
+  mount,
+  DEFAULT_STATUS,
+  DEFAULT_TOOLBAR,
+  type MarkdownEditor,
+  type MountOptions,
+  type EditorEvents,
+  type ToolbarItem,
+  type ToolbarButton,
+  type BuiltInTool,
+  type StatusItem,
+  type ImageInfo,
+  type Pane,
+  type Stats,
+} from "./mount";
+export { DraftKeeper, readDraft, writeDraft, clearDraft, recoverableDraft, type DraftOptions, type DraftState, type StoredDraft } from "./draft";
+export { linkPopover, openLinkPopover } from "./format/linkPopover";
+
+// ---------------------------------------------------------------- the editor
+export { Editor, markdownExtensions, type EditorProps } from "./Editor";
+export { editorHighlighting, editorTheme } from "./editorTheme";
+export { livePreview } from "./livePreview";
+export { slashMenu, slashCommands, filterCommands, applyCommand, withInsertTexts, type SlashCommand, type InsertTexts } from "./slashMenu";
+export { smartPaste, insertImages, DEFAULT_MAX_IMAGE_BYTES, type SmartPasteOptions } from "./smartPaste";
+export { findReplace } from "./findReplace";
+export { setWriting, writingMode, writingStats, countWords, countChars, readingMinutes, type SelectionStats, type WritingSettings } from "./writingMode";
+export { WritingBar, useDailyGoal, useTypewriter } from "./WritingBar";
+export { diagnostics, setDiagnostics, applyFix, type Diagnostic } from "./diagnostics";
+
+// ---------------------------------------------------------------- formatting
+export { useFormatting } from "./format/FormatToolbar";
+export { runFormat, formatKeymap, formatKeys, activeFormats, cycleHeading, clearFormatting, DEFAULT_SHORTCUTS, type FormatAction, type Block, type Mark, type ShortcutName } from "./format/formatting";
+export { selectionToolbar } from "./format/selectionToolbar";
+
+// ---------------------------------------------------------------- proofing and hints
+export { proofing, setProofing, defaultProofing, type ProofingSettings } from "./proofing/proofing";
+export { useProofing, type Proofing } from "./proofing/useProofing";
+export { configureLanguageApi, fetchLanguageApi, type LanguageRequest } from "./proofing/languageApi";
+export { setDictionaryBase } from "./proofing/dictionaryUrls";
+export { useWritingLint } from "./lint/useWritingLint";
+
+// ---------------------------------------------------------------- speech
+export { speechEditor } from "./speech/speechEditor";
+export { useDictation } from "./speech/useDictation";
+export { useReadAloud } from "./speech/useReadAloud";
+
+// ---------------------------------------------------------------- Markdown
+export { renderMarkdown, renderInline, titleOf, createMarkdownIt, type MarkdownItInstance } from "./markdown";
+export {
+  parseOutline,
+  sectionAt,
+  moveSection,
+  upTarget,
+  downTarget,
+  shiftLevel,
+  applyChanges,
+  headingKeys,
+  type Heading,
+  type Change,
+} from "./outline";
+export { htmlToMarkdown } from "./htmlToMarkdown";
+export { parseDelimited } from "./delimited";
+export { copyText } from "./clipboard";

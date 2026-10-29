@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Markdown editor demo</title>
+    <!-- The whole editor: one stylesheet and one script, no bundler, no React on the page. -->
+    <link rel="stylesheet" href="../dist/markdown-editor.css" />
+    <script src="../dist/markdown-editor.js"></script>
+    <style>
+      body { margin: 0; padding: 2rem 1rem; font: 16px/1.5 system-ui, sans-serif; background: #f4f4f1; color: #222; }
+      main { max-width: 64rem; margin: 0 auto; display: grid; gap: 1.5rem; }
+      h1, h2 { margin: 0; font-weight: 600; }
+      .note { color: #666; margin: 0; }
+      /* A host restyles the editor through its tokens. */
+      #project-editor { --accent: #0b7285; }
+      .diagram-menu { position: fixed; z-index: 9500; display: grid; padding: 0.3rem; background: #fff; border: 1px solid #ccc; border-radius: 8px; box-shadow: 0 6px 20px rgb(0 0 0 / 0.15); }
+      .diagram-menu button { border: 0; background: none; padding: 0.4rem 0.8rem; text-align: left; cursor: pointer; font: inherit; }
+      .diagram-menu button:hover { background: #eef; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Markdown editor</h1>
+
+      <section>
+        <h2>A project page, the way kevsrobots.com uses it</h2>
+        <p class="note">Custom Insert image and Diagram buttons, a preview from the host's own renderer, uploads, and a draft that survives a reload.</p>
+        <div id="project-editor"></div>
+      </section>
+
+      <section>
+        <h2>On a form's textarea</h2>
+        <p class="note">The textarea stays in sync, so the form posts the Markdown.</p>
+        <form id="post-form" onsubmit="event.preventDefault(); document.getElementById('posted').textContent = new FormData(this).get('body');">
+          <textarea name="body" id="post-body"># A blog post
+
+Written in a plain *HTML form*.</textarea>
+          <p><button type="submit">Submit the form</button></p>
+          <pre id="posted"></pre>
+        </form>
+      </section>
+    </main>
+
+    <script>
+      // Uploads: a real host sends the file to its server and returns the URL.
+      // The demo keeps them in memory as data: URLs.
+      const uploaded = [];
+      function uploadImage(file) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            uploaded.push({ url: reader.result, alt: file.name.replace(/\.\w+$/, "") });
+            resolve(reader.result);
+          };
+          reader.onerror = () => reject(new Error("Couldn't read the file"));
+          reader.readAsDataURL(file);
+        });
+      }
+
+      const diagramIcon = "M2.5 2.5h4v4h-4zM9.5 9.5h4v4h-4zM4.5 6.5v5h5";
+
+      function diagramMenu(editor, button) {
+        document.querySelector(".diagram-menu")?.remove();
+        const menu = document.createElement("div");
+        menu.className = "diagram-menu";
+        const kinds = {
+          Flowchart: "```mermaid\nflowchart LR\n  A[Start] --> B[Finish]\n```\n",
+          Sequence: "```mermaid\nsequenceDiagram\n  Robot->>Sensor: ping\n  Sensor-->>Robot: 12 cm\n```\n",
+        };
+        for (const [label, text] of Object.entries(kinds)) {
+          const item = document.createElement("button");
+          item.type = "button";
+          item.textContent = label;
+          item.onclick = () => {
+            menu.remove();
+            editor.replaceSelection("\n" + text);
+          };
+          menu.append(item);
+        }
+        const r = button.getBoundingClientRect();
+        menu.style.left = r.left + "px";
+        menu.style.top = r.bottom + 4 + "px";
+        document.body.append(menu);
+        setTimeout(() => document.addEventListener("pointerdown", (e) => { if (!menu.contains(e.target)) menu.remove(); }, { once: true }));
+      }
+
+      // The host's renderer: here the built-in one, with mermaid blocks shown as the site would show them.
+      const builtIn = MarkdownEditor.createMarkdownIt();
+      function render(markdown) {
+        return builtIn
+          .render(markdown)
+          .replace(/<pre class="hljs"><code class="language-mermaid">([\s\S]*?)<\/code><\/pre>/g, '<figure class="mermaid" data-diagram>$1</figure>')
+          .replace(/<pre><code class="language-mermaid">([\s\S]*?)<\/code><\/pre>/g, '<figure class="mermaid" data-diagram>$1</figure>');
+      }
+
+      window.projectEditor = MarkdownEditor.mount("#project-editor", {
+        doc: "# My robot\n\nA two-wheeled robot that follows a line.\n\n## Parts\n\n- Raspberry Pi Pico\n- 2 × N20 motors\n\n## Wiring\n\nType **/** for blocks, or use the toolbar.\n",
+        uploadImage,
+        imageLibrary: async () => uploaded,
+        draft: { key: "demo-project" },
+        maxHeight: "28rem",
+        toolbar: [
+          "undo", "redo", "|", "heading", "|", "bold", "italic", "code", "link", "|",
+          "bullet", "numbered", "checklist", "|", "quote", "codeBlock", "table",
+          { id: "insert-image", label: "Insert image", icon: "M2.5 3h11v10h-11zM2.5 11l3.5-3.5 3 3 1.5-1.5 3 3M10.5 6.25h.01", run: (editor, button) => editor.openImagePicker(button) },
+          { id: "diagram", label: "Diagram", icon: diagramIcon, run: diagramMenu },
+          "|", "preview", "side-by-side", "fullscreen", "|", "guide",
+        ],
+        slashCommands: [
+          { id: "diagram", label: "Diagram", keywords: ["mermaid", "flowchart"], group: "inline", icon: diagramIcon, insert: () => ({ before: "```mermaid\nflowchart LR\n  ", placeholder: "A --> B", after: "\n```\n" }) },
+        ],
+        preview: {
+          render,
+          afterRender: (el) => el.querySelectorAll("[data-diagram]").forEach((d) => (d.title = "Rendered by the host")),
+        },
+        onChange: (doc) => (document.title = `Markdown editor demo (${doc.length})`),
+      });
+      projectEditor.on("stats", (s) => (window.lastStats = s));
+
+      window.postEditor = MarkdownEditor.mount(document.getElementById("post-body"), { status: ["words", "cursor"], minHeight: 160 });
+    </script>
+  </body>
+</html>
