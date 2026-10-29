@@ -30,7 +30,14 @@ export { linkPopover, openLinkPopover } from "./format/linkPopover";
 export { Editor, markdownExtensions, type EditorProps } from "./Editor";
 export { editorHighlighting, editorTheme } from "./editorTheme";
 export { livePreview } from "./livePreview";
-export { codeRenderers, type CodeRenderer } from "./codeRenderers";
+export {
+  codeEditors,
+  codeRenderers,
+  type CodeEditor,
+  type CodeEditorContext,
+  type CodeEditorHandle,
+  type CodeRenderer,
+} from "./codeRenderers";
 export { slashMenu, slashCommands, filterCommands, applyCommand, withInsertTexts, type SlashCommand, type InsertTexts } from "./slashMenu";
 export { smartPaste, insertImages, DEFAULT_MAX_IMAGE_BYTES, type SmartPasteOptions } from "./smartPaste";
 export { findReplace } from "./findReplace";

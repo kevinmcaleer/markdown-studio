@@ -1,9 +1,11 @@
+// @vitest-environment happy-dom
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { ensureSyntaxTree } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
 import { describe, expect, it } from "vitest";
 import { Highlight } from "./highlightSyntax";
-import { codeRenderers, findRenderedCode } from "./codeRenderers";
+import { codeEditors, codeRenderers, findRenderedCode, renderedCodeField, type CodeEditorContext } from "./codeRenderers";
 import { buildDecorations, closedCallouts, fencedCodeText } from "./livePreview";
 
 /** The text each hidden or replaced range covers, given which lines the cursor is on. */
@@ -130,5 +132,64 @@ describe("rendered code blocks", () => {
   it("draws nothing without renderers, or for an unclosed block", () => {
     expect(drawn(doc, 0, {})).toEqual([]);
     expect(drawn("```mermaid\ngraph TD", 0)).toEqual([]);
+  });
+});
+
+describe("code block editors", () => {
+  const doc = "intro\n\n```mermaid\ngraph TD\n  A-->B\n```\n\nafter";
+
+  function setup(cursor: number) {
+    const mounted: CodeEditorContext[] = [];
+    const destroyed: string[] = [];
+    const state = EditorState.create({
+      doc,
+      selection: { anchor: cursor },
+      extensions: [
+        markdown({ base: markdownLanguage, extensions: [Highlight] }),
+        codeRenderers.of({ mermaid: () => {} }),
+        codeEditors.of({
+          mermaid: (context) => {
+            mounted.push(context);
+            return { setSource: () => {}, destroy: () => destroyed.push(context.source) };
+          },
+        }),
+        renderedCodeField,
+      ],
+    });
+    ensureSyntaxTree(state, state.doc.length, 5000);
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({ state, parent });
+    return { view, mounted, destroyed };
+  }
+
+  it("shows the block as its editor while the cursor is in it", () => {
+    const { view, mounted } = setup(doc.indexOf("A-->B"));
+    expect(mounted.map((m) => m.source)).toEqual(["graph TD\n  A-->B"]);
+    expect(view.dom.querySelector(".cm-md-code-editor-mermaid")).not.toBeNull();
+    view.destroy();
+  });
+
+  it("writes the editor's changes into the block", () => {
+    const { view, mounted } = setup(doc.indexOf("A-->B"));
+    mounted[0].onChange("graph TD\n  A-->B\n  B-->C");
+    expect(view.state.doc.toString()).toBe("intro\n\n```mermaid\ngraph TD\n  A-->B\n  B-->C\n```\n\nafter");
+    view.destroy();
+  });
+
+  it("hands the cursor back and closes the editor", () => {
+    const { view, mounted, destroyed } = setup(doc.indexOf("A-->B"));
+    mounted[0].onExit("after");
+    expect(view.state.doc.lineAt(view.state.selection.main.head).text).toBe("");
+    expect(view.state.selection.main.head).toBe(doc.indexOf("```\n\n") + 4);
+    expect(destroyed).toEqual(["graph TD\n  A-->B"]);
+    expect(view.dom.querySelector(".cm-md-code-editor")).toBeNull();
+    view.destroy();
+  });
+
+  it("draws the block while the cursor is elsewhere", () => {
+    const { view, mounted } = setup(0);
+    expect(mounted).toEqual([]);
+    view.destroy();
   });
 });

@@ -4,7 +4,7 @@ import { openSearchPanel } from "@codemirror/search";
 import { EditorState, Prec, type Extension } from "@codemirror/state";
 import { EditorView, highlightActiveLineGutter, keymap, lineNumbers } from "@codemirror/view";
 import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { codeRenderers } from "../codeRenderers";
+import { codeEditors, codeRenderers } from "../codeRenderers";
 import { recoverableDraft, DraftKeeper, type DraftState, type StoredDraft } from "../draft";
 import { Editor } from "../Editor";
 import { findReplace } from "../findReplace";
@@ -215,6 +215,9 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
       findReplace(),
       codeRenderers.of(
         Object.fromEntries(Object.entries(options.codeRenderers ?? {}).map(([language, render]) => [language.toLowerCase(), render])),
+      ),
+      codeEditors.of(
+        Object.fromEntries(Object.entries(options.codeEditors ?? {}).map(([language, mount]) => [language.toLowerCase(), mount])),
       ),
       options.speech ? speechEditor() : [],
       writingStats({ onSelection: setSelection, onWritten: () => {} }),
