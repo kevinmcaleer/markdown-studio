@@ -329,12 +329,32 @@ SMTP_FROM=Markdown Studio <you@example.com>
 
 People who signed up without an email address can add one on their Account page.
 
-Without email, or for an account with no address, whoever runs the server resets the
-password:
+### Resetting a password from the server
+
+Without email, or for an account with no address, whoever runs the server can reset any
+password from the command line. Give a username or an email address:
 
 ```sh
+# List accounts, to find the right username:
+docker compose exec -u app markdown-studio python -m studio users
+
+# Type a new password (asked twice, not echoed):
 docker compose exec -u app markdown-studio python -m studio reset-password kev
+
+# Or make up a strong one and print it, to pass on privately:
+docker compose exec -u app markdown-studio python -m studio reset-password kev@example.com --generate
+
+# Or, from a script, read it from standard input:
+echo "$NEW_PASSWORD" | docker compose exec -T -u app markdown-studio \
+  python -m studio reset-password kev --password-stdin
 ```
+
+The new password must be at least 12 characters. Resetting signs the user out of every
+browser and cancels any reset link they were emailed. On a Swarm cluster, run the same
+commands on the Pi that holds the data, with `docker exec -it -u app $(docker ps -qf
+name=studio_markdown-studio)` in place of `docker compose exec -u app markdown-studio`.
+Outside Docker, run `python -m studio …` from `server/` with the same `DATABASE_PATH` as the
+server.
 
 ## Configuration
 
