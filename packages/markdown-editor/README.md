@@ -10,7 +10,7 @@ What you get with no configuration:
 - **`/` menu** for headings, lists, tables, code, images, links, dates, and the host's own commands.
 - **Toolbar** (undo/redo, text style, marks, lists, inserts, preview, side by side, full screen, Markdown guide) and a **selection toolbar** over selected text, with Clear formatting.
 - **Tables** you edit as a grid, **smart paste** (rich text, spreadsheet cells, code from an IDE and URLs arrive as Markdown) and **image upload** by paste, drop or picker.
-- **Proofing**: Hunspell spelling (offline, en-GB and en-US), basic grammar, and a right-click menu with suggestions; Look Up, LanguageTool grammar and translation when pointed at a Markdown Studio server.
+- **Proofing**: Hunspell spelling (offline, en-GB and en-US), basic grammar, and a right-click menu with suggestions; Look Up, Synonyms, LanguageTool grammar and translation when pointed at a Markdown Studio server (or anything serving the same `/api/language` endpoints).
 - **Writing hints** (passive voice, long sentences, readability), **outline**, **find and replace**, counts, cursor position.
 - **Preview and side by side** with synced scrolling, rendered by the built-in renderer or the host's own.
 - **Drafts**: with a `draft.key`, unsaved text survives a crash or reload and is offered back.
@@ -112,6 +112,7 @@ Every option is optional.
 | `draft.key` | off | Keeps a draft of unsaved text in this browser and offers it back after a reload. One key per document. |
 | `draft.delayMs` | `1000` | How long typing pauses before the draft is written. |
 | `proofing.languageApiBase` | none | A Markdown Studio server (`https://studio.example.com`) for Look Up, LanguageTool grammar and translation. It's called with credentials, so it needs CORS for your origin. |
+| `proofing.languageApi` | none | Sends those requests yourself, in place of `languageApiBase`: `(path, { body }) => Promise<json>`. Use it to add an `Authorization` header; `MarkdownEditor.fetchLanguageApi(base)` is the default one. |
 | `proofing.dictionaryBase` | `dictionaries/` beside the script | Where `en-GB.dic` and `en-US.dic` are. |
 | `proofing.language` | `"en-GB"` | The proofing language until the writer picks one in the status bar. |
 | `lint` | `true` | Writing hints in the status bar. |

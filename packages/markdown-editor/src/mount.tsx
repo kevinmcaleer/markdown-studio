@@ -36,7 +36,8 @@ export function mount(target: HTMLElement | string, options: MountOptions = {}):
   if (options.minHeight !== undefined) root.style.setProperty("--mde-min-height", cssLength(options.minHeight)!);
   if (options.maxHeight !== undefined) root.style.setProperty("--mde-max-height", cssLength(options.maxHeight)!);
 
-  if (options.proofing?.languageApiBase !== undefined) configureLanguageApi(options.proofing.languageApiBase ? fetchLanguageApi(options.proofing.languageApiBase) : null);
+  if (options.proofing?.languageApi) configureLanguageApi(options.proofing.languageApi);
+  else if (options.proofing?.languageApiBase !== undefined) configureLanguageApi(options.proofing.languageApiBase ? fetchLanguageApi(options.proofing.languageApiBase) : null);
   if (options.proofing?.dictionaryBase !== undefined) setDictionaryBase(options.proofing.dictionaryBase);
 
   const listeners = new Map<string, Set<(value: unknown) => void>>();

@@ -10,11 +10,11 @@ import "./proofing.css";
 import type { ProofLanguage, SpellChecker } from "./speller";
 
 // The editor's right-click menu: spelling suggestions and grammar fixes for
-// the spot you clicked, then Look Up and Translate (like macOS), then the
-// clipboard. Shift+right-click still gives the browser's own menu.
+// the spot you clicked, then Look Up, Synonyms and Translate (like macOS),
+// then the clipboard. Shift+right-click still gives the browser's own menu.
 
 type Item = { label: string; title?: string; strong?: boolean; disabled?: boolean; run?: () => void };
-type Entry = Item | "separator" | { note: string } | { loading: string; items: Promise<Item[]> };
+type Entry = Item | "separator" | { note: string } | { loading: string; items: Promise<Item[]>; empty?: string };
 
 let closeOpen: (() => void) | null = null;
 
@@ -125,10 +125,10 @@ function showMenu(view: EditorView, x: number, y: number, entries: Entry[]) {
       entry.items.then(
         (items) => {
           if (!menu.isConnected) return;
-          slot.replaceWith(...(items.length ? items.map(button) : [Object.assign(slot, { textContent: "No suggestions" })]));
+          slot.replaceWith(...(items.length ? items.map(button) : [Object.assign(slot, { textContent: entry.empty ?? "No suggestions" })]));
           place(menu, parseFloat(menu.style.left), parseFloat(menu.style.top));
         },
-        () => (slot.textContent = "No suggestions"),
+        () => (slot.textContent = entry.empty ?? "No suggestions"),
       );
     } else menu.append(button(entry));
   }
@@ -191,6 +191,11 @@ function menuEntries(view: EditorView, pos: number, speller: (l: ProofLanguage) 
         run: () => showLookup(view, lookup),
       });
     }
+    // The thesaurus: one word under the cursor (or selected), swapped for the synonym you pick.
+    const one = selected.trim() ? (/^[\p{L}'’-]+$/u.test(selected.trim()) ? { word: selected.trim(), from: sel.from, to: sel.to } : null) : word;
+    if (one && editable && settings.lookup) {
+      entries.push({ note: "Synonyms" }, { loading: "Finding synonyms…", empty: "No synonyms", items: synonymItems(view, one) });
+    }
     entries.push({
       label: `Translate “${short(target)}”`,
       disabled: !settings.translate,
@@ -230,6 +235,40 @@ function menuEntries(view: EditorView, pos: number, speller: (l: ProofLanguage) 
       : []),
   );
   return entries;
+}
+
+// ---------------------------------------------------------------- Synonyms
+
+/** WordNet's synonyms for `word`, across every sense, most common sense first. */
+export function synonymsOf(entry: Definition | null, word: string, max = 8): string[] {
+  const seen = new Set([word.toLowerCase()]);
+  const out: string[] = [];
+  for (const group of entry?.entries ?? [])
+    for (const sense of group.senses)
+      for (const s of sense.synonyms) {
+        if (out.length >= max) return out;
+        if (!seen.has(s.toLowerCase())) {
+          seen.add(s.toLowerCase());
+          out.push(s);
+        }
+      }
+  return out;
+}
+
+/** Keeps the replaced word's capitals: "Quick" → "Fast", "QUICK" → "FAST". */
+export function matchCase(original: string, replacement: string): string {
+  if (original.length > 1 && original === original.toUpperCase() && original !== original.toLowerCase()) return replacement.toUpperCase();
+  if (original[0] && original[0] !== original[0].toLowerCase()) return replacement[0].toUpperCase() + replacement.slice(1);
+  return replacement;
+}
+
+function synonymItems(view: EditorView, at: { word: string; from: number; to: number }): Promise<Item[]> {
+  return define(at.word).then((entry) =>
+    synonymsOf(entry, at.word).map((s) => {
+      const insert = matchCase(at.word, s);
+      return { label: insert, run: () => applyFix(view, { label: insert, from: at.from, to: at.to, insert }) };
+    }),
+  );
 }
 
 // ---------------------------------------------------------------- Look Up
