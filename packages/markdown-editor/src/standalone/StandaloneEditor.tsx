@@ -483,6 +483,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
           anchor={picker}
           onClose={() => setPicker(null)}
           library={options.imageLibrary}
+          doc={view.current?.state.doc.toString() ?? ""}
           canUpload={canUpload}
           accept={options.images?.accept ?? "image/*"}
           onPick={(image) => {

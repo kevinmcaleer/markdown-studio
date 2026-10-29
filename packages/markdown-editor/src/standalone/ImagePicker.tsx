@@ -5,6 +5,12 @@ import { Popover, type Anchor } from "./Popover";
 // The image picker, behind the toolbar's image button and "/image": the
 // host's library to pick from, an upload button, and a URL field.
 
+/** Whether ``image`` already appears in ``doc``: the host's ``used`` when it
+ *  says, otherwise whether the text contains the image's URL. */
+export function isImageUsed(image: ImageInfo, doc: string): boolean {
+  return image.used ?? doc.includes(image.url);
+}
+
 export function ImagePicker({
   anchor,
   onClose,
@@ -13,6 +19,7 @@ export function ImagePicker({
   accept,
   onPick,
   onUpload,
+  doc = "",
 }: {
   anchor: Anchor;
   onClose: () => void;
@@ -21,6 +28,8 @@ export function ImagePicker({
   accept: string;
   onPick: (image: ImageInfo) => void;
   onUpload: (files: File[]) => void;
+  /** The text, so images already in it can be marked. */
+  doc?: string;
 }) {
   const [images, setImages] = useState<ImageInfo[] | null>(library ? null : []);
   const [error, setError] = useState("");
@@ -77,12 +86,22 @@ export function ImagePicker({
             </p>
           ) : images.length ? (
             <div className="mde-image-grid">
-              {images.map((image) => (
-                <button key={image.url} type="button" title={name(image)} onClick={() => onPick(image)}>
-                  <img src={image.thumb || image.url} alt="" loading="lazy" />
-                  <span>{name(image)}</span>
-                </button>
-              ))}
+              {images.map((image) => {
+                const used = isImageUsed(image, doc);
+                return (
+                  <button
+                    key={image.url}
+                    type="button"
+                    className={used ? "used" : undefined}
+                    title={used ? `${name(image)} (already in the text)` : name(image)}
+                    onClick={() => onPick(image)}
+                  >
+                    <img src={image.thumb || image.url} alt="" loading="lazy" />
+                    {used && <em className="mde-image-used">In text</em>}
+                    <span>{name(image)}</span>
+                  </button>
+                );
+              })}
             </div>
           ) : (
             !error && <p className="muted small">No images yet.</p>
