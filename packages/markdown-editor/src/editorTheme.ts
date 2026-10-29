@@ -30,6 +30,8 @@ export const editorTheme = EditorView.theme({
   },
   ".cm-activeLine": { backgroundColor: "transparent" },
   ".cm-placeholder": { color: "var(--muted)" },
+  ".cm-md-em": { fontStyle: "italic" },
+  ".cm-md-quote-text": { color: "var(--muted)", fontStyle: "italic" },
   ".cm-ySelectionInfo": {
     fontFamily: "var(--font-sans)",
     fontSize: "11px",
@@ -46,14 +48,16 @@ const markdownHighlight = HighlightStyle.define([
   { tag: t.heading3, fontFamily: "var(--font-serif)", fontSize: "1.15em", fontWeight: "600" },
   { tag: [t.heading4, t.heading5, t.heading6], fontWeight: "600" },
   { tag: t.strong, fontWeight: "700" },
-  { tag: t.emphasis, fontStyle: "italic" },
+  // Emphasis and quotes have plain class names (styled in editorTheme) so the
+  // live view can drop a quote's look inside a callout and keep emphasis.
+  { tag: t.emphasis, class: "cm-md-em" },
   { tag: t.strikethrough, textDecoration: "line-through" },
   { tag: highlightTag, backgroundColor: "var(--highlight)", borderRadius: "2px" },
   { tag: [t.processingInstruction, t.meta, t.contentSeparator], color: "var(--muted)" },
   { tag: t.link, color: "var(--accent)" },
   { tag: t.url, color: "var(--muted)", textDecoration: "underline" },
   { tag: t.monospace, color: "var(--code-text)", backgroundColor: "var(--code-bg)", borderRadius: "3px" },
-  { tag: t.quote, color: "var(--muted)", fontStyle: "italic" },
+  { tag: t.quote, class: "cm-md-quote-text" },
   // Code inside fences, coloured by the language's own parser.
   { tag: t.keyword, color: "var(--syntax-keyword)" },
   { tag: [t.string, t.special(t.string), t.regexp], color: "var(--syntax-string)" },

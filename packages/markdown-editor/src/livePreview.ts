@@ -1,14 +1,18 @@
-import { syntaxTree } from "@codemirror/language";
-import type { EditorState, Extension, Range } from "@codemirror/state";
+import { codeFolding, foldEffect, foldedRanges, syntaxTree, unfoldEffect } from "@codemirror/language";
+import type { EditorState, Extension, Range, StateEffect } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
+import { parseCalloutHeader } from "./callouts";
+import "./callouts.css";
 import { tableCursor, tableField } from "./tableWidget";
 
 // The live view: Markdown shown as it reads, and still edited as text, like
 // Obsidian's live preview. Headings, emphasis, links, list bullets, quotes
 // and rules hide their Markdown except on the line the cursor is on, where
 // it all shows so it can be edited. A fenced code block hides its fences
-// (showing just its language) until the cursor is anywhere inside it. Tables are drawn as tables throughout
-// (see tableWidget.ts). Raw mode is the editor without this.
+// (showing just its language) until the cursor is anywhere inside it. Tables
+// are drawn as tables throughout (see tableWidget.ts). Callouts (`> [!note]`,
+// see callouts.ts) are drawn as boxes, their `[!type]` an icon, and a
+// foldable one folds from its chevron. Raw mode is the editor without this.
 
 const hidden = Decoration.replace({});
 
@@ -116,6 +120,67 @@ class ImageWidget extends WidgetType {
   }
 }
 
+/** A callout's `> [!type]`: its icon, and its title when it wasn't given one. */
+class CalloutHeadWidget extends WidgetType {
+  constructor(readonly title: string) {
+    super();
+  }
+  eq(other: CalloutHeadWidget) {
+    return other.title === this.title;
+  }
+  toDOM() {
+    const head = document.createElement("span");
+    head.className = "cm-md-callout-head";
+    const icon = document.createElement("span");
+    icon.className = "callout-icon";
+    head.append(icon);
+    if (this.title) head.append(this.title);
+    return head;
+  }
+  ignoreEvent() {
+    return false;
+  }
+}
+
+/** The chevron at the end of a foldable callout's title, which folds its body away. */
+class CalloutFoldWidget extends WidgetType {
+  constructor(
+    readonly from: number,
+    readonly to: number,
+    readonly folded: boolean,
+  ) {
+    super();
+  }
+  eq(other: CalloutFoldWidget) {
+    return other.from === this.from && other.to === this.to && other.folded === this.folded;
+  }
+  toDOM(view: EditorView) {
+    const chevron = document.createElement("button");
+    chevron.type = "button";
+    chevron.className = "cm-md-callout-fold";
+    chevron.setAttribute("aria-label", this.folded ? "Expand" : "Collapse");
+    chevron.setAttribute("aria-expanded", String(!this.folded));
+    chevron.addEventListener("mousedown", (e) => e.preventDefault());
+    chevron.addEventListener("click", (e) => {
+      e.preventDefault();
+      view.dispatch({ effects: (this.folded ? unfoldEffect : foldEffect).of({ from: this.from, to: this.to }) });
+    });
+    return chevron;
+  }
+  ignoreEvent() {
+    return true;
+  }
+}
+
+/** The callout a quote starting at `from` is, and where its `> [!type]±` ends; null for a plain quote. */
+function calloutAt(state: EditorState, from: number) {
+  const line = state.doc.lineAt(from);
+  const text = line.text.slice(from - line.from);
+  const mark = /^>[ \t]?(\[![\w-]+\][+-]?)[ \t]*/.exec(text);
+  const header = mark && parseCalloutHeader(text.replace(/^>[ \t]?/, ""));
+  return mark && header ? { header, markEnd: from + mark[0].length, line } : null;
+}
+
 /** Ticks or unticks the task whose list marker starts at `pos`. */
 export function toggleTask(view: EditorView, pos: number) {
   const line = view.state.doc.lineAt(pos);
@@ -139,6 +204,10 @@ function activeLines(view: EditorView): Set<number> {
 
 export function buildDecorations(state: EditorState, ranges: readonly { from: number; to: number }[], active: Set<number>): DecorationSet {
   const decorations: Range<Decoration>[] = [];
+  // A callout's `> [!type]` is drawn as one widget, so the nodes inside it are left alone.
+  let skip = { from: -1, to: -1 };
+  // A block that spans a fold is entered once for each visible range around it.
+  const seen = new Set<number>();
   const { doc } = state;
   const isActive = (pos: number) => active.has(doc.lineAt(pos).number);
   const hide = (from: number, to: number) => to > from && decorations.push(hidden.range(from, to));
@@ -156,6 +225,7 @@ export function buildDecorations(state: EditorState, ranges: readonly { from: nu
       from,
       to,
       enter(node) {
+        if (node.from >= skip.from && node.to <= skip.to) return false;
         const parent = node.node.parent?.name ?? "";
         switch (node.name) {
           case "Table":
@@ -233,9 +303,31 @@ export function buildDecorations(state: EditorState, ranges: readonly { from: nu
             }
             return;
           }
-          case "Blockquote":
-            lines(node.from, node.to, "cm-md-quote");
+          case "Blockquote": {
+            if (seen.has(node.from)) return;
+            seen.add(node.from);
+            const callout = calloutAt(state, node.from);
+            if (!callout) {
+              lines(node.from, node.to, "cm-md-quote");
+              return;
+            }
+            const { header, markEnd, line } = callout;
+            lines(node.from, node.to, "cm-md-callout");
+            for (let n = line.number; n <= doc.lineAt(node.to).number; n++)
+              decorations.push(lineClass(`callout-${header.type}`).range(doc.line(n).from));
+            decorations.push(lineClass("cm-md-callout-title").range(line.from));
+            const end = doc.lineAt(node.to);
+            if (header.fold && end.number > line.number) {
+              const body = { from: line.to, to: end.to };
+              let folded = false;
+              foldedRanges(state).between(body.from, body.from, (from, to) => void (folded ||= from === body.from && to === body.to));
+              decorations.push(Decoration.widget({ widget: new CalloutFoldWidget(body.from, body.to, folded), side: -1 }).range(line.to));
+            }
+            if (isActive(node.from)) return;
+            decorations.push(Decoration.replace({ widget: new CalloutHeadWidget(header.titled ? "" : header.title) }).range(node.from, markEnd));
+            skip = { from: node.from, to: markEnd };
             return;
+          }
           case "QuoteMark": {
             if (isActive(node.from)) return;
             const line = doc.lineAt(node.from);
@@ -286,12 +378,48 @@ const inlinePreview = ViewPlugin.fromClass(
         update.selectionSet ||
         update.focusChanged ||
         syntaxTree(update.state) !== syntaxTree(update.startState) ||
+        foldedRanges(update.state) !== foldedRanges(update.startState) ||
         update.state.readOnly !== update.startState.readOnly
       )
         this.decorations = buildDecorations(update.state, update.view.visibleRanges, activeLines(update.view));
     }
   },
   { decorations: (plugin) => plugin.decorations },
+);
+
+/** The `> [!type]-` callouts in a document, by the range their body folds over. */
+export function closedCallouts(state: EditorState): { from: number; to: number }[] {
+  const out: { from: number; to: number }[] = [];
+  const { doc } = state;
+  for (let n = 1; n <= doc.lines; n++) {
+    const head = doc.line(n);
+    if (!/^>[ \t]?\[![\w-]+\]-/.test(head.text)) continue;
+    let last = n;
+    while (last < doc.lines && /^\s{0,3}>/.test(doc.line(last + 1).text)) last++;
+    if (last > n) out.push({ from: head.to, to: doc.line(last).to });
+    n = last;
+  }
+  return out;
+}
+
+/** Callouts written `[!type]-` start folded: when the editor opens, and when its whole text is replaced. */
+const calloutFolds = ViewPlugin.fromClass(
+  class {
+    constructor(view: EditorView) {
+      this.fold(view);
+    }
+    update(update: ViewUpdate) {
+      if (!update.docChanged) return;
+      let whole = false;
+      update.changes.iterChanges((fromA, toA) => void (whole ||= fromA === 0 && toA === update.startState.doc.length));
+      if (whole) this.fold(update.view);
+    }
+    fold(view: EditorView) {
+      const effects: StateEffect<unknown>[] = closedCallouts(view.state).map((range) => foldEffect.of(range));
+      // A view can't be updated from its own constructor or update, so this waits a tick.
+      if (effects.length) queueMicrotask(() => view.dispatch({ effects }));
+    }
+  },
 );
 
 /** Cmd/Ctrl-click opens a link, as in the preview. A plain click puts the cursor in it. */
@@ -326,6 +454,44 @@ const liveTheme = EditorView.theme({
   ".cm-md-task-done": { color: "var(--muted)", textDecoration: "line-through" },
   ".cm-md-link": { color: "var(--accent)", textDecoration: "underline", textUnderlineOffset: "2px" },
   ".cm-line.cm-md-quote": { borderLeft: "3px solid var(--border)", paddingLeft: "1em", color: "var(--muted)" },
+  // Callouts: their colour and icon come from callouts.css's callout-<type> classes.
+  ".cm-line.cm-md-callout": {
+    borderLeft: "3px solid rgb(var(--callout-color))",
+    backgroundColor: "rgb(var(--callout-color) / 0.08)",
+    paddingInline: "1em",
+  },
+  ".cm-line.cm-md-callout-first": { borderTopRightRadius: "8px", paddingTop: "0.35em" },
+  ".cm-line.cm-md-callout-last": { borderBottomRightRadius: "8px", paddingBottom: "0.35em" },
+  ".cm-line.cm-md-callout .cm-md-quote-text": { color: "inherit" },
+  ".cm-line.cm-md-callout .cm-md-quote-text:not(.cm-md-em)": { fontStyle: "normal" },
+  ".cm-line.cm-md-callout-title": { color: "rgb(var(--callout-color))", fontWeight: "600" },
+  ".cm-md-callout-head": { display: "inline-flex", alignItems: "center", gap: "0.5em", marginRight: "0.5em", verticalAlign: "-0.15em" },
+  ".cm-md-callout-head .callout-icon": { width: "1.1em", height: "1.1em" },
+  ".cm-md-callout-fold": {
+    width: "1.4em",
+    height: "1.4em",
+    padding: "0",
+    border: "0",
+    borderRadius: "4px",
+    background: "none",
+    marginLeft: "0.4em",
+    verticalAlign: "-0.3em",
+    color: "inherit",
+    cursor: "pointer",
+  },
+  ".cm-md-callout-fold::before": {
+    content: '""',
+    display: "block",
+    width: "0.4em",
+    height: "0.4em",
+    margin: "auto",
+    borderRight: "2px solid currentColor",
+    borderBottom: "2px solid currentColor",
+    transform: "rotate(45deg)",
+    transition: "transform 120ms",
+  },
+  ".cm-md-callout-fold[aria-expanded=false]::before": { transform: "rotate(-45deg)" },
+  ".cm-md-callout-fold:hover": { backgroundColor: "rgb(var(--callout-color) / 0.15)" },
   ".cm-line.cm-md-code": {
     fontFamily: "var(--font-mono)",
     fontSize: "0.86em",
@@ -437,5 +603,14 @@ const liveTheme = EditorView.theme({
 
 /** The live view, for a Markdown editor. Leave it out for raw Markdown. */
 export function livePreview(): Extension {
-  return [EditorView.editorAttributes.of({ class: "cm-live" }), inlinePreview, tableField, tableCursor, linkClicks, liveTheme];
+  return [
+    EditorView.editorAttributes.of({ class: "cm-live" }),
+    inlinePreview,
+    codeFolding(),
+    calloutFolds,
+    tableField,
+    tableCursor,
+    linkClicks,
+    liveTheme,
+  ];
 }

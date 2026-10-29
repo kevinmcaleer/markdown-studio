@@ -56,6 +56,7 @@ export { useReadAloud } from "./speech/useReadAloud";
 
 // ---------------------------------------------------------------- Markdown
 export { renderMarkdown, renderInline, titleOf, createMarkdownIt, type MarkdownItInstance } from "./markdown";
+export { calloutPlugin, calloutKinds, parseCalloutHeader, type CalloutKind, type CalloutHeader } from "./callouts";
 export {
   parseOutline,
   sectionAt,

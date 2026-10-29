@@ -180,6 +180,30 @@ cursor at that place in the cell, so a picker that inserts at the cursor works t
 
 `MarkdownEditor.slashCommands` is the built-in list.
 
+### Callouts
+
+Obsidian's callouts (and GitHub's alerts, which are the same syntax) render in the
+preview and are drawn as boxes in the live view, with their `[!type]` shown only
+while the cursor is on that line:
+
+```markdown
+> [!warning] Mind the mains
+> Unplug it before you open the case.
+
+> [!tip]- Folded to start with
+> A `+` instead of `-` makes it foldable but open.
+```
+
+The types are `note`, `abstract`, `info`, `todo`, `tip`, `success`, `question`,
+`warning`, `failure`, `danger`, `bug`, `example` and `quote`, with Obsidian's
+aliases (`caution`, `error`, `faq`…); anything else renders as a note. The `/`
+menu inserts the common ones ("/callout" lists them).
+
+The preview's markup is `div.callout.callout-<type>` (or `details`/`summary` when
+foldable) holding `.callout-title` (`.callout-icon`, `.callout-title-text`) and
+`.callout-content`. Its stylesheet is `src/callouts.css`, which also works on its
+own, so a page that renders the same Markdown elsewhere can look the same.
+
 ### Shortcuts
 
 `Mod` is ⌘ on a Mac and Ctrl elsewhere. The names and defaults:
