@@ -306,7 +306,8 @@ function imageName(file: File): File {
   return new File([file], `Pasted image ${stamp}.${ext}`, { type: file.type });
 }
 
-function insertImages(view: EditorView, images: File[], at: number, options: SmartPasteOptions) {
+/** Uploads the images and links them at `at`, with a placeholder while they upload. */
+export function insertImages(view: EditorView, images: File[], at: number, options: SmartPasteOptions) {
   const upload = options.uploadImage;
   if (!upload) {
     noticeAt(view, at, "Sign in to add images to a note.");

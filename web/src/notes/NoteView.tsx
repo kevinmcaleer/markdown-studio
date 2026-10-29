@@ -11,6 +11,7 @@ import { useSession } from "../session";
 import { DownloadMenu } from "./DownloadMenu";
 import { Editor } from "./Editor";
 import { findReplace } from "./findReplace";
+import { useFormatting } from "./format/FormatToolbar";
 import { files, formatSize, isMarkdown, isText, TABLES_MIME, withShare, type FileMeta, type FileRole } from "./filesApi";
 import { useWritingLint } from "./lint/useWritingLint";
 import { LiveNote, type LiveStatus, type Peer } from "./live";
@@ -135,6 +136,7 @@ function TextFile({
         : undefined,
     [user, canEdit, folderId],
   );
+  const format = useFormatting({ show: markdown && mode !== "read", readOnly: !canEdit && !comments.suggesting, uploadImage });
   // Where this person left off, their bookmarks and folds, and how they like this note opened.
   const place = useFilePlace({ fileId: file.id, signedIn: user !== null, text: live.note?.text, folds: markdown });
   useEffect(() => {
@@ -146,13 +148,13 @@ function TextFile({
       ...comments.extensions,
       ...place.extensions,
       ...(markdown ? outline.extensions : []),
-      ...(markdown ? [slashMenu(), smartPaste({ uploadImage }), ...lint.extensions, notesProofing] : []),
+      ...(markdown ? [slashMenu(), smartPaste({ uploadImage }), ...lint.extensions, notesProofing, ...format.extensions] : []),
       findReplace(),
       writingMode(),
       speechEditor(),
       writingStats({ onSelection: setSelection, onWritten: addWritten }),
     ],
-    [live.note, comments.extensions, place.extensions, outline.extensions, markdown, uploadImage, addWritten, lint.extensions],
+    [live.note, comments.extensions, place.extensions, outline.extensions, markdown, uploadImage, addWritten, lint.extensions, format.extensions],
   );
   const editorView = useRef<EditorView | null>(null);
   const writing = useRef({ focus, typewriter });
@@ -163,6 +165,7 @@ function TextFile({
   const placeReady = place.onReady;
   const outlineReady = outline.onReady;
   const lintReady = lint.onReady;
+  const formatReady = format.onReady;
   const onEditorReady = useCallback(
     (view: EditorView) => {
       editorView.current = view;
@@ -171,9 +174,10 @@ function TextFile({
       commentsReady(view);
       if (markdown) outlineReady(view);
       if (markdown) lintReady(view);
+      if (markdown) formatReady(view);
       placeReady(view);
     },
-    [commentsReady, outlineReady, placeReady, lintReady, markdown],
+    [commentsReady, outlineReady, placeReady, lintReady, formatReady, markdown],
   );
   useWritingMode(focus, setFocus);
   const openEditor = () => (mode !== "read" && editorView.current?.dom.isConnected ? editorView.current : null);
@@ -247,6 +251,7 @@ function TextFile({
         <DownloadMenu file={file} markdown={markdown} />
       </header>
       <SyncBanners sync={noteSync} onCopy={onRenamed} />
+      {format.bar}
       {live.status === "closed" ? (
         <div className="notes-empty">
           <p className="error">This note was deleted, or you no longer have access to it.</p>

@@ -1,0 +1,90 @@
+/* The formatting toolbar above a note. It scrolls sideways on a narrow screen
+   rather than wrapping onto a second row. */
+.format-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.3rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex: none;
+}
+
+.format-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.format-group {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding-left: 0.3rem;
+  margin-left: 0.05rem;
+  border-left: 1px solid var(--border);
+}
+
+.format-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.format-btn:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.format-btn[aria-pressed="true"] {
+  background: var(--surface-2);
+  color: var(--accent);
+}
+
+.format-btn:disabled,
+.format-heading:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.format-heading {
+  flex: none;
+  height: 30px;
+  padding: 0 0.4rem;
+  margin-right: 0.15rem;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.format-heading:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.format-btn:focus-visible,
+.format-heading:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+html.writing-focus .format-bar {
+  display: none;
+}
+
+@media print {
+  .format-bar {
+    display: none;
+  }
+}
