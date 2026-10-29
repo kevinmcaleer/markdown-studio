@@ -106,3 +106,46 @@ describe("mount", () => {
     expect(() => mount("#nowhere")).toThrow(/no element/);
   });
 });
+
+describe("tableRenderer", () => {
+  const doc = "# Videos\n\n| Video | Title |\n| --- | --- |\n| https://youtu.be/abc | Demo |\n\n# Other\n\n| A |\n| --- |\n| b |\n";
+
+  it("draws the host's version of a table until it's edited", async () => {
+    const el = host();
+    const seen: (string | null)[] = [];
+    const editor = mount(el, {
+      doc,
+      spellcheck: "off",
+      tableRenderer: ({ rows, heading }) => {
+        seen.push(heading);
+        if (heading !== "Videos") return null;
+        const gallery = document.createElement("div");
+        gallery.className = "gallery";
+        gallery.textContent = rows.slice(1).map((row) => row[1]).join(", ");
+        return gallery;
+      },
+    });
+    await new Promise((r) => setTimeout(r));
+    const [videos, other] = Array.from(el.querySelectorAll<HTMLElement>(".cm-md-table"));
+    expect(seen).toContain("Other");
+    expect(videos.classList.contains("previewing")).toBe(true);
+    expect(videos.querySelector(".gallery")?.textContent).toBe("Demo");
+    expect(videos.querySelector("table")).toBeNull();
+    expect(other.classList.contains("previewing")).toBe(false);
+    expect(other.querySelector("table")).not.toBeNull();
+
+    // Clicking the drawing edits the table in its grid.
+    videos.querySelector<HTMLElement>(".cm-md-table-preview")!.click();
+    expect(videos.classList.contains("previewing")).toBe(false);
+    expect(videos.querySelector("table")).not.toBeNull();
+    expect(document.activeElement?.textContent).toBe("https://youtu.be/abc");
+
+    // Leaving it draws it again.
+    const cell = document.activeElement as HTMLElement;
+    cell.blur();
+    cell.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    await new Promise((r) => setTimeout(r));
+    expect(videos.classList.contains("previewing")).toBe(true);
+    editor.destroy();
+  });
+});

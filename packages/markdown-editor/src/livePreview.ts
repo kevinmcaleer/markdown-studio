@@ -764,6 +764,10 @@ const liveTheme = EditorView.theme({
   // and bars below and to the right that add a row or a column.
   ".cm-md-table": { position: "relative", padding: "0.85rem 2.75rem 1.1rem 6px", fontFamily: "var(--font-sans)" },
   ".cm-md-table-scroll": { overflowX: "auto" },
+  // A table the host draws another way (see tableRenderer): just the drawing until it's edited.
+  ".cm-md-table.previewing": { paddingRight: "6px" },
+  ".cm-md-table.previewing > :not(.cm-md-table-preview)": { display: "none" },
+  ".cm-md-table.editable .cm-md-table-preview": { cursor: "pointer" },
   // The "/" menu in a cell (its look comes from the slash menu's own theme).
   ".cm-md-table-slash": { position: "absolute", zIndex: "20" },
   ".cm-md-table table": { width: "100%", borderCollapse: "collapse", fontSize: "0.95em", lineHeight: "1.5" },
