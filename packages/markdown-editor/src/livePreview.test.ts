@@ -36,6 +36,16 @@ describe("live preview", () => {
     expect(hiddenText("- one\n- [x] done", [2])).toEqual(["-"]);
   });
 
+  it("hides a code block's fences until the cursor is inside it", () => {
+    const doc = "text\n\n```python\nx = 1\n```\n";
+    expect(hiddenText(doc)).toEqual(["```python", "```"]);
+    expect(hiddenText(doc, [4])).toEqual([]);
+    expect(hiddenText(doc, [3])).toEqual([]);
+    expect(hiddenText(doc, [5])).toEqual([]);
+    // An unclosed block keeps the rest of the document visible.
+    expect(hiddenText("```js\nlet a")).toEqual(["```js"]);
+  });
+
   it("leaves numbered lists and tables to themselves", () => {
     expect(hiddenText("1. one\n\n| a | b |\n| - | - |\n| c | d |")).toEqual([]);
   });
