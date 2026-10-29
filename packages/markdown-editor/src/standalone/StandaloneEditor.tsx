@@ -147,7 +147,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
 
   // ------------------------------------------------------------ proofing and hints
   const spellcheck = options.spellcheck ?? "built-in";
-  const proofing = useProofing(Boolean(options.proofing?.languageApiBase), options.proofing?.language);
+  const proofing = useProofing(Boolean(options.proofing?.languageApi || options.proofing?.languageApiBase), options.proofing?.language);
   const proofSettings = useMemo(
     () => ({ ...proofing.settings, native: spellcheck === "native", spelling: spellcheck === "native" ? false : proofing.settings.spelling }),
     [proofing.settings, spellcheck],

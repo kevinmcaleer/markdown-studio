@@ -3,6 +3,7 @@ import type { EditorView } from "@codemirror/view";
 import type { DraftOptions, DraftState } from "../draft";
 import type { ShortcutName } from "../format/formatting";
 import type { MarkdownItInstance } from "../markdown";
+import type { LanguageRequest } from "../proofing/languageApi";
 import type { ProofLanguage } from "../proofing/speller";
 import type { InsertTexts, SlashCommand } from "../slashMenu";
 
@@ -152,6 +153,11 @@ export type MountOptions = {
   proofing?: {
     /** A Markdown Studio server for Look Up, LanguageTool grammar and translation ("https://studio.example.com"). */
     languageApiBase?: string;
+    /**
+     * Sends the language API's requests yourself, in place of `languageApiBase`'s fetch: to add
+     * an Authorization header, say. Wrap `MarkdownEditor.fetchLanguageApi` or write your own.
+     */
+    languageApi?: LanguageRequest;
     /** Where `en-GB.dic` and `en-US.dic` are. Defaults to `dictionaries/` beside the script. */
     dictionaryBase?: string;
     /** The proofing language until the writer picks one. Defaults to en-GB. */
