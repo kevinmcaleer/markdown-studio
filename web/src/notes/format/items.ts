@@ -1,5 +1,5 @@
 import { slashCommands } from "../slashMenu";
-import type { Active, FormatAction } from "./formatting";
+import type { Active, Block, FormatAction } from "./formatting";
 
 // The buttons both toolbars are built from. Icons are 16×16 stroke paths, the
 // same as the "/" menu's (and taken from it where there's one).
@@ -22,7 +22,7 @@ const alt = mod === "⌘" ? "⌥" : "Alt+";
 const shift = mod === "⌘" ? "⇧" : "Shift+";
 
 /** "Bold (⌘B)" or "Bold (Ctrl+B)". */
-export function itemTitle(item: FormatItem): string {
+export function itemTitle(item: Pick<FormatItem, "label" | "keys">): string {
   if (!item.keys) return item.label;
   const keys = item.keys.replace("Mod-", mod).replace("Alt-", alt).replace("Shift-", shift);
   return `${item.label} (${keys})`;
@@ -140,10 +140,19 @@ export const TOOLBAR: FormatItem[][] = [
   [ITEMS.quote, ITEMS.codeBlock, ITEMS.table, ITEMS.image, ITEMS.divider],
 ];
 
-/** The mini-toolbar over a selection. */
+/** The mini-toolbar over a selection; its style menu (STYLES) comes first. */
 export const MINI_TOOLBAR: FormatItem[][] = [
   [ITEMS.bold, ITEMS.italic, ITEMS.strike, ITEMS.highlight, ITEMS.code, ITEMS.link],
-  [ITEMS.bullet, ITEMS.numbered, ITEMS.checklist, ITEMS.quote],
+  [ITEMS.bullet, ITEMS.numbered, ITEMS.checklist],
+];
+
+/** The mini-toolbar's style menu. */
+export const STYLES: { block: Block; label: string; keys?: string }[] = [
+  { block: "paragraph", label: "Body", keys: "Mod-Alt-0" },
+  { block: "h1", label: "Heading 1", keys: "Mod-Alt-1" },
+  { block: "h2", label: "Heading 2", keys: "Mod-Alt-2" },
+  { block: "h3", label: "Heading 3", keys: "Mod-Alt-3" },
+  { block: "quote", label: "Quote" },
 ];
 
 export function iconSvg(path: string): string {
