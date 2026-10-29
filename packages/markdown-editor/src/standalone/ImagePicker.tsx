@@ -96,7 +96,16 @@ export function ImagePicker({
           if (url.trim()) onPick({ url: url.trim() });
         }}
       >
-        <input type="url" placeholder="Or an image's URL: https://…" value={url} onChange={(e) => setUrl(e.target.value)} aria-label="Image URL" />
+        <input
+          type="text"
+          inputMode="url"
+          autoCapitalize="off"
+          spellCheck={false}
+          placeholder="Or an image's URL: https://… or /path"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          aria-label="Image URL"
+        />
         <button type="submit" className="menu-button">
           Insert
         </button>
