@@ -31,6 +31,7 @@
   --mde-min-height: 12rem;
   --mde-max-height: none;
   --mde-split-height: 70vh;
+  --mde-sticky-top: 0px;
   color-scheme: light;
 }
 
@@ -101,7 +102,20 @@
 
 .mde .format-bar {
   border-radius: var(--radius) var(--radius) 0 0;
-  background: transparent;
+  background: var(--bg);
+}
+
+/* The toolbar stays in view while the page scrolls through a long document.
+   A host with its own fixed bar sets --mde-sticky-top to that bar's height.
+   z-index sits above the text's table handles (5) and under its menus (20). */
+.mde .mde-toolbar {
+  position: sticky;
+  top: var(--mde-sticky-top);
+  z-index: 10;
+}
+
+.mde.mde-fullscreen .mde-toolbar {
+  top: 0;
 }
 
 .mde.mde-fullscreen {
