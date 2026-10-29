@@ -14,7 +14,6 @@ import { findReplace } from "./findReplace";
 import { files, formatSize, isMarkdown, isText, TABLES_MIME, withShare, type FileMeta, type FileRole } from "./filesApi";
 import { useWritingLint } from "./lint/useWritingLint";
 import { LiveNote, type LiveStatus, type Peer } from "./live";
-import { renderMarkdown } from "./markdown";
 import { NoteTitle } from "./NoteTitle";
 import { useFilePlace } from "./place/useFilePlace";
 import { slashMenu } from "./slashMenu";
@@ -29,13 +28,11 @@ import { useDailyGoal, useTypewriter, WritingBar } from "./WritingBar";
 import { setWriting, writingMode, writingStats, type SelectionStats } from "./writingMode";
 
 /** "write" is the live view (rendered as you type); "raw" shows all the Markdown. */
-type Mode = "write" | "raw" | "split" | "read";
+type Mode = "write" | "raw";
 
 const MODES: { mode: Mode; label: string; title: string }[] = [
   { mode: "write", label: "Write", title: "Write, with the Markdown shown as it reads" },
   { mode: "raw", label: "Raw", title: "All the Markdown, as text" },
-  { mode: "split", label: "Split", title: "Raw Markdown beside the preview" },
-  { mode: "read", label: "Preview", title: "Read only" },
 ];
 
 // A new key, so everyone starts on the live view rather than their old choice.
@@ -99,17 +96,13 @@ function TextFile({
   const live = useLiveNote(file.id, user?.username ?? "Guest");
   const [text, setText] = useState<string | null>(null);
   const preview = useDeferredValue(text ?? "");
-  const html = useMemo(() => (markdown && (mode === "split" || mode === "read") ? renderMarkdown(preview) : ""), [markdown, mode, preview]);
   const comments = useNoteComments({ fileId: file.id, doc: text ?? "", role, text: live.note?.text, suggestions: true });
-  const previewPane = useRef<HTMLDivElement>(null);
   const outline = useOutline({
     fileId: file.id,
     doc: text ?? "",
     canEdit,
-    editorMode: mode !== "read",
     note: live.note,
     threads: comments.placed,
-    previewRef: previewPane,
   });
   // Cloud sync needs an account, so it's for signed-in people who can edit.
   const noteSync = useNoteSync(file.id, markdown && canEdit && user !== null);
@@ -137,9 +130,14 @@ function TextFile({
   );
   // Where this person left off, their bookmarks and folds, and how they like this note opened.
   const place = useFilePlace({ fileId: file.id, signedIn: user !== null, text: live.note?.text, folds: markdown });
+  const rememberView = place.rememberView;
   useEffect(() => {
-    if (markdown && isMode(place.view)) setMode(place.view);
-  }, [markdown, place.view]);
+    if (!markdown || place.view === undefined) return;
+    const next = toMode(place.view);
+    setMode(next);
+    // A note last opened in Split or Preview is saved as the live view from now on.
+    if (next !== place.view) rememberView(next);
+  }, [markdown, place.view, rememberView]);
   const extensions = useMemo(
     () => [
       ...(live.note ? [yCollab(live.note.text, live.note.provider.awareness, { undoManager: live.note.undo }), keymap.of(yUndoManagerKeymap)] : []),
@@ -176,8 +174,8 @@ function TextFile({
     [commentsReady, outlineReady, placeReady, lintReady, markdown],
   );
   useWritingMode(focus, setFocus);
-  const openEditor = () => (mode !== "read" && editorView.current?.dom.isConnected ? editorView.current : null);
-  const dictation = useDictation({ view: openEditor, enabled: mode !== "read" && (canEdit || comments.suggesting) });
+  const openEditor = () => (editorView.current?.dom.isConnected ? editorView.current : null);
+  const dictation = useDictation({ view: openEditor, enabled: canEdit || comments.suggesting });
   const readAloud = useReadAloud({ view: openEditor, doc: () => live.note?.text.toString() ?? text ?? "" });
   useEffect(() => {
     const view = editorView.current;
@@ -237,7 +235,7 @@ function TextFile({
             ))}
           </div>
         )}
-        {mode !== "read" && comments.suggestSwitch}
+        {comments.suggestSwitch}
         {dictation.button}
         {markdown && outline.button}
         {place.button}
@@ -260,26 +258,19 @@ function TextFile({
         <div className="note-main">
         {markdown && outline.panel}
         <div className="note-body">
-          {mode !== "read" && (
-            <div className="note-pane note-source titled">
-              {title}
-              <Editor
-                initialDoc={live.note!.text.toString()}
-                // Commenters type in Suggesting mode; what they type becomes suggestions, not edits.
-                readOnly={!canEdit && !comments.suggesting}
-                history={false}
-                livePreview={markdown && mode === "write"}
-                extensions={extensions}
-                onReady={onEditorReady}
-              />
-            </div>
-          )}
-          {markdown && (mode === "split" || mode === "read") && (
-            <div className="note-pane note-preview" ref={previewPane}>
-              {mode === "read" && title}
-              <div className="prose" dangerouslySetInnerHTML={{ __html: html }} />
-            </div>
-          )}
+          <div className="note-pane note-source titled">
+            {title}
+            <Editor
+              initialDoc={live.note!.text.toString()}
+              // Commenters type in Suggesting mode; what they type becomes suggestions, not edits.
+              // Viewers get the same rendered note, read only.
+              readOnly={!canEdit && !comments.suggesting}
+              history={false}
+              livePreview={markdown && mode === "write"}
+              extensions={extensions}
+              onReady={onEditorReady}
+            />
+          </div>
         </div>
         {comments.panel}
         {place.toast}
@@ -289,18 +280,16 @@ function TextFile({
       {live.ready && text !== null && (
         <WritingBar
           text={preview}
-          selection={mode === "read" ? null : selection}
+          selection={selection}
           goal={goal}
           focus={focus}
           onFocus={setFocus}
           {...(readAloud.supported && { reading: readAloud.reading, onReadAloud: readAloud.toggle })}
-          {...(mode !== "read" && {
-            typewriter,
-            onTypewriter: setTypewriter,
-            onFind: () => editorView.current && openSearchPanel(editorView.current),
-            lint: markdown ? lint.status : undefined,
-            ...(markdown && { proofing }),
-          })}
+          typewriter={typewriter}
+          onTypewriter={setTypewriter}
+          onFind={() => editorView.current && openSearchPanel(editorView.current)}
+          lint={markdown ? lint.status : undefined}
+          {...(markdown && { proofing })}
         />
       )}
     </article>
@@ -438,14 +427,17 @@ function BinaryFile({ file }: { file: FileMeta }) {
   );
 }
 
-function isMode(value: unknown): value is Mode {
-  return value === "write" || value === "raw" || value === "split" || value === "read";
+/** Raw, or the live view. Split and Preview have gone, so a choice saved as either opens the live view. */
+export function toMode(value: unknown): Mode {
+  return value === "raw" ? "raw" : "write";
 }
 
 function readMode(): Mode {
   try {
     const value = localStorage.getItem(MODE_KEY);
-    if (isMode(value)) return value;
+    const mode = toMode(value);
+    if (value !== null && value !== mode) localStorage.setItem(MODE_KEY, mode);
+    return mode;
   } catch {
     /* private mode */
   }

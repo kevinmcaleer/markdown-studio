@@ -115,7 +115,7 @@ export function useDictation({ view, enabled }: { view: () => EditorView | null;
     return () => window.removeEventListener("keydown", onKey);
   }, [enabled, toggle]);
 
-  // Stop when the editor goes (Preview, read only) or the note closes.
+  // Stop when the editor goes (read only) or the note closes.
   useEffect(() => {
     if (!enabled) stop();
   }, [enabled, stop]);

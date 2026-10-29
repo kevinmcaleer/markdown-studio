@@ -201,7 +201,7 @@ export function useFilePlace({
     onChange: (now) => {
       const v = editor.current;
       if (now) {
-        // Kept straight away, so switching to Preview a moment later doesn't lose them.
+        // Kept straight away, so leaving the note a moment later doesn't lose them.
         snapshot();
         refreshList();
       } else if (v && restored.current.has(v)) {

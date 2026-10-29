@@ -1,7 +1,7 @@
 import { codeFolding, foldedRanges, foldEffect, unfoldEffect } from "@codemirror/language";
 import type { Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Y from "yjs";
 import type { PlacedThread } from "../comments/CommentsPanel";
 import type { LiveNote } from "./live";
@@ -70,25 +70,19 @@ export function useOutline({
   fileId,
   doc,
   canEdit,
-  editorMode,
   note,
   threads,
-  previewRef,
 }: {
   fileId: number;
   /** The note's text: the outline is worked out from this. */
   doc: string;
   canEdit: boolean;
-  /** False in Preview, where there's no editor: headings then scroll the rendered note. */
-  editorMode: boolean;
   note: LiveNote | null;
   threads: PlacedThread[];
-  previewRef: RefObject<HTMLElement | null>;
 }) {
   const [open, setOpen] = useState(readOpen);
   const view = useRef<EditorView | null>(null);
   const [head, setHead] = useState(0);
-  const [previewSection, setPreviewSection] = useState(-1);
   const [folded, setFolded] = useState<Set<string>>(() => readFolds(fileId));
   const headings = useMemo(() => parseOutline(doc), [doc]);
   const keys = useMemo(() => headingKeys(headings), [headings]);
@@ -126,7 +120,7 @@ export function useOutline({
     [],
   );
 
-  // The editor is rebuilt when coming back from Preview; fold what was folded again.
+  // The editor is rebuilt when the note is reopened; fold what was folded again.
   const onReady = useCallback((v: EditorView) => {
     view.current = v;
     const text = v.state.doc.toString();
@@ -149,21 +143,7 @@ export function useOutline({
     }
   }, [open]);
 
-  // In Preview, the current section is the last heading scrolled past.
-  useEffect(() => {
-    const pane = previewRef.current;
-    if (editorMode || !pane) return;
-    const onScroll = () => {
-      const top = pane.getBoundingClientRect().top + 24;
-      const found = topHeadings(pane).filter((el) => el.getBoundingClientRect().top <= top).length - 1;
-      setPreviewSection(found);
-    };
-    onScroll();
-    pane.addEventListener("scroll", onScroll, { passive: true });
-    return () => pane.removeEventListener("scroll", onScroll);
-  }, [editorMode, previewRef, headings]);
-
-  const current = editorMode ? sectionAt(headings, Math.min(head, doc.length)) : previewSection;
+  const current = sectionAt(headings, Math.min(head, doc.length));
 
   const apply = useCallback((changes: Change[] | null, select?: number) => {
     const v = liveView();
@@ -176,10 +156,7 @@ export function useOutline({
       const h = headings[index];
       if (!h) return;
       const v = liveView();
-      if (!v) {
-        topHeadings(previewRef.current)[index]?.scrollIntoView({ block: "start", behavior: "smooth" });
-        return;
-      }
+      if (!v) return;
       // Open any folded section the heading is hidden in.
       const effects: ReturnType<typeof unfoldEffect.of>[] = [];
       foldedRanges(v.state).between(h.from, h.from, (from, to) => {
@@ -188,7 +165,7 @@ export function useOutline({
       v.dispatch({ effects: [...effects, EditorView.scrollIntoView(h.from, { y: "start", yMargin: 24 })], selection: { anchor: h.lineEnd } });
       v.focus();
     },
-    [headings, previewRef],
+    [headings],
   );
 
   const toggleFold = useCallback(
@@ -243,9 +220,8 @@ export function useOutline({
         headings={headings}
         keys={keys}
         current={current}
-        folded={editorMode ? folded : new Set()}
-        canFold={editorMode}
-        canEdit={canEdit && editorMode}
+        folded={folded}
+        canEdit={canEdit}
         commentCounts={commentCounts}
         peers={peers.map((p) => ({ ...p, section: sectionAt(headings, Math.min(p.pos, doc.length)) }))}
         docLength={doc.length}
@@ -261,18 +237,11 @@ export function useOutline({
   return { extensions, onReady, button, panel, headings };
 }
 
-/** The preview's top-level headings, in the order the outline lists them. */
-function topHeadings(root: HTMLElement | null | undefined): HTMLElement[] {
-  const prose = root?.querySelector(".prose");
-  return prose ? (Array.from(prose.children).filter((el) => /^H[1-6]$/.test(el.tagName)) as HTMLElement[]) : [];
-}
-
 function OutlinePanel({
   headings,
   keys,
   current,
   folded,
-  canFold,
   canEdit,
   commentCounts,
   peers,
@@ -287,7 +256,6 @@ function OutlinePanel({
   keys: string[];
   current: number;
   folded: Set<string>;
-  canFold: boolean;
   canEdit: boolean;
   commentCounts: Map<number, number>;
   peers: (Collaborator & { section: number })[];
@@ -385,7 +353,7 @@ function OutlinePanel({
                   if (dropAt !== null) drop(dropAt);
                 }}
               >
-                {canFold && hasBody ? (
+                {hasBody ? (
                   <button
                     type="button"
                     className="outline-fold"

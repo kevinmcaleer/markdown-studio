@@ -802,18 +802,10 @@ select {
   grid-template-columns: 1fr;
 }
 
-.mode-split .note-body {
-  grid-template-columns: 1fr 1fr;
-}
-
 .note-pane {
   min-width: 0;
   min-height: 0;
   overflow: auto;
-}
-
-.mode-split .note-source {
-  border-right: 1px solid var(--border);
 }
 
 .note-source.titled {
@@ -839,11 +831,6 @@ h1.note-title {
   max-width: 46rem;
   margin: 0 auto;
   padding: 2rem calc(1.5rem + 6px) 0;
-}
-
-.note-preview .note-title-wrap,
-.note-preview h1.note-title {
-  padding-inline: 1.75rem;
 }
 
 .note-title {
@@ -877,9 +864,7 @@ textarea.note-title::placeholder {
 }
 
 /* The title takes the space the text would otherwise leave at the top. */
-.note-source.titled .editor .cm-content,
-.note-preview .note-title ~ .prose,
-.note-preview .note-title-wrap ~ .prose {
+.note-source.titled .editor .cm-content {
   padding-top: 0.75rem;
 }
 
@@ -923,16 +908,6 @@ textarea.note-title::placeholder {
     background: var(--surface);
     border: 1px solid var(--border);
     box-shadow: var(--shadow);
-  }
-
-  .mode-split .note-body {
-    grid-template-columns: 1fr;
-    grid-template-rows: 1fr 1fr;
-  }
-
-  .mode-split .note-source {
-    border-right: 0;
-    border-bottom: 1px solid var(--border);
   }
 }
 
