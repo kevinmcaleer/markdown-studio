@@ -129,7 +129,7 @@ function TextFile({
         : undefined,
     [user, canEdit, folderId],
   );
-  const format = useFormatting({ show: markdown && mode !== "read", readOnly: !canEdit && !comments.suggesting, uploadImage });
+  const format = useFormatting({ show: markdown, readOnly: !canEdit && !comments.suggesting, uploadImage });
   // Where this person left off, their bookmarks and folds, and how they like this note opened.
   const place = useFilePlace({ fileId: file.id, signedIn: user !== null, text: live.note?.text, folds: markdown });
   const rememberView = place.rememberView;
