@@ -305,6 +305,8 @@ const liveTheme = EditorView.theme({
   // and bars below and to the right that add a row or a column.
   ".cm-md-table": { position: "relative", padding: "0.85rem 2.75rem 1.1rem 6px", fontFamily: "var(--font-sans)" },
   ".cm-md-table-scroll": { overflowX: "auto" },
+  // The "/" menu in a cell (its look comes from the slash menu's own theme).
+  ".cm-md-table-slash": { position: "absolute", zIndex: "20" },
   ".cm-md-table table": { width: "100%", borderCollapse: "collapse", fontSize: "0.95em", lineHeight: "1.5" },
   ".cm-md-table th, .cm-md-table td": {
     border: "1px solid var(--border)",

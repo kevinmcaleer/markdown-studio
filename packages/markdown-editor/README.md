@@ -173,6 +173,10 @@ slashCommands: [
 ]
 ```
 
+In a table's cell the menu offers only the commands without `block: true`. A
+command's text goes into the cell, and a `run` command is called with the editor's
+cursor at that place in the cell, so a picker that inserts at the cursor works there too.
+
 `MarkdownEditor.slashCommands` is the built-in list.
 
 ### Shortcuts

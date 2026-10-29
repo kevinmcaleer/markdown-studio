@@ -17,6 +17,7 @@ import { proofing as proofingExtension, setProofing } from "../proofing/proofing
 import { useProofing } from "../proofing/useProofing";
 import { slashCommands as defaultCommands, slashMenu, withInsertTexts, type SlashCommand } from "../slashMenu";
 import { insertImages, smartPaste, type SmartPasteOptions } from "../smartPaste";
+import { cellCaretRect, inTable } from "../tableWidget";
 import { speechEditor } from "../speech/speechEditor";
 import { useDictation } from "../speech/useDictation";
 import { useReadAloud } from "../speech/useReadAloud";
@@ -74,11 +75,21 @@ const SHORTCUT_LABELS: Record<ShortcutName, string> = {
   clear: "Clear formatting",
 };
 
-/** An image's Markdown on a line of its own, below the cursor's line when that has text. */
+/**
+ * An image's Markdown on a line of its own, below the cursor's line when that
+ * has text; in a table's cell, at the cursor.
+ */
 function insertImageLink(view: EditorView, image: ImageInfo) {
   const alt = (image.alt ?? image.url.split(/[/?#]/).filter(Boolean).pop() ?? "").replace(/\.\w+$/, "").replace(/[[\]]/g, "");
   const markdown = `![${alt}](${image.url.replace(/[()\s]/g, encodeURIComponent)})`;
-  const line = view.state.doc.lineAt(view.state.selection.main.head);
+  const { from, to, head } = view.state.selection.main;
+  if (inTable(view.state, head)) {
+    // Focused first, so the table carries on in the cell.
+    view.focus();
+    view.dispatch({ changes: { from, to, insert: markdown }, selection: { anchor: from + markdown.length }, userEvent: "input" });
+    return;
+  }
+  const line = view.state.doc.lineAt(head);
   const insert = line.text.trim() ? `\n\n${markdown}\n` : markdown;
   const at = line.text.trim() ? line.to : line.from;
   view.dispatch({ changes: { from: at, insert }, selection: { anchor: at + insert.length }, scrollIntoView: true, userEvent: "input" });
@@ -161,7 +172,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
   );
   const openPickerAt = useCallback((anchor: Anchor) => setPicker(anchor), []);
   const openPickerAtCursor = useCallback((v: EditorView) => {
-    const at = v.coordsAtPos(v.state.selection.main.head);
+    const at = cellCaretRect(v) ?? v.coordsAtPos(v.state.selection.main.head);
     const box = v.dom.getBoundingClientRect();
     setPicker(at ? { left: at.left, top: at.top, bottom: at.bottom } : { left: box.left, top: box.top, bottom: box.top });
   }, []);
@@ -476,9 +487,11 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
             setPicker(null);
             const v = view.current;
             if (!v || live.current.readOnly) return;
-            const line = v.state.doc.lineAt(v.state.selection.main.head);
-            insertImages(v, files, line.text.trim() ? line.to : line.from, pasteOptions);
+            const { head } = v.state.selection.main;
+            const line = v.state.doc.lineAt(head);
+            // Focused first, so a table carries on in the cell the image went into.
             v.focus();
+            insertImages(v, files, inTable(v.state, head) ? head : line.text.trim() ? line.to : line.from, pasteOptions);
           }}
         />
       )}
