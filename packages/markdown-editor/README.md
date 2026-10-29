@@ -95,10 +95,12 @@ Every option is optional.
 | `insertTexts` | | EasyMDE-style templates: `{ link, image, table, horizontalRule, code }`, each `[before, after]` the cursor. |
 | `shortcuts` | | Keys by action, e.g. `{ bold: "Mod-b", link: null }`. `null` turns one off. See [Shortcuts](#shortcuts). |
 | `uploadImage(file)` | | Stores an image and resolves to its URL. Without it, images can only be linked by URL. |
+| `addImages(files)` | | Keeps several images dropped at once without linking them (a gallery) and resolves when done. Without it, they're all linked where they're dropped. One dropped image is always linked between the lines it lands between, shown by a dotted line while dragging. |
 | `imageLibrary()` | | Resolves to `{ url, alt?, thumb? }[]`, the images the picker offers. |
 | `images.maxBytes` | 25 MB | Bigger images are turned away with a note under the cursor. |
 | `images.accept` | `"image/*"` | Which images are taken, as an `<input accept>` list. |
 | `images.onError(message, file)` | | Called when an image is turned away or its upload fails. |
+| `images.libraryName` | `"the image library"` | What `addImages` keeps them in, for the notes: "Added 3 images to the gallery". |
 | `preview.render(markdown, element)` | built-in | The host's renderer: return HTML (or a promise of it), or fill `element` and return nothing. |
 | `preview.markdownIt(md)` | | Adds plugins or options to the built-in markdown-it renderer. |
 | `preview.afterRender(element)` | | Runs after each render (to run mermaid on it, say). |

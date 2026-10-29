@@ -117,6 +117,12 @@ export type MountOptions = {
 
   /** Stores a pasted, dropped or picked image and returns its URL. Without it, images can't be added. */
   uploadImage?: (file: File) => Promise<string>;
+  /**
+   * Keeps several images dropped on the text at once without linking them
+   * (the host's gallery, say). Without it, they're all linked where they land.
+   * One dropped image is always uploaded and linked between the lines it's dropped between.
+   */
+  addImages?: (files: File[]) => Promise<void>;
   /** Images to pick from in the image picker (the toolbar's image button and "/image"). */
   imageLibrary?: () => Promise<ImageInfo[]>;
   images?: {
@@ -125,6 +131,8 @@ export type MountOptions = {
     /** An `<input accept>` list. Defaults to "image/*". */
     accept?: string;
     onError?: (message: string, file: File) => void;
+    /** What `addImages` keeps images in, for the notes ("Added 3 images to the gallery"). Defaults to "the image library". */
+    libraryName?: string;
   };
 
   /**
