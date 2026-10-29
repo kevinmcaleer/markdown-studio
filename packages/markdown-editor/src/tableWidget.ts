@@ -2,6 +2,7 @@ import { syntaxTree } from "@codemirror/language";
 import { StateField, type EditorState, type Range } from "@codemirror/state";
 import { Decoration, EditorView, runScopeHandlers, ViewPlugin, WidgetType, type DecorationSet } from "@codemirror/view";
 import { renderInline } from "./markdown";
+import { applyCommand, commandsOf, filterCommands, hasSlashMenu, type SlashCommand } from "./slashMenu";
 import {
   deleteColumn,
   deleteRow,
@@ -52,6 +53,26 @@ function findTables(state: EditorState): DecorationSet {
     },
   });
   return Decoration.set(tables);
+}
+
+/** Whether `pos` is inside a table drawn as a grid (in one of its cells), where only inline Markdown fits. */
+export function inTable(state: EditorState, pos: number): boolean {
+  let found = false;
+  state.field(tableField, false)?.between(pos, pos, (from, to) => {
+    if (pos > from && pos <= to) found = true;
+  });
+  return found;
+}
+
+/** Where the caret is when it's in one of this editor's table cells, to anchor a popup to. */
+export function cellCaretRect(view: EditorView): { left: number; top: number; bottom: number } | null {
+  const active = view.dom.ownerDocument.activeElement as HTMLElement | null;
+  if (!active || !isCell(active) || !view.contentDOM.contains(active)) return null;
+  const selection = window.getSelection();
+  const rect = selection?.rangeCount ? selection.getRangeAt(0).getClientRects()[0] : undefined;
+  // A caret at the end of a cell can measure as an empty box.
+  const box = rect?.height ? rect : active.getBoundingClientRect();
+  return { left: box.left, top: box.top, bottom: box.bottom };
 }
 
 /** The table that starts at `pos`, if there is one. */
@@ -115,6 +136,9 @@ const ICONS = {
 
 type MenuItem = { label: string; icon: string; run: () => void; disabled?: boolean };
 
+/** The "/" menu in a cell: where its slash is in the cell's text, and what it offers. */
+type CellSlash = { cell: HTMLElement; at: number; query: string; selected: number; items: SlashCommand[]; dom: HTMLElement };
+
 /** The DOM for one table, kept across edits so typing in a cell isn't interrupted. */
 class TableView {
   private table: Table;
@@ -127,6 +151,7 @@ class TableView {
   private readonly addRow = button("cm-md-table-add cm-md-table-addrow", "Add row");
   private readonly more = button("cm-md-table-more", "Table options");
   private menu: HTMLElement | null = null;
+  private slash: CellSlash | null = null;
   private hover = { row: 0, col: 0 };
   private closeMenuListener = (event: Event) => {
     if (this.menu && !this.menu.contains(event.target as Node)) this.closeMenu();
@@ -161,7 +186,9 @@ class TableView {
     });
     dom.addEventListener("focusout", (e) => {
       const cell = e.target as HTMLElement;
-      if (isCell(cell)) cell.innerHTML = renderInline(cell.dataset.raw ?? "");
+      if (!isCell(cell)) return;
+      if (this.slash?.cell === cell) this.closeSlash();
+      cell.innerHTML = renderInline(cell.dataset.raw ?? "");
     });
     dom.addEventListener("input", (e) => {
       const cell = e.target as HTMLElement;
@@ -171,6 +198,7 @@ class TableView {
       const row = Number(cell.dataset.row);
       const col = Number(cell.dataset.col);
       this.change((source) => setCell(source, row, col, text));
+      this.updateSlash(cell, e as InputEvent);
     });
     dom.addEventListener("paste", (e) => {
       const cell = e.target as HTMLElement;
@@ -211,6 +239,7 @@ class TableView {
 
   destroy() {
     this.closeMenu();
+    this.closeSlash();
   }
 
   /** Draws the table, reusing the cells when its shape hasn't changed. */
@@ -281,6 +310,22 @@ class TableView {
     } else caretAtEnd(cell);
   }
 
+  /** Puts the caret in a cell, selecting from..to of its Markdown text. */
+  focusCellAt(row: number, col: number, from: number, to: number) {
+    const cell = this.cell(row, col);
+    if (!cell || !this.editable) return;
+    cell.focus();
+    const node = cell.firstChild;
+    if (!node || node.nodeType !== 3) return caretAtEnd(cell);
+    const length = (node.textContent ?? "").length;
+    const range = document.createRange();
+    range.setStart(node, Math.max(0, Math.min(from, length)));
+    range.setEnd(node, Math.max(0, Math.min(to, length)));
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  }
+
   private setHover(row: number, col: number) {
     this.hover = { row, col };
     const cell = this.cell(row, col);
@@ -329,6 +374,7 @@ class TableView {
   }
 
   private keydown(e: KeyboardEvent) {
+    if (this.slash && this.slashKey(e)) return;
     const cell = e.target as HTMLElement;
     if (!isCell(cell)) {
       if (e.key === "Escape") this.closeMenu();
@@ -369,6 +415,149 @@ class TableView {
       e.preventDefault();
       this.leave(1);
     }
+  }
+
+  // ------------------------------------------------------------ "/" in a cell
+
+  /**
+   * Typing "/" at the start of a cell, or after a space, opens the editor's
+   * "/" menu with the commands that fit in a cell (not the block ones).
+   */
+  private updateSlash(cell: HTMLElement, e: InputEvent) {
+    const caret = caretOffset(cell);
+    const text = cell.textContent ?? "";
+    if (!this.slash || this.slash.cell !== cell) {
+      this.closeSlash();
+      if (caret === null || e.inputType !== "insertText" || e.data !== "/" || !hasSlashMenu(this.view.state)) return;
+      const at = caret - 1;
+      if (text[at] !== "/" || (at > 0 && !/\s/.test(text[at - 1]))) return;
+      const dom = el("div", "cm-tooltip cm-slash-menu cm-md-table-slash");
+      dom.setAttribute("role", "listbox");
+      dom.setAttribute("aria-label", "Insert");
+      dom.addEventListener("mousedown", (event) => event.preventDefault());
+      this.dom.append(dom);
+      this.slash = { cell, at, query: "", selected: 0, items: [], dom };
+    }
+    const slash = this.slash;
+    if (caret === null || caret <= slash.at || text[slash.at] !== "/") return this.closeSlash();
+    const query = text.slice(slash.at + 1, caret);
+    const items = filterCommands(query, commandsOf(this.view.state).filter((c) => !c.block && (c.insert || c.run)));
+    // A space after a query nothing matches means you've moved on.
+    if (query.length > 24 || (/\s$/.test(query) && !items.length)) return this.closeSlash();
+    if (query !== slash.query) slash.selected = 0;
+    slash.query = query;
+    slash.items = items;
+    this.renderSlash();
+  }
+
+  private renderSlash() {
+    const slash = this.slash;
+    if (!slash) return;
+    const { dom, items, query } = slash;
+    dom.replaceChildren();
+    if (!items.length) {
+      dom.append(Object.assign(el("div", "cm-slash-empty"), { textContent: "No matches" }));
+    }
+    items.forEach((command, i) => {
+      if (i > 0 && !query.trim() && command.group !== items[i - 1].group) {
+        const hr = el("div", "cm-slash-divider");
+        hr.setAttribute("role", "separator");
+        dom.append(hr);
+      }
+      const item = el("div", "cm-slash-item");
+      item.setAttribute("role", "option");
+      item.setAttribute("aria-selected", String(i === slash.selected));
+      item.innerHTML = `<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="${command.icon}" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+      item.append(command.label);
+      item.addEventListener("mousemove", () => {
+        if (slash.selected === i) return;
+        slash.selected = i;
+        this.renderSlash();
+      });
+      item.addEventListener("click", () => this.pickSlash(i));
+      dom.append(item);
+    });
+    dom.querySelector<HTMLElement>("[aria-selected=true]")?.scrollIntoView?.({ block: "nearest" });
+    // Under the slash.
+    const base = this.dom.getBoundingClientRect();
+    const range = document.createRange();
+    const node = slash.cell.firstChild;
+    if (node && node.nodeType === 3 && slash.at < (node.textContent ?? "").length) range.setStart(node, slash.at);
+    else range.selectNodeContents(slash.cell);
+    const box = range.getClientRects()[0] ?? slash.cell.getBoundingClientRect();
+    dom.style.left = `${Math.max(0, box.left - base.left)}px`;
+    dom.style.top = `${box.bottom - base.top + 4}px`;
+  }
+
+  /** Arrows, Enter or Tab and Escape while the menu is open; true when the key was the menu's. */
+  private slashKey(e: KeyboardEvent): boolean {
+    const slash = this.slash!;
+    const count = slash.items.length;
+    if ((e.key === "ArrowDown" || e.key === "ArrowUp") && count) {
+      slash.selected = (slash.selected + (e.key === "ArrowDown" ? 1 : -1) + count) % count;
+      this.renderSlash();
+    } else if ((e.key === "Enter" || e.key === "Tab") && count) {
+      this.pickSlash(slash.selected);
+    } else if (e.key === "Escape") {
+      this.closeSlash();
+    } else return false;
+    e.preventDefault();
+    e.stopPropagation();
+    return true;
+  }
+
+  /** Swaps "/query" in the cell for the command, through the note's Markdown. */
+  private pickSlash(index: number) {
+    const slash = this.slash;
+    const command = slash?.items[index];
+    if (!slash || !command) return;
+    const { cell, at } = slash;
+    const text = cell.textContent ?? "";
+    const caret = caretOffset(cell) ?? at + 1 + slash.query.length;
+    this.closeSlash();
+    const start = this.cellStart(cell);
+    if (start === null) return;
+    // The cell's text is in the Markdown trimmed, with its pipes escaped.
+    const toSource = (prefix: string) => prefix.replace(/\r?\n/g, " ").replace(/(?<!\\)\|/g, "\\|").replace(/^\s+/, "").length;
+    const from = start + toSource(text.slice(0, at));
+    const spec = applyCommand(this.view.state, { ...command, block: false, blankBefore: false }, from, start + toSource(text.slice(0, caret)));
+    if (command.run) {
+      // The host's picker takes over from here, at this place in the note,
+      // with the caret back in the cell for it to open beside.
+      this.view.dispatch(spec);
+      this.focusCellAt(Number(cell.dataset.row), Number(cell.dataset.col), from - start, from - start);
+      command.run(this.view);
+    } else {
+      // With the editor focused, tableCursor carries on in this cell, with
+      // any placeholder selected.
+      this.view.focus();
+      this.view.dispatch(spec);
+    }
+  }
+
+  private closeSlash() {
+    if (!this.slash) return;
+    this.slash.dom.remove();
+    this.slash = null;
+  }
+
+  /** Where a cell's text starts in the note. */
+  private cellStart(cell: HTMLElement): number | null {
+    let pos: number;
+    try {
+      pos = this.view.posAtDOM(this.dom);
+    } catch {
+      return null;
+    }
+    const range = tableAt(this.view.state, pos);
+    if (!range) return null;
+    const row = Number(cell.dataset.row);
+    const lines = this.view.state.sliceDoc(range.from, range.to).split("\n");
+    const index = row === 0 ? 0 : row + 1;
+    if (lines[index] === undefined) return null;
+    const lineFrom = range.from + lines.slice(0, index).reduce((n, line) => n + line.length + 1, 0);
+    const offset = cellContentOffset(lines[index], Number(cell.dataset.col));
+    return offset === null ? null : lineFrom + offset;
   }
 
   /** Moves the caret out of the table, to the line above or below it. */
@@ -512,14 +701,16 @@ function tableViewAt(view: EditorView, from: number): TableView | null {
 
 /**
  * When the editor's cursor lands inside a table (the / menu just made one,
- * say), carries on in the matching cell, with its text selected.
+ * say, or a command inserted text in a cell), carries on in the matching
+ * cell, at the same place in its text (or with the same text selected).
  */
 export const tableCursor = ViewPlugin.define(() => ({
   update(update) {
     if (!(update.selectionSet || update.docChanged) || !update.view.hasFocus) return;
     const { state, view } = update;
     const head = state.selection.main.head;
-    let target: { from: number; row: number; col: number } | null = null;
+    const { anchor } = state.selection.main;
+    let target: { from: number; row: number; col: number; start: number; end: number } | null = null;
     state.field(tableField, false)?.between(head, head, (from, to) => {
       if (head <= from || head > to) return;
       const line = state.doc.lineAt(head);
@@ -527,11 +718,14 @@ export const tableCursor = ViewPlugin.define(() => ({
       const before = line.text.slice(0, head - line.from);
       const pipes = (before.match(/(?<!\\)\|/g) ?? []).length;
       const col = Math.max(0, line.text.trimStart().startsWith("|") ? pipes - 1 : pipes);
-      target = { from, row: index < 2 ? 0 : index - 1, col };
+      // The selection as offsets into the cell's text (on the delimiter line, its start).
+      const content = index === 1 ? null : cellContentOffset(line.text, col);
+      const offset = (pos: number) => (content === null || pos < line.from ? 0 : Math.max(0, pos - line.from - content));
+      target = { from, row: index < 2 ? 0 : index - 1, col, start: offset(Math.min(anchor, head)), end: offset(Math.max(anchor, head)) };
     });
     if (!target) return;
-    const { from, row, col } = target;
-    window.setTimeout(() => tableViewAt(view, from)?.focusCell(row, col, true));
+    const { from, row, col, start, end } = target;
+    window.setTimeout(() => tableViewAt(view, from)?.focusCellAt(row, col, start, end));
   },
 }));
 
@@ -556,6 +750,32 @@ function button(className: string, label: string): HTMLButtonElement {
 
 function plusIcon(): string {
   return '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 4v8M4 8h8"/></svg>';
+}
+
+/** Where the text of cell `col` starts in a table row's line, past its pipe and padding. */
+function cellContentOffset(line: string, col: number): number | null {
+  const pipes: number[] = [];
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === "\\") i++;
+    else if (line[i] === "|") pipes.push(i);
+  }
+  const bounds = [...(line.trimStart().startsWith("|") ? [] : [-1]), ...pipes];
+  if (col >= bounds.length) return null;
+  let i = bounds[col] + 1;
+  while (i < line.length && line[i] === " ") i++;
+  return i;
+}
+
+/** The caret's offset in a cell's text, or null when it isn't in the cell. */
+function caretOffset(cell: HTMLElement): number | null {
+  const selection = window.getSelection();
+  if (!selection?.rangeCount || !selection.isCollapsed) return null;
+  const range = selection.getRangeAt(0);
+  if (!cell.contains(range.endContainer)) return null;
+  const before = document.createRange();
+  before.selectNodeContents(cell);
+  before.setEnd(range.endContainer, range.endOffset);
+  return before.toString().length;
 }
 
 function caretAtEnd(cell: HTMLElement) {

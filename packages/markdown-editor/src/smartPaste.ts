@@ -3,6 +3,7 @@ import { StateEffect, StateField, type EditorState, type Extension } from "@code
 import { EditorView, keymap, showTooltip, type Tooltip } from "@codemirror/view";
 import { fence, htmlToMarkdown } from "./htmlToMarkdown";
 import { cellAt, diff, pasteCells, spreadsheetCells, tableFromCells } from "./markdownTable";
+import { inTable } from "./tableWidget";
 
 // Smart paste: what's on the clipboard arrives as Markdown. Rich text becomes
 // headings, lists, links and tables; spreadsheet cells a table (or fill the
@@ -361,12 +362,15 @@ export function insertImages(view: EditorView, images: File[], at: number, optio
   const state = view.state;
   const from = at;
   const to = at === state.selection.main.from ? state.selection.main.to : at;
-  const insert = asBlock(state, from, to, placeholders.join("\n\n"));
+  // In a table's cell they go inline, side by side; elsewhere each on its own line.
+  const cell = inTable(state, from);
+  const gap = cell ? " " : "\n\n";
+  const insert = cell ? placeholders.join(gap) : asBlock(state, from, to, placeholders.join(gap));
   const start = from + insert.indexOf(placeholders[0]);
   let offset = start;
   const effects = placeholders.map((p, i) => {
     const span = { from: offset, to: offset + p.length };
-    offset += p.length + 2;
+    offset += p.length + gap.length;
     return track.of({ id: ids[i], span });
   });
   view.dispatch({

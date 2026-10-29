@@ -219,6 +219,11 @@ export function commandsOf(state: EditorState): SlashCommand[] {
   return state.facet(commandList);
 }
 
+/** Whether this editor has the "/" menu (a table's cells offer it too). */
+export function hasSlashMenu(state: EditorState): boolean {
+  return state.field(menuField, false) !== undefined;
+}
+
 // `scroll` is set when the keyboard moved the highlight, so the menu brings it into view;
 // a mouse hover leaves the list where the user scrolled it.
 // `tooltip` is kept for as long as the menu stays at `from`: CodeMirror rebuilds a tooltip
