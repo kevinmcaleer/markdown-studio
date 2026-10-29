@@ -6,7 +6,8 @@ import { EditorView } from "@codemirror/view";
 import { describe, expect, it } from "vitest";
 import { Highlight } from "./highlightSyntax";
 import { codeEditors, codeRenderers, findRenderedCode, renderedCodeField, type CodeEditorContext } from "./codeRenderers";
-import { buildDecorations, closedCallouts, fencedCodeText } from "./livePreview";
+import { buildDecorations, closedCallouts, fencedCodeText, livePreview } from "./livePreview";
+import { diagnostics, setDiagnostics } from "./diagnostics";
 
 /** The text each hidden or replaced range covers, given which lines the cursor is on. */
 function hiddenText(doc: string, activeLines: number[] = []): string[] {
@@ -48,6 +49,22 @@ describe("live preview", () => {
       if (deco.spec.class === "cm-md-link") hrefs.push(state.sliceDoc(from, to) + " -> " + deco.spec.attributes["data-href"]);
     });
     expect(hrefs).toEqual(["Pico -> /parts/view.html?slug=pico", "https://x.y/a -> https://x.y/b"]);
+  });
+
+  it("keeps a link's text in one element when a word in it is underlined", () => {
+    const doc = "intro\n\nsee [Raspbery Pi](/parts/view.html?slug=pi) now";
+    const parent = document.createElement("div");
+    document.body.append(parent);
+    const view = new EditorView({
+      state: EditorState.create({ doc, extensions: [markdown({ base: markdownLanguage, extensions: [Highlight] }), livePreview(), diagnostics()] }),
+      parent,
+    });
+    const from = doc.indexOf("Raspbery");
+    view.dispatch({ effects: setDiagnostics.of({ source: "spelling", items: [{ from, to: from + 8, source: "spelling", rule: "s", title: "t", message: "m" }] }) });
+    const links = view.dom.querySelectorAll(".cm-md-link");
+    expect([...links].map((el) => el.textContent)).toEqual(["Raspbery Pi"]);
+    expect(links[0].querySelector(".cm-diag-spelling")?.textContent).toBe("Raspbery");
+    view.destroy();
   });
 
   it("draws an image with its size modifier, and shows both on the cursor's line", () => {
