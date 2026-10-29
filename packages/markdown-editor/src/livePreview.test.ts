@@ -4,7 +4,7 @@ import { EditorState } from "@codemirror/state";
 import { describe, expect, it } from "vitest";
 import { Highlight } from "./highlightSyntax";
 import { codeRenderers, findRenderedCode } from "./codeRenderers";
-import { buildDecorations, closedCallouts } from "./livePreview";
+import { buildDecorations, closedCallouts, fencedCodeText } from "./livePreview";
 
 /** The text each hidden or replaced range covers, given which lines the cursor is on. */
 function hiddenText(doc: string, activeLines: number[] = []): string[] {
@@ -45,6 +45,21 @@ describe("live preview", () => {
     expect(hiddenText(doc, [5])).toEqual([]);
     // An unclosed block keeps the rest of the document visible.
     expect(hiddenText("```js\nlet a")).toEqual(["```js"]);
+  });
+
+  it("copies a fenced block's code without its fences", () => {
+    const code = (doc: string) => {
+      const state = EditorState.create({ doc, extensions: markdown({ base: markdownLanguage, extensions: [Highlight] }) });
+      ensureSyntaxTree(state, state.doc.length, 5000);
+      return fencedCodeText(state, doc.indexOf("```"));
+    };
+    expect(code("text\n\n```python\nx = 1\n  y = 2\n```\nafter")).toBe("x = 1\n  y = 2");
+    expect(code("```\n```")).toBe("");
+    // Unclosed: the rest of the document.
+    expect(code("```js\nlet a\nlet b")).toBe("let a\nlet b");
+    // Inside a list or a quote, without the markers each line carries.
+    expect(code("- item\n\n  ```sh\n  ls -l\n  ```")).toBe("ls -l");
+    expect(code("> ```sh\n> ls -l\n> ```")).toBe("ls -l");
   });
 
   it("leaves numbered lists and tables to themselves", () => {
