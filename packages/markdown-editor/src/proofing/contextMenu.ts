@@ -159,8 +159,10 @@ function menuEntries(view: EditorView, pos: number, speller: (l: ProofLanguage) 
   const word = wordAt(state, pos);
   const entries: Entry[] = [];
 
+  let misspelt = false;
   for (const d of diagnosticsAt(state, pos)) {
     if (d.source === "spelling") {
+      misspelt = true;
       const text = state.sliceDoc(d.from, d.to);
       if (editable) {
         entries.push({
@@ -192,7 +194,8 @@ function menuEntries(view: EditorView, pos: number, speller: (l: ProofLanguage) 
       });
     }
     // The thesaurus: one word under the cursor (or selected), swapped for the synonym you pick.
-    const one = selected.trim() ? (/^[\p{L}'’-]+$/u.test(selected.trim()) ? { word: selected.trim(), from: sel.from, to: sel.to } : null) : word;
+    // Not for a misspelt word: the suggestions above are what it needs.
+    const one = misspelt ? null : selected.trim() ? (/^[\p{L}'’-]+$/u.test(selected.trim()) ? { word: selected.trim(), from: sel.from, to: sel.to } : null) : word;
     if (one && editable && settings.lookup) {
       entries.push({ note: "Synonyms" }, { loading: "Finding synonyms…", empty: "No synonyms", items: synonymItems(view, one) });
     }
