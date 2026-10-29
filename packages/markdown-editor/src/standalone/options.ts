@@ -1,5 +1,6 @@
 import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
+import type { CodeRenderer } from "../codeRenderers";
 import type { DraftOptions, DraftState } from "../draft";
 import type { ShortcutName } from "../format/formatting";
 import type { MarkdownItInstance } from "../markdown";
@@ -142,6 +143,12 @@ export type MountOptions = {
         /** Classes for the preview element. Defaults to "prose". */
         className?: string;
       };
+  /**
+   * Fenced blocks to draw in the live view, by language: ```mermaid shows as
+   * its diagram, say, and as its source while the cursor is in it. Each one
+   * draws `source` into `element` (and may finish later).
+   */
+  codeRenderers?: Record<string, CodeRenderer>;
   /** Which view to open in. Defaults to "edit". */
   pane?: Pane;
   /** Start in the Raw view (all the Markdown, line numbers) rather than the live one. */

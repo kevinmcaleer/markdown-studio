@@ -3,6 +3,7 @@ import type { EditorState, Extension, Range, StateEffect } from "@codemirror/sta
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { parseCalloutHeader } from "./callouts";
 import "./callouts.css";
+import { renderedCodeField, renderedCodeTheme } from "./codeRenderers";
 import { tableCursor, tableField } from "./tableWidget";
 
 // The live view: Markdown shown as it reads, and still edited as text, like
@@ -610,7 +611,9 @@ export function livePreview(): Extension {
     calloutFolds,
     tableField,
     tableCursor,
+    renderedCodeField,
     linkClicks,
     liveTheme,
+    renderedCodeTheme,
   ];
 }

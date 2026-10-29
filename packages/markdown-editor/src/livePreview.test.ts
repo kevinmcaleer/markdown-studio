@@ -3,6 +3,7 @@ import { ensureSyntaxTree } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
 import { describe, expect, it } from "vitest";
 import { Highlight } from "./highlightSyntax";
+import { codeRenderers, findRenderedCode } from "./codeRenderers";
 import { buildDecorations, closedCallouts } from "./livePreview";
 
 /** The text each hidden or replaced range covers, given which lines the cursor is on. */
@@ -76,5 +77,37 @@ describe("live preview", () => {
     const doc = "> [!note]- Closed\n> one\n> two\n\n> [!note]+ Open\n> three\n\n> [!tip]-\n\ntext";
     const state = EditorState.create({ doc });
     expect(closedCallouts(state).map(({ from, to }) => state.sliceDoc(from, to))).toEqual(["\n> one\n> two"]);
+  });
+});
+
+describe("rendered code blocks", () => {
+  /** The source of each block drawn by a renderer, with the cursor at `cursor`. */
+  function drawn(doc: string, cursor: number, renderers: Record<string, () => void> = { mermaid: () => {} }): string[] {
+    const state = EditorState.create({
+      doc,
+      selection: { anchor: cursor },
+      extensions: [markdown({ base: markdownLanguage, extensions: [Highlight] }), codeRenderers.of(renderers)],
+    });
+    ensureSyntaxTree(state, state.doc.length, 5000);
+    const out: string[] = [];
+    findRenderedCode(state).between(0, doc.length, (from, to) => {
+      out.push(state.sliceDoc(from, to));
+    });
+    return out;
+  }
+  const doc = "intro\n\n```mermaid\ngraph TD\n  A-->B\n```\n\n```python\nx = 1\n```\n";
+
+  it("draws blocks in a language with a renderer while the cursor is elsewhere", () => {
+    expect(drawn(doc, 0)).toEqual(["```mermaid\ngraph TD\n  A-->B\n```"]);
+  });
+
+  it("shows the source while the cursor is in the block", () => {
+    expect(drawn(doc, doc.indexOf("A-->B"))).toEqual([]);
+    expect(drawn(doc, doc.indexOf("```mermaid"))).toEqual([]);
+  });
+
+  it("draws nothing without renderers, or for an unclosed block", () => {
+    expect(drawn(doc, 0, {})).toEqual([]);
+    expect(drawn("```mermaid\ngraph TD", 0)).toEqual([]);
   });
 });
