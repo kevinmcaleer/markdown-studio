@@ -34,6 +34,11 @@ describe("live preview", () => {
     expect(hiddenText("see [docs](https://x.y) now")).toEqual(["[", "]", "(", "https://x.y", ")"]);
   });
 
+  it("shows a link whose text is itself a URL", () => {
+    // GFM parses the bare URL in the label as a URL node too; only the target is hidden.
+    expect(hiddenText("[https://x.y/a](https://x.y/a)")).toEqual(["[", "]", "(", "https://x.y/a", ")"]);
+  });
+
   it("draws an image with its size modifier, and shows both on the cursor's line", () => {
     expect(hiddenText("![Chassis](/c.jpg){small} after")).toEqual(["![Chassis](/c.jpg){small}"]);
     expect(hiddenText("![Chassis](/c.jpg){huge}")).toEqual(["![Chassis](/c.jpg)"]);
