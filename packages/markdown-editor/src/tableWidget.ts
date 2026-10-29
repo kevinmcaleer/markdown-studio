@@ -441,7 +441,7 @@ class TableView {
     const slash = this.slash;
     if (caret === null || caret <= slash.at || text[slash.at] !== "/") return this.closeSlash();
     const query = text.slice(slash.at + 1, caret);
-    const items = filterCommands(query, commandsOf(this.view.state).filter((c) => !c.block && (c.insert || c.run)));
+    const items = filterCommands(query, commandsOf(this.view.state).filter((c) => !c.block && (c.insert || c.run) && !c.hidden?.(this.view.state)));
     // A space after a query nothing matches means you've moved on.
     if (query.length > 24 || (/\s$/.test(query) && !items.length)) return this.closeSlash();
     if (query !== slash.query) slash.selected = 0;

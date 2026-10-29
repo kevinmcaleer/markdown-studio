@@ -30,6 +30,11 @@ export type SlashCommand = {
    * a host's command that opens its own picker, say.
    */
   run?: (view: EditorView) => void;
+  /**
+   * Leaves the command out of the menu while it returns true: a section the
+   * document already has, say. Called with the editor's state as the menu opens.
+   */
+  hidden?: (state: EditorState) => boolean;
 };
 
 export const slashCommands: SlashCommand[] = [
@@ -236,6 +241,11 @@ export function commandsOf(state: EditorState): SlashCommand[] {
   return state.facet(commandList);
 }
 
+/** The commands the menu shows now: those whose `hidden` doesn't rule them out. */
+export function offered(state: EditorState): SlashCommand[] {
+  return commandsOf(state).filter((c) => !c.hidden?.(state));
+}
+
 /** Whether this editor has the "/" menu (a table's cells offer it too). */
 export function hasSlashMenu(state: EditorState): boolean {
   return state.field(menuField, false) !== undefined;
@@ -286,7 +296,7 @@ const menuField = StateField.define<MenuState>({
     const query = tr.state.sliceDoc(from + 1, head);
     if (query.includes("\n") || query.length > 24) return null;
     // A space after a query nothing matches means you've moved on.
-    if (/\s$/.test(query) && !filterCommands(query, tr.state.facet(commandList)).length) return null;
+    if (/\s$/.test(query) && !filterCommands(query, offered(tr.state)).length) return null;
     const tooltip = from === menu.from ? menu.tooltip : menuTooltip(from);
     return { from, query, selected: query === menu.query ? menu.selected : 0, tooltip };
   },
@@ -334,7 +344,7 @@ function menuTooltip(pos: number): Tooltip {
         if (row && menu.scroll) row.scrollIntoView({ block: "nearest" });
       };
       const build = (query: string, state: EditorState) => {
-        const items = filterCommands(query, state.facet(commandList));
+        const items = filterCommands(query, offered(state));
         rows = [];
         dom.replaceChildren();
         if (!items.length) {
@@ -377,7 +387,7 @@ function menuTooltip(pos: number): Tooltip {
 function move(step: number) {
   return (view: EditorView) => {
     const menu = view.state.field(menuField);
-    const count = menu ? filterCommands(menu.query, view.state.facet(commandList)).length : 0;
+    const count = menu ? filterCommands(menu.query, offered(view.state)).length : 0;
     if (!menu || !count) return false;
     view.dispatch({ effects: moveSelection.of({ index: (menu.selected + step + count) % count, scroll: true }) });
     return true;
@@ -386,7 +396,7 @@ function move(step: number) {
 
 function choose(view: EditorView) {
   const menu = view.state.field(menuField);
-  const command = menu && filterCommands(menu.query, view.state.facet(commandList))[menu.selected];
+  const command = menu && filterCommands(menu.query, offered(view.state))[menu.selected];
   if (!command) return false;
   pick(view, command);
   return true;

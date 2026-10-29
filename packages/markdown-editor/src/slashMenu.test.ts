@@ -1,6 +1,6 @@
 import { EditorState } from "@codemirror/state";
 import { describe, expect, it } from "vitest";
-import { applyCommand, filterCommands, slashCommands, withInsertTexts, type SlashCommand } from "./slashMenu";
+import { applyCommand, filterCommands, offered, slashMenu, slashCommands, withInsertTexts, type SlashCommand } from "./slashMenu";
 
 const command = (id: string) => slashCommands.find((c) => c.id === id)!;
 
@@ -110,5 +110,19 @@ describe("a command that runs", () => {
     const command: SlashCommand = { id: "pick", label: "Pick", keywords: [], group: "host", icon: "", run: () => {} };
     const state = EditorState.create({ doc: "Text /pi" });
     expect(state.update(applyCommand(state, command, 5, 8)).state.doc.toString()).toBe("Text ");
+  });
+});
+
+describe("hidden commands", () => {
+  const section: SlashCommand = {
+    id: "wiring", label: "Wiring", keywords: [], group: "project", icon: "", block: true,
+    insert: () => ({ before: "# Wiring\n\n" }),
+    hidden: (state) => /^# Wiring$/m.test(state.doc.toString()),
+  };
+  const stateWith = (doc: string) => EditorState.create({ doc, extensions: slashMenu([...slashCommands, section]) });
+
+  it("offers a command until hidden says otherwise", () => {
+    expect(offered(stateWith("Intro\n")).map((c) => c.id)).toContain("wiring");
+    expect(offered(stateWith("# Wiring\n\nPins")).map((c) => c.id)).not.toContain("wiring");
   });
 });
