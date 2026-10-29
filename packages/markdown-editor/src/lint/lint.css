@@ -8,7 +8,9 @@
   white-space: nowrap;
 }
 
-.lint-panel {
+/* Opens upwards from the status bar. Specific enough to beat the bundle's
+   `.mde .menu-list`, which drops menus downwards. */
+.menu > .menu-list.lint-panel {
   bottom: calc(100% + 6px);
   top: auto;
   left: 0;
@@ -122,7 +124,7 @@
     display: none;
   }
 
-  .lint-panel {
+  .menu > .menu-list.lint-panel {
     width: min(340px, calc(100vw - 32px));
   }
 }
