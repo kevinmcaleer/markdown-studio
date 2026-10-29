@@ -12,7 +12,7 @@ export type LinkDraft = { from: number; to: number; text: string; url: string };
 const open = StateEffect.define<LinkDraft>();
 const close = StateEffect.define<null>();
 
-const URL_LIKE = /^(?:https?:\/\/|mailto:|\/|#)\S*$/i;
+const URL_LIKE = /^(?:https?:\/\/|mailto:|\.{0,2}\/|#)\S*$/i;
 
 /** What the popover starts with: the link at the cursor, or the selected text (or URL). */
 export function linkDraft(state: EditorState): LinkDraft {
@@ -67,8 +67,11 @@ function form(view: EditorView, draft: LinkDraft) {
     return input;
   };
   const text = row("Text", draft.text, "Link text");
-  const url = row("URL", draft.url, "https://");
-  url.type = "url";
+  // A text field rather than type="url", which turns away site-relative
+  // links ("/projects", "./notes.md", "#parts"); inputMode keeps the URL keyboard.
+  const url = row("URL", draft.url, "https://… or /page");
+  url.inputMode = "url";
+  url.autocapitalize = "off";
   const actions = document.createElement("div");
   actions.className = "cm-link-actions";
   const cancel = document.createElement("button");

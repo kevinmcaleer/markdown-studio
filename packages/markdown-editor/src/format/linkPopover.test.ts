@@ -27,6 +27,11 @@ describe("linkDraft", () => {
   it("goes after a selection that spans lines", () => {
     expect(linkDraft(at("one\ntwo", 0, 7))).toEqual({ from: 7, to: 7, text: "", url: "" });
   });
+
+  it("takes a selected site-relative link as the URL", () => {
+    expect(linkDraft(at("see /projects/new", 4, 17))).toEqual({ from: 4, to: 17, text: "", url: "/projects/new" });
+    expect(linkDraft(at("see ./notes.md", 4, 14))).toEqual({ from: 4, to: 14, text: "", url: "./notes.md" });
+  });
 });
 
 describe("linkMarkdown", () => {
