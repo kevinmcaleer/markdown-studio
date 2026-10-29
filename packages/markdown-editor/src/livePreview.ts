@@ -3,6 +3,7 @@ import type { EditorState, Extension, Range, StateEffect } from "@codemirror/sta
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { parseCalloutHeader } from "./callouts";
 import "./callouts.css";
+import { copyText } from "./clipboard";
 import { renderedCodeField, renderedCodeTheme } from "./codeRenderers";
 import { tableCursor, tableField } from "./tableWidget";
 
@@ -10,10 +11,10 @@ import { tableCursor, tableField } from "./tableWidget";
 // Obsidian's live preview. Headings, emphasis, links, list bullets, quotes
 // and rules hide their Markdown except on the line the cursor is on, where
 // it all shows so it can be edited. A fenced code block hides its fences
-// (showing just its language) until the cursor is anywhere inside it. Tables
-// are drawn as tables throughout (see tableWidget.ts). Callouts (`> [!note]`,
-// see callouts.ts) are drawn as boxes, their `[!type]` an icon, and a
-// foldable one folds from its chevron. Raw mode is the editor without this.
+// (showing just its language and a copy button) until the cursor is anywhere
+// inside it. Tables are drawn as tables throughout (see tableWidget.ts).
+// Callouts (`> [!note]`, see callouts.ts) are drawn as boxes, their `[!type]`
+// an icon, and a foldable one folds from its chevron. Raw mode is the editor without this.
 
 const hidden = Decoration.replace({});
 
@@ -74,7 +75,31 @@ class RuleWidget extends WidgetType {
   }
 }
 
-/** A fenced block's language, small, in place of its opening fence. */
+const COPY_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 5.5h8v8h-8zM10.5 5.5v-3h-8v8h3"/></svg>';
+const COPIED_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>';
+
+/** The code inside the fenced block that starts at `pos`, without its fences (or the quote and list markers it sits in). */
+export function fencedCodeText(state: EditorState, pos: number): string {
+  const inner = syntaxTree(state).resolveInner(pos, 1);
+  let node: typeof inner | null = inner;
+  while (node && node.name !== "FencedCode") node = node.parent;
+  if (!node) return "";
+  const { doc } = state;
+  const open = doc.lineAt(node.from);
+  const marks = node.getChildren("CodeMark");
+  const end = marks.length >= 2 ? doc.lineAt(marks[marks.length - 1].from) : null;
+  const last = end && end.number > open.number ? end.number - 1 : doc.lineAt(node.to).number;
+  const indent = node.from - open.from;
+  const out: string[] = [];
+  for (let n = open.number + 1; n <= last; n++) {
+    const text = doc.line(n).text;
+    const prefix = text.slice(0, indent);
+    out.push(/^[\s>]*$/.test(prefix) ? text.slice(indent) : text);
+  }
+  return out.join("\n");
+}
+
+/** A fenced block's language, small, in place of its opening fence, with a button that copies its code. */
 class FenceLabelWidget extends WidgetType {
   constructor(readonly language: string) {
     super();
@@ -82,14 +107,44 @@ class FenceLabelWidget extends WidgetType {
   eq(other: FenceLabelWidget) {
     return other.language === this.language;
   }
-  toDOM() {
+  toDOM(view: EditorView) {
     const span = document.createElement("span");
     span.className = "cm-md-fence-label";
     span.textContent = this.language;
-    return span;
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "cm-md-code-copy";
+    copy.title = "Copy code";
+    copy.setAttribute("aria-label", "Copy code");
+    copy.innerHTML = COPY_ICON;
+    let reset: ReturnType<typeof setTimeout> | undefined;
+    const show = (label: string, icon: string) => {
+      copy.title = label;
+      copy.setAttribute("aria-label", label);
+      copy.innerHTML = icon;
+      clearTimeout(reset);
+      reset = setTimeout(() => {
+        copy.title = "Copy code";
+        copy.setAttribute("aria-label", "Copy code");
+        copy.innerHTML = COPY_ICON;
+      }, 1500);
+    };
+    // Keep the click away from the editor, which would put the cursor in the block and open it.
+    copy.addEventListener("mousedown", (event) => event.preventDefault());
+    copy.addEventListener("click", (event) => {
+      event.preventDefault();
+      copyText(fencedCodeText(view.state, view.posAtDOM(span))).then(
+        () => show("Copied", COPIED_ICON),
+        () => show("Couldn't copy", COPY_ICON),
+      );
+    });
+    const wrap = document.createElement("span");
+    wrap.className = "cm-md-fence-head";
+    wrap.append(span, copy);
+    return wrap;
   }
-  ignoreEvent() {
-    return false;
+  ignoreEvent(event: Event) {
+    return event.target instanceof Element && !!event.target.closest(".cm-md-code-copy");
   }
 }
 
@@ -506,6 +561,31 @@ const liveTheme = EditorView.theme({
   ".cm-line.cm-md-fence": { fontSize: "0.7em", lineHeight: "1.2" },
   ".cm-line.cm-md-fence-open": { textAlign: "right" },
   ".cm-md-fence-label": { color: "var(--muted)", fontFamily: "var(--font-sans)", letterSpacing: "0.02em" },
+  ".cm-md-fence-head": { display: "inline-flex", alignItems: "center", gap: "0.5em" },
+  ".cm-md-code-copy": {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "1.9em",
+    height: "1.9em",
+    margin: "-0.35em -0.6em -0.35em 0",
+    padding: "0",
+    border: "1px solid transparent",
+    borderRadius: "5px",
+    background: "transparent",
+    color: "var(--muted)",
+    cursor: "pointer",
+  },
+  ".cm-md-code-copy:hover, .cm-md-code-copy:focus-visible": { color: "var(--text)", borderColor: "var(--border)", background: "var(--surface)" },
+  ".cm-md-code-copy svg": {
+    width: "1.45em",
+    height: "1.45em",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.4",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+  },
   ".cm-md-rule": { display: "inline-block", width: "100%", verticalAlign: "middle", borderTop: "1px solid var(--border)" },
   ".cm-md-image": { maxWidth: "100%", borderRadius: "6px", verticalAlign: "bottom" },
   ".cm-md-image-alt": { color: "var(--muted)", fontStyle: "italic" },
