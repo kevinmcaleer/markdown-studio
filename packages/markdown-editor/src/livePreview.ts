@@ -22,27 +22,75 @@ const hidden = Decoration.replace({});
 
 const lineClass = (className: string) => Decoration.line({ class: className });
 
+/** How far each level of a list indents, in em; the published page's lists use the same. */
+const HANG_EM = 1.3;
+
+type SyntaxNode = ReturnType<typeof syntaxTree>["topNode"];
+
+/** A list's gutter, in em: wider when its numbers reach two digits or more. */
+function gutter(list: SyntaxNode): number {
+  const mark = list.lastChild?.getChild("ListMark");
+  const digits = list.name === "OrderedList" && mark ? mark.to - mark.from - 1 : 1;
+  return HANG_EM + 0.6 * Math.max(0, digits - 1);
+}
+
+/**
+ * Puts a hanging list item's marker in its gutter (see `hang` below). `indent`
+ * is how far a nested item's marker sits in, in em, the widget covering its
+ * leading spaces; null for a list in a quote, whose marker stays inline.
+ */
+function inGutter(marker: HTMLElement, indent: number | null): HTMLElement {
+  if (indent === null) return marker;
+  const box = document.createElement("span");
+  box.className = "cm-md-list-marker";
+  box.style.paddingLeft = `${indent}em`;
+  box.append(marker);
+  return box;
+}
+
 class BulletWidget extends WidgetType {
-  eq() {
-    return true;
+  constructor(readonly indent: number | null = null) {
+    super();
+  }
+  eq(other: BulletWidget) {
+    return other.indent === this.indent;
   }
   toDOM() {
     const span = document.createElement("span");
     span.className = "cm-md-bullet";
     span.textContent = "•";
-    return span;
+    return inGutter(span, this.indent);
   }
   ignoreEvent() {
     return false;
   }
 }
 
+/** A nested numbered item's leading spaces, drawn as wide as the gutters they sit in. */
+class IndentWidget extends WidgetType {
+  constructor(readonly indent: number) {
+    super();
+  }
+  eq(other: IndentWidget) {
+    return other.indent === this.indent;
+  }
+  toDOM() {
+    const span = document.createElement("span");
+    span.className = "cm-md-list-indent";
+    span.style.width = `${this.indent}em`;
+    return span;
+  }
+}
+
 class CheckboxWidget extends WidgetType {
-  constructor(readonly checked: boolean) {
+  constructor(
+    readonly checked: boolean,
+    readonly indent: number | null = null,
+  ) {
     super();
   }
   eq(other: CheckboxWidget) {
-    return other.checked === this.checked;
+    return other.checked === this.checked && other.indent === this.indent;
   }
   toDOM(view: EditorView) {
     const box = document.createElement("input");
@@ -56,7 +104,7 @@ class CheckboxWidget extends WidgetType {
       e.preventDefault();
       toggleTask(view, view.posAtDOM(box));
     });
-    return box;
+    return inGutter(box, this.indent);
   }
   ignoreEvent() {
     return true;
@@ -284,7 +332,7 @@ function calloutAt(state: EditorState, from: number) {
 /** Ticks or unticks the task whose list marker starts at `pos`. */
 export function toggleTask(view: EditorView, pos: number) {
   const line = view.state.doc.lineAt(pos);
-  const match = /^([-*+]\s+\[)([ xX])\]/.exec(line.text.slice(pos - line.from));
+  const match = /^(\s*[-*+]\s+\[)([ xX])\]/.exec(line.text.slice(pos - line.from));
   if (!match || view.state.readOnly) return;
   const at = pos + match[1].length;
   view.dispatch({ changes: { from: at, to: at + 1, insert: match[2] === " " ? "x" : " " }, userEvent: "input.task" });
@@ -318,6 +366,21 @@ export function buildDecorations(state: EditorState, ranges: readonly { from: nu
       const classes = [className, n === first && `${className}-first`, n === last && `${className}-last`].filter(Boolean).join(" ");
       decorations.push(lineClass(classes).range(doc.line(n).from));
     }
+  };
+
+  // A list item's first line hangs: its marker sits in a gutter as wide as the
+  // list is deep, and wrapped lines line up with the words, not the marker.
+  // Returns the item's prefix and how far in (em) its own gutter starts, or
+  // null for a list in a quote or callout, which is left as it was.
+  const hang = (mark: SyntaxNode, task: SyntaxNode | null): { from: number; to: number; indent: number; own: number } | null => {
+    const line = doc.lineAt(mark.from);
+    if (!/^[ \t]*$/.test(state.sliceDoc(line.from, mark.from))) return null;
+    const gutters: number[] = [];
+    for (let up: SyntaxNode | null = mark.parent; up; up = up.parent) if (/^(Bullet|Ordered)List$/.test(up.name)) gutters.push(gutter(up));
+    const width = gutters.reduce((a, b) => a + b, 0);
+    const to = Math.min(line.to, (task ?? mark).to + 1);
+    decorations.push(Decoration.line({ class: "cm-md-list-item", attributes: { style: `--mde-hang: ${+width.toFixed(2)}em` } }).range(line.from));
+    return { from: line.from, to, indent: +(width - gutters[0]).toFixed(2), own: gutters[0] };
   };
 
   for (const { from, to } of ranges) {
@@ -396,17 +459,32 @@ export function buildDecorations(state: EditorState, ranges: readonly { from: nu
             return false;
           }
           case "ListMark": {
-            if (isActive(node.from)) return;
             const list = node.node.parent?.parent?.name;
             const task = node.node.nextSibling;
             const marker = task?.name === "Task" ? task.getChild("TaskMarker") : null;
+            const hung = hang(node.node, marker);
+            const markerBox = (from: number, width?: number) =>
+              hung &&
+              decorations.push(
+                Decoration.mark({ class: "cm-md-list-marker", attributes: width ? { style: `min-width: ${width}em` } : {} }).range(from, hung.to),
+              );
+            if (isActive(node.from)) {
+              markerBox(hung?.from ?? 0);
+              return;
+            }
+            // A hanging bullet's or task's widget is its marker box, covering its whole prefix.
             if (marker) {
               const checked = /x/i.test(state.sliceDoc(marker.from, marker.to));
               const end = Math.min(doc.lineAt(node.from).to, marker.to + 1);
-              decorations.push(Decoration.replace({ widget: new CheckboxWidget(checked) }).range(node.from, end));
+              decorations.push(Decoration.replace({ widget: new CheckboxWidget(checked, hung?.indent ?? null) }).range(hung?.from ?? node.from, end));
               if (checked && task && task.to > end) decorations.push(Decoration.mark({ class: "cm-md-task-done" }).range(end, task.to));
             } else if (list === "BulletList") {
-              decorations.push(Decoration.replace({ widget: new BulletWidget() }).range(node.from, node.to));
+              decorations.push(Decoration.replace({ widget: new BulletWidget(hung?.indent ?? null) }).range(hung?.from ?? node.from, hung?.to ?? node.to));
+            } else if (hung && node.from > hung.from) {
+              decorations.push(Decoration.replace({ widget: new IndentWidget(hung.indent) }).range(hung.from, node.from));
+              markerBox(node.from, hung.own);
+            } else if (hung) {
+              markerBox(hung.from);
             }
             return;
           }
@@ -556,7 +634,10 @@ const liveTheme = EditorView.theme({
   ".cm-md-h1": { paddingTop: "0.6em", paddingBottom: "0.1em" },
   ".cm-md-h2": { paddingTop: "0.5em", paddingBottom: "0.05em" },
   ".cm-md-h3": { paddingTop: "0.35em" },
-  ".cm-md-bullet": { display: "inline-block", width: "0.7em", color: "var(--muted)", fontWeight: "700" },
+  ".cm-line.cm-md-list-item": { paddingLeft: "calc(var(--mde-hang) + 6px)", textIndent: "calc(-1 * var(--mde-hang))" },
+  ".cm-md-list-marker": { display: "inline-block", minWidth: "var(--mde-hang)", boxSizing: "border-box", textIndent: "0", whiteSpace: "pre" },
+  ".cm-md-list-indent": { display: "inline-block" },
+  ".cm-md-bullet": { display: "inline-block", width: "0.7em", textIndent: "0", color: "var(--muted)", fontWeight: "700" },
   ".cm-md-checkbox": { margin: "0 0.45em 0 0", verticalAlign: "-0.1em", accentColor: "var(--accent)", cursor: "pointer" },
   ".cm-md-task-done": { color: "var(--muted)", textDecoration: "line-through" },
   ".cm-md-link": { color: "var(--accent)", textDecoration: "underline", textUnderlineOffset: "2px" },

@@ -46,8 +46,11 @@ describe("live preview", () => {
   });
 
   it("swaps bullets and task markers for widgets", () => {
-    expect(hiddenText("- one\n- [x] done")).toEqual(["-", "- [x] "]);
-    expect(hiddenText("- one\n- [x] done", [2])).toEqual(["-"]);
+    // Each covers the item's whole prefix, nested spaces too; in a quote, just the marker.
+    expect(hiddenText("- one\n- [x] done")).toEqual(["- ", "- [x] "]);
+    expect(hiddenText("- one\n- [x] done", [2])).toEqual(["- "]);
+    expect(hiddenText("- one\n  - two")).toEqual(["- ", "  - "]);
+    expect(hiddenText("> - quoted")).toEqual(["> ", "-"]);
   });
 
   it("hides a code block's fences until the cursor is inside it", () => {
@@ -77,6 +80,24 @@ describe("live preview", () => {
 
   it("leaves numbered lists and tables to themselves", () => {
     expect(hiddenText("1. one\n\n| a | b |\n| - | - |\n| c | d |")).toEqual([]);
+  });
+
+  it("hangs a list item's wrapped lines under its words", () => {
+    const doc = "1. one\n   1. nested\n- [ ] task\n> - quoted";
+    const state = EditorState.create({ doc, extensions: markdown({ base: markdownLanguage, extensions: [Highlight] }) });
+    ensureSyntaxTree(state, state.doc.length, 5000);
+    const set = buildDecorations(state, [{ from: 0, to: doc.length }], new Set([1]));
+    const hangs: string[] = [];
+    const markers: string[] = [];
+    set.between(0, doc.length, (from, to, deco) => {
+      if (deco.spec.class === "cm-md-list-item") hangs.push(deco.spec.attributes.style);
+      if (deco.spec.class === "cm-md-list-marker") markers.push(state.sliceDoc(from, to));
+    });
+    // Quoted lists are left alone; the cursor's line hangs too, so it doesn't jump.
+    expect(hangs).toEqual(["--mde-hang: 1.3em", "--mde-hang: 2.6em", "--mde-hang: 1.3em"]);
+    // The cursor's line keeps its spaces in the box; a nested number's are a widget
+    // before it; a task's checkbox widget is its own box.
+    expect(markers).toEqual(["1. ", "1. "]);
   });
 
   it("hides quote marks", () => {
