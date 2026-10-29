@@ -39,6 +39,17 @@ describe("live preview", () => {
     expect(hiddenText("[https://x.y/a](https://x.y/a)")).toEqual(["[", "]", "(", "https://x.y/a", ")"]);
   });
 
+  it("marks a link's text with where it goes", () => {
+    const doc = "a [Pico](/parts/view.html?slug=pico) and [https://x.y/a](https://x.y/b)";
+    const state = EditorState.create({ doc, extensions: markdown({ base: markdownLanguage, extensions: [Highlight] }) });
+    ensureSyntaxTree(state, state.doc.length, 5000);
+    const hrefs: string[] = [];
+    buildDecorations(state, [{ from: 0, to: doc.length }], new Set()).between(0, doc.length, (from, to, deco) => {
+      if (deco.spec.class === "cm-md-link") hrefs.push(state.sliceDoc(from, to) + " -> " + deco.spec.attributes["data-href"]);
+    });
+    expect(hrefs).toEqual(["Pico -> /parts/view.html?slug=pico", "https://x.y/a -> https://x.y/b"]);
+  });
+
   it("draws an image with its size modifier, and shows both on the cursor's line", () => {
     expect(hiddenText("![Chassis](/c.jpg){small} after")).toEqual(["![Chassis](/c.jpg){small}"]);
     expect(hiddenText("![Chassis](/c.jpg){huge}")).toEqual(["![Chassis](/c.jpg)"]);
