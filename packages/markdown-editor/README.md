@@ -260,6 +260,19 @@ outside its header stays an ordinary table. The preview marks the table
 `image-grid` (and `image-grid-nohead`) and each image cell `image-card`; the
 stylesheet is `src/image-grid.css`, which also works on its own.
 
+### Headings in table cells
+
+A table cell holds only inline Markdown, so a cell that starts with `#`'s is drawn
+as a heading of that level instead: a heading over each column of an image grid,
+say. The preview renders it as `<th><h2 class="cell-heading">…</h2></th>`, and
+`src/image-grid.css` sets it snug in its cell.
+
+```markdown
+| ## Open Duck Mini | ## Microduck |
+| --- | --- |
+| ![Open Duck Mini](/img/odm.jpg) | ![Microduck](/img/microduck.jpg) |
+```
+
 ### Shortcuts
 
 `Mod` is ⌘ on a Mac and Ctrl elsewhere. The names and defaults:

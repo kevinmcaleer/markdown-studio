@@ -823,6 +823,13 @@ const liveTheme = EditorView.theme({
   ".cm-md-table.image-grid .image-card img.image-cover": { objectFit: "cover" },
   // Any other image in a cell fits it rather than spilling out of the table.
   ".cm-md-table img": { maxWidth: "100%", height: "auto" },
+  // A cell that starts with #'s is a heading (cellHeadings.ts), sized like the note's own headings.
+  ".cm-md-table .cell-heading": { margin: "0", fontFamily: "var(--font-serif)", fontWeight: "500", lineHeight: "1.25", color: "var(--text)" },
+  ".cm-md-table h1.cell-heading": { fontSize: "1.6em" },
+  ".cm-md-table h2.cell-heading": { fontSize: "1.35em" },
+  ".cm-md-table h3.cell-heading": { fontSize: "1.15em", fontWeight: "600" },
+  ".cm-md-table :is(h4, h5, h6).cell-heading": { fontSize: "1em", fontWeight: "600" },
+  ".cm-md-table.image-grid th:has(.cell-heading)": { fontSize: "1em", paddingBottom: "0.25rem" },
   ".cm-md-table mark": { backgroundColor: "var(--highlight)", color: "inherit", borderRadius: "2px" },
   ".cm-md-table a": { color: "var(--accent)" },
   ".cm-md-table button": {

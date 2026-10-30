@@ -4,6 +4,7 @@ import footnote from "markdown-it-footnote";
 import mark from "markdown-it-mark";
 import taskLists from "markdown-it-task-lists";
 import { calloutPlugin } from "./callouts";
+import { cellHeading, cellHeadingPlugin, headingHtml } from "./cellHeadings";
 import "./callouts.css";
 import { imageGridPlugin } from "./imageGrid";
 import "./image-grid.css";
@@ -27,7 +28,7 @@ function escapeHtml(text: string): string {
 
 /**
  * A markdown-it set up the way notes render: GFM, footnotes, ==highlight==,
- * task lists, callouts, image sizes (`{small}`), image grids and highlighted code. `configure` can add plugins or change
+ * task lists, callouts, image sizes (`{small}`), image grids, headings in table cells and highlighted code. `configure` can add plugins or change
  * options (a host's `preview.markdownIt`); it can't turn raw HTML back on
  * without the host meaning to, since that's its own option.
  */
@@ -40,7 +41,8 @@ export function createMarkdownIt(configure?: (md: MarkdownItInstance) => Markdow
     .use(taskLists, { enabled: false, label: true })
     .use(calloutPlugin)
     .use(imageSizePlugin)
-    .use(imageGridPlugin);
+    .use(imageGridPlugin)
+    .use(cellHeadingPlugin);
 
   // Links open in a new tab, so following one never loses the note you're on.
   const defaultLinkOpen = md.renderer.rules.link_open ?? ((tokens, i, options, _env, self) => self.renderToken(tokens, i, options));
@@ -64,6 +66,12 @@ export function renderMarkdown(source: string): string {
 /** One line of Markdown (a table cell, say) as inline HTML, with no paragraph around it. */
 export function renderInline(source: string): string {
   return md.renderInline(source);
+}
+
+/** A table cell's Markdown as HTML: inline, or a heading when it starts with #'s (see cellHeadings.ts). */
+export function renderCell(source: string): string {
+  const heading = cellHeading(source);
+  return heading ? headingHtml(heading.level, md.renderInline(heading.text)) : md.renderInline(source);
 }
 
 /** The note's title: its first heading, or its first line of text. */
