@@ -234,6 +234,13 @@ modifier. In the live view, hovering an image shows its sizes and picking one
 rewrites the modifier. The stylesheet is `src/image-sizes.css`, which also works
 on its own, like `callouts.css`.
 
+### Table column alignment
+
+Each column's handle menu has **Align column** buttons: left, center and right.
+They write GFM's colons on the delimiter row (`:---`, `:---:`, `---:`), so any
+Markdown renderer aligns the column the same way. Picking the column's current
+alignment again sets it back to the default.
+
 ### Image grids
 
 A table whose cells hold images is a layout, so it shows as a borderless grid of

@@ -885,7 +885,20 @@ const liveTheme = EditorView.theme({
     fontSize: "0.92rem",
     textAlign: "left",
   },
-  ".cm-md-table .cm-md-table-menu button svg": { width: "16px", height: "16px" },
+  ".cm-md-table .cm-md-table-menu button svg": { width: "16px", height: "16px", flexShrink: "0" },
+  ".cm-md-table-menu-choices": {
+    display: "flex",
+    alignItems: "center",
+    gap: "2px",
+    margin: "4px 0 0",
+    padding: "6px 0.6rem 2px",
+    borderTop: "1px solid var(--border)",
+    color: "var(--muted)",
+    fontSize: "0.85rem",
+  },
+  ".cm-md-table-menu-choices > span": { marginRight: "auto" },
+  ".cm-md-table .cm-md-table-menu .cm-md-table-menu-choices button": { width: "auto", padding: "0.35rem" },
+  ".cm-md-table .cm-md-table-menu .cm-md-table-menu-choices button[aria-checked=true]": { background: "var(--accent)", color: "var(--accent-text)" },
   ".cm-md-table .cm-md-table-menu button:disabled": { color: "var(--muted)", opacity: "0.5", cursor: "default", background: "none" },
 });
 
