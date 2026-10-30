@@ -98,6 +98,25 @@ export function deleteColumn(table: Table, index: number): Table {
   return { rows: table.rows.map(without), align: without(table.align) };
 }
 
+/**
+ * The table's Markdown with one column aligned (null for the default), as the
+ * colons on its delimiter cell: `:---` left, `:---:` center, `---:` right. Only
+ * the delimiter line changes, and every other column keeps its alignment.
+ */
+export function setAlign(source: string, col: number, align: Align): string {
+  const lines = source.split("\n");
+  const index = lines.findIndex((line) => line.trim());
+  const delimiter = lines.findIndex((line, i) => i > index && line.trim());
+  if (index < 0 || delimiter < 0) return source;
+  const cells = splitRow(lines[delimiter]);
+  if (!cells.every((cell) => /^:?-+:?$/.test(cell))) return source;
+  while (cells.length <= col) cells.push("---");
+  const dashes = cells[col].replace(/:/g, "") || "---";
+  cells[col] = align === "center" ? `:${dashes}:` : align === "right" ? `${dashes}:` : align === "left" ? `:${dashes}` : dashes;
+  lines[delimiter] = `| ${cells.join(" | ")} |`;
+  return lines.join("\n");
+}
+
 /** The table's Markdown with one cell changed; everything else keeps its exact text. */
 export function setCell(source: string, row: number, col: number, text: string): string {
   const lines = source.split("\n");

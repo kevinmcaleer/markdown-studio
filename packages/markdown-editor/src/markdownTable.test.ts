@@ -9,6 +9,7 @@ import {
   insertRow,
   parseTable,
   pasteCells,
+  setAlign,
   setCell,
   splitRow,
   spreadsheetCells,
@@ -72,6 +73,26 @@ describe("table edits", () => {
     expect(formatTable(insertColumn(table, 2))).toBe(
       ["| Name | Qty |  |", "| :--- | ---: | --- |", "| Apple | 3 |  |", "| Pear | 5 |  |"].join("\n"),
     );
+  });
+});
+
+describe("setAlign", () => {
+  it("writes the column's alignment as colons on the delimiter row", () => {
+    expect(setAlign(source, 0, "center").split("\n")[1]).toBe("| :---: | ---: |");
+    expect(setAlign(source, 0, "right").split("\n")[1]).toBe("| ---: | ---: |");
+    expect(setAlign(source, 1, "left").split("\n")[1]).toBe("| :--- | :--- |");
+    expect(setAlign(source, 1, null).split("\n")[1]).toBe("| :--- | --- |");
+    expect(parseTable(setAlign(source, 0, "center"))!.align).toEqual(["center", "right"]);
+  });
+
+  it("leaves every other line as it was", () => {
+    const padded = "| Name    | Qty |\n|---------|-----|\n| Apple   | 3   |";
+    const lines = setAlign(padded, 1, "right").split("\n");
+    expect(lines).toEqual(["| Name    | Qty |", "| --------- | -----: |", "| Apple   | 3   |"]);
+  });
+
+  it("ignores text that isn't a table", () => {
+    expect(setAlign("just text", 0, "left")).toBe("just text");
   });
 });
 

@@ -14,8 +14,10 @@ import {
   insertRow,
   parseTable,
   pasteCells,
+  setAlign,
   setCell,
   spreadsheetCells,
+  type Align,
   type Table,
 } from "./markdownTable";
 
@@ -164,9 +166,20 @@ const ICONS = {
   rowBelow: "M2.5 10h11M6.5 13.5h3M8 12v3M2.5 7V2.5h11V7",
   delete: "M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.5 9h6l.5-9",
   copy: "M5.5 5.5h8v8h-8zM10.5 5.5v-3h-8v8h3",
+  alignLeft: "M2.5 3.5h11M2.5 6.5h7M2.5 9.5h11M2.5 12.5h7",
+  alignCenter: "M2.5 3.5h11M4.5 6.5h7M2.5 9.5h11M4.5 12.5h7",
+  alignRight: "M2.5 3.5h11M6.5 6.5h7M2.5 9.5h11M6.5 12.5h7",
 };
 
 type MenuItem = { label: string; icon: string; run: () => void; disabled?: boolean };
+/** A row of icon buttons below a line, one of them pressed: the current choice. */
+type MenuChoices = { label: string; choices: (MenuItem & { pressed: boolean })[] };
+
+const ALIGNMENTS: { align: Exclude<Align, null>; label: string; icon: string }[] = [
+  { align: "left", label: "Align left", icon: ICONS.alignLeft },
+  { align: "center", label: "Align center", icon: ICONS.alignCenter },
+  { align: "right", label: "Align right", icon: ICONS.alignRight },
+];
 
 /** The "/" menu in a cell: where its slash is in the cell's text, and what it offers. */
 type CellSlash = { cell: HTMLElement; at: number; query: string; selected: number; items: SlashCommand[]; dom: HTMLElement };
@@ -690,8 +703,24 @@ class TableView {
         disabled: this.table.align.length < 2,
         run: () => this.structure((t) => deleteColumn(t, col), this.hover.row, col),
       },
-    ]);
+    ], {
+      label: "Align column",
+      // Choosing the column's current alignment again sets it back to the default.
+      choices: ALIGNMENTS.map(({ align, label, icon }) => {
+        const pressed = this.table.align[col] === align;
+        return { label, icon, pressed, run: () => this.align(col, pressed ? null : align) };
+      }),
+    });
     this.select((cell) => Number(cell.dataset.col) === col);
+  }
+
+  /** Sets a column's alignment on the delimiter row, keeping the caret's cell. */
+  private align(col: number, align: Align) {
+    this.closeMenu();
+    const { row } = this.hover;
+    const range = this.change((source) => setAlign(source, col, align));
+    if (!range) return;
+    (tableViewAt(this.view, range.from) ?? this).focusCell(row, col);
   }
 
   private rowMenu() {
@@ -740,7 +769,7 @@ class TableView {
     this.scroller.querySelectorAll<HTMLElement>("th, td").forEach((cell) => cell.classList.toggle("selected", test(cell)));
   }
 
-  private openMenu(anchor: HTMLElement, items: MenuItem[]) {
+  private openMenu(anchor: HTMLElement, items: MenuItem[], choices?: MenuChoices) {
     this.closeMenu();
     if (!this.editable) return;
     const menu = el("div", "cm-md-table-menu");
@@ -754,6 +783,21 @@ class TableView {
       entry.removeAttribute("title");
       entry.addEventListener("click", item.run);
       menu.append(entry);
+    }
+    if (choices) {
+      const row = el("div", "cm-md-table-menu-choices");
+      row.setAttribute("role", "group");
+      row.setAttribute("aria-label", choices.label);
+      row.append(Object.assign(el("span", ""), { textContent: choices.label }));
+      for (const choice of choices.choices) {
+        const entry = button("", choice.label);
+        entry.setAttribute("role", "menuitemradio");
+        entry.setAttribute("aria-checked", String(choice.pressed));
+        entry.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="${choice.icon}"/></svg>`;
+        entry.addEventListener("click", choice.run);
+        row.append(entry);
+      }
+      menu.append(row);
     }
     const base = this.dom.getBoundingClientRect();
     const box = anchor.getBoundingClientRect();
