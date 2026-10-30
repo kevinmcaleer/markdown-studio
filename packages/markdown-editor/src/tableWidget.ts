@@ -14,6 +14,8 @@ import {
   formatTable,
   insertColumn,
   insertRow,
+  moveColumn,
+  moveRow,
   parseTable,
   pasteCells,
   setAlign,
@@ -25,7 +27,8 @@ import {
 
 // In the live view a table is drawn as a table, like Claude docs: type in its
 // cells, add a row or column from the bars below and to the right, and insert
-// or delete rows and columns from the handle on each one. Every change is an
+// or delete rows and columns from the handle on each one, and drag a handle
+// to move its row or column (or use the menu's Move items). Every change is an
 // edit to the Markdown underneath, so co-editing and undo work as for text.
 
 //
@@ -166,6 +169,10 @@ const ICONS = {
   colRight: "M10 2.5v11M13.5 6.5v3M12 8h3M7 2.5H2.5v11H7",
   rowAbove: "M2.5 6h11M6.5 2.5h3M8 1v3M2.5 9v4.5h11V9",
   rowBelow: "M2.5 10h11M6.5 13.5h3M8 12v3M2.5 7V2.5h11V7",
+  moveUp: "M8 13V3M4.5 6.5 8 3l3.5 3.5",
+  moveDown: "M8 3v10M4.5 9.5 8 13l3.5-3.5",
+  moveLeft: "M13 8H3M6.5 4.5 3 8l3.5 3.5",
+  moveRight: "M3 8h10M9.5 4.5 13 8l-3.5 3.5",
   delete: "M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.5 9h6l.5-9",
   clear: "M2.5 5.5h11v5h-11zM6 3.5l4 9",
   copy: "M5.5 5.5h8v8h-8zM10.5 5.5v-3h-8v8h3",
@@ -206,6 +213,10 @@ class TableView {
   private slash: CellSlash | null = null;
   private link: { cell: HTMLElement; at: LinkAt; dom: HTMLElement; form: boolean } | null = null;
   private hover = { row: 0, col: 0 };
+  /** A row or column being dragged by its handle, and the line showing where it will go. */
+  private drag: { axis: "row" | "col"; from: number; to: number | null; line: HTMLElement } | null = null;
+  /** Set for the click that ends a drag, so it doesn't open the handle's menu. */
+  private dragged = false;
   private closeMenuListener = (event: Event) => {
     if (this.menu && !this.menu.contains(event.target as Node)) this.closeMenu();
   };
@@ -238,7 +249,7 @@ class TableView {
 
     dom.addEventListener("mouseover", (e) => {
       const cell = (e.target as HTMLElement).closest<HTMLElement>("th, td");
-      if (cell && !this.menu) this.setHover(Number(cell.dataset.row), Number(cell.dataset.col));
+      if (cell && !this.menu && !this.drag) this.setHover(Number(cell.dataset.row), Number(cell.dataset.col));
     });
     dom.addEventListener("focusin", (e) => {
       const cell = e.target as HTMLElement;
@@ -299,8 +310,10 @@ class TableView {
 
     this.addRow.addEventListener("click", () => this.structure((t) => insertRow(t, t.rows.length), this.table.rows.length, 0));
     this.addCol.addEventListener("click", () => this.structure((t) => insertColumn(t, t.align.length), 0, this.table.align.length));
-    this.colHandle.addEventListener("click", () => this.columnMenu());
-    this.rowHandle.addEventListener("click", () => this.rowMenu());
+    this.colHandle.addEventListener("click", () => this.dragged || this.columnMenu());
+    this.rowHandle.addEventListener("click", () => this.dragged || this.rowMenu());
+    this.colHandle.addEventListener("pointerdown", (e) => this.startDrag(e, "col"));
+    this.rowHandle.addEventListener("pointerdown", (e) => this.startDrag(e, "row"));
     this.more.addEventListener("click", () => this.tableMenu());
   }
 
@@ -313,6 +326,7 @@ class TableView {
   }
 
   destroy() {
+    this.endDrag();
     this.closeMenu();
     this.closeSlash();
     this.closeLink();
@@ -799,6 +813,13 @@ class TableView {
     this.openMenu(this.colHandle, [
       { label: "Insert column left", icon: ICONS.colLeft, run: () => this.structure((t) => insertColumn(t, col), this.hover.row, col) },
       { label: "Insert column right", icon: ICONS.colRight, run: () => this.structure((t) => insertColumn(t, col + 1), this.hover.row, col + 1) },
+      { label: "Move column left", icon: ICONS.moveLeft, disabled: col === 0, run: () => this.move("col", col, col - 1) },
+      {
+        label: "Move column right",
+        icon: ICONS.moveRight,
+        disabled: col === this.table.align.length - 1,
+        run: () => this.move("col", col, col + 1),
+      },
       {
         label: "Delete column",
         icon: ICONS.delete,
@@ -831,6 +852,9 @@ class TableView {
       // The header is always the first row, so nothing goes above it.
       { label: "Insert row above", icon: ICONS.rowAbove, disabled: row === 0, run: () => this.structure((t) => insertRow(t, row), row, this.hover.col) },
       { label: "Insert row below", icon: ICONS.rowBelow, run: () => this.structure((t) => insertRow(t, row + 1), row + 1, this.hover.col) },
+      // Moving the first body row up makes it the header, and the header the first body row.
+      { label: "Move row up", icon: ICONS.moveUp, disabled: row === 0, run: () => this.move("row", row, row - 1) },
+      { label: "Move row down", icon: ICONS.moveDown, disabled: row === this.table.rows.length - 1, run: () => this.move("row", row, row + 1) },
       { label: "Clear row", icon: ICONS.clear, run: () => this.structure((t) => clearRow(t, row), row, this.hover.col) },
       {
         // Deleting the header moves the first body row up to become it.
@@ -841,6 +865,95 @@ class TableView {
       },
     ]);
     this.select((cell) => Number(cell.dataset.row) === row);
+  }
+
+  /** Moves a row or column to `to`, keeping the caret in the moved cell. */
+  private move(axis: "row" | "col", from: number, to: number) {
+    const { row, col } = this.hover;
+    if (axis === "row") this.structure((t) => moveRow(t, from, to), to, col);
+    else this.structure((t) => moveColumn(t, from, to), row, to);
+  }
+
+  /**
+   * Dragging a handle moves its row or column: past a few pixels it becomes a
+   * drag, a line shows where it will land, and letting go moves it there. A
+   * press that doesn't move is a click, and opens the menu as before.
+   */
+  private startDrag(e: PointerEvent, axis: "row" | "col") {
+    if (!this.editable || e.button !== 0 || this.drag) return;
+    const from = axis === "row" ? this.hover.row : this.hover.col;
+    const start = { x: e.clientX, y: e.clientY };
+    const drag = { axis, from, to: null as number | null, line: el("div", `cm-md-table-dropline cm-md-table-dropline-${axis}`) };
+    const doc = this.dom.ownerDocument;
+    const move = (ev: PointerEvent) => {
+      if (drag.to === null && Math.hypot(ev.clientX - start.x, ev.clientY - start.y) < 4) return;
+      if (drag.to === null) {
+        this.closeMenu();
+        this.dom.classList.add("dragging");
+        this.dom.append(drag.line);
+        this.select((cell) => Number(axis === "row" ? cell.dataset.row : cell.dataset.col) === from);
+      }
+      ev.preventDefault();
+      drag.to = this.dropAt(drag, ev.clientX, ev.clientY);
+    };
+    const up = () => {
+      doc.removeEventListener("pointermove", move);
+      doc.removeEventListener("pointerup", up);
+      doc.removeEventListener("pointercancel", up);
+      const to = drag.to;
+      this.endDrag();
+      if (to === null) return;
+      // The click that follows the drag isn't a click on the handle.
+      this.dragged = true;
+      window.setTimeout(() => (this.dragged = false));
+      if (to !== from) this.move(axis, from, to);
+    };
+    this.drag = drag;
+    doc.addEventListener("pointermove", move);
+    doc.addEventListener("pointerup", up);
+    doc.addEventListener("pointercancel", up);
+  }
+
+  /**
+   * Where a dragged row or column would land for the pointer at (x, y), as its
+   * new index, and moves the drop line to the gap it would go into.
+   */
+  private dropAt(drag: NonNullable<TableView["drag"]>, x: number, y: number): number {
+    const table = this.scroller.querySelector("table");
+    if (!table) return drag.from;
+    const base = this.dom.getBoundingClientRect();
+    const bounds = table.getBoundingClientRect();
+    // Columns are measured on the last row: an image grid can hide its header.
+    const last = table.rows[table.rows.length - 1];
+    const boxes = (drag.axis === "row" ? Array.from(table.rows) : Array.from(last?.cells ?? [])).map((node) =>
+      node.getBoundingClientRect(),
+    );
+    if (!boxes.length) return drag.from;
+    const row = drag.axis === "row";
+    // The gap before the first box whose middle is past the pointer.
+    let gap = boxes.findIndex((box) => (row ? y < box.top + box.height / 2 : x < box.left + box.width / 2));
+    if (gap < 0) gap = boxes.length;
+    const edge = gap < boxes.length ? (row ? boxes[gap].top : boxes[gap].left) : row ? boxes[gap - 1].bottom : boxes[gap - 1].right;
+    const { style } = drag.line;
+    if (row) {
+      style.left = `${bounds.left - base.left}px`;
+      style.width = `${bounds.width}px`;
+      style.top = `${edge - base.top}px`;
+    } else {
+      style.top = `${bounds.top - base.top}px`;
+      style.height = `${bounds.height}px`;
+      style.left = `${edge - base.left}px`;
+    }
+    // Taking the row or column out shifts the gaps after it back by one.
+    return gap > drag.from ? gap - 1 : gap;
+  }
+
+  private endDrag() {
+    if (!this.drag) return;
+    this.drag.line.remove();
+    this.drag = null;
+    this.dom.classList.remove("dragging");
+    this.select(() => false);
   }
 
   private tableMenu() {

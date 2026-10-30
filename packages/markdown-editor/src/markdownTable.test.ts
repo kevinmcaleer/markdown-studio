@@ -8,6 +8,8 @@ import {
   formatTable,
   insertColumn,
   insertRow,
+  moveColumn,
+  moveRow,
   parseTable,
   pasteCells,
   setAlign,
@@ -74,6 +76,35 @@ describe("table edits", () => {
       ["Pear", "5"],
     ]);
     expect(clearRow(table, 2).rows[2]).toEqual(["", ""]);
+  });
+
+  it("moves rows, the header included", () => {
+    expect(moveRow(table, 2, 1).rows).toEqual([
+      ["Name", "Qty"],
+      ["Pear", "5"],
+      ["Apple", "3"],
+    ]);
+    // To the top: the row becomes the header, the header the first body row.
+    expect(moveRow(table, 1, 0).rows).toEqual([
+      ["Apple", "3"],
+      ["Name", "Qty"],
+      ["Pear", "5"],
+    ]);
+    expect(moveRow(table, 0, 2).rows[2]).toEqual(["Name", "Qty"]);
+    expect(moveRow(table, 1, 1)).toBe(table);
+    expect(moveRow(table, 2, 3)).toBe(table);
+  });
+
+  it("moves columns with their alignment", () => {
+    const moved = moveColumn(table, 1, 0);
+    expect(moved.rows).toEqual([
+      ["Qty", "Name"],
+      ["3", "Apple"],
+      ["5", "Pear"],
+    ]);
+    expect(moved.align).toEqual(["right", "left"]);
+    expect(formatTable(moved).split("\n")[1]).toBe("| ---: | :--- |");
+    expect(moveColumn(table, 0, 2)).toBe(table);
   });
 
   it("adds and removes columns, keeping at least one", () => {

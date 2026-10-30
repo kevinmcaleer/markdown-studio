@@ -47,4 +47,47 @@ describe("table widget", () => {
     center.click();
     expect(view.state.doc.toString()).toBe("| Part | Qty |\n| --- | --- |\n| Servo | 4 |\n");
   });
+
+  it("moves a row up from its menu, onto the header", () => {
+    const view = tableView("| Part | Qty |\n|---|---|\n| Servo | 4 |\n| Wheel | 2 |\n");
+    const table = view.dom.querySelector<HTMLElement>(".cm-md-table")!;
+    table.querySelector<HTMLElement>('td[data-row="2"]')!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    table.querySelector<HTMLElement>(".cm-md-table-rowhandle")!.click();
+    const item = (label: string) =>
+      Array.from(view.dom.querySelectorAll<HTMLButtonElement>(".cm-md-table-menu [role=menuitem]")).find((b) => b.textContent === label)!;
+    expect(item("Move row down").disabled).toBe(true);
+    item("Move row up").click();
+    expect(view.state.doc.toString()).toBe("| Part | Qty |\n| --- | --- |\n| Wheel | 2 |\n| Servo | 4 |\n");
+    view.dom.querySelector<HTMLElement>(".cm-md-table-rowhandle")!.click();
+    item("Move row up").click();
+    expect(view.state.doc.toString()).toBe("| Wheel | 2 |\n| --- | --- |\n| Part | Qty |\n| Servo | 4 |\n");
+  });
+
+  it("moves a column right from its menu, taking its alignment", () => {
+    const view = tableView("| Part | Qty |\n|:---:|---|\n| Servo | 4 |\n");
+    view.dom.querySelector<HTMLElement>(".cm-md-table-colhandle")!.click();
+    const items = Array.from(view.dom.querySelectorAll<HTMLButtonElement>(".cm-md-table-menu [role=menuitem]"));
+    expect(items.find((b) => b.textContent === "Move column left")!.disabled).toBe(true);
+    items.find((b) => b.textContent === "Move column right")!.click();
+    expect(view.state.doc.toString()).toBe("| Qty | Part |\n| --- | :---: |\n| 4 | Servo |\n");
+  });
+
+  it("moves a row by dragging its handle, without opening the menu", () => {
+    const view = tableView("| Part | Qty |\n|---|---|\n| Servo | 4 |\n| Wheel | 2 |\n");
+    const table = view.dom.querySelector<HTMLElement>(".cm-md-table")!;
+    // Lay the rows out 20px apart (happy-dom doesn't).
+    Array.from(table.querySelectorAll("tr")).forEach((tr, i) => {
+      tr.getBoundingClientRect = () => ({ top: i * 20, bottom: i * 20 + 20, left: 0, right: 100, width: 100, height: 20, x: 0, y: i * 20 }) as DOMRect;
+    });
+    table.querySelector<HTMLElement>('td[data-row="1"]')!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    const handle = table.querySelector<HTMLElement>(".cm-md-table-rowhandle")!;
+    handle.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0, clientX: 0, clientY: 30 }));
+    document.dispatchEvent(new PointerEvent("pointermove", { bubbles: true, clientX: 0, clientY: 58 }));
+    expect(table.querySelector(".cm-md-table-dropline")).not.toBeNull();
+    document.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, clientX: 0, clientY: 58 }));
+    handle.click();
+    expect(view.state.doc.toString()).toBe("| Part | Qty |\n| --- | --- |\n| Wheel | 2 |\n| Servo | 4 |\n");
+    expect(view.dom.querySelector(".cm-md-table-menu")).toBeNull();
+    expect(view.dom.querySelector(".cm-md-table-dropline")).toBeNull();
+  });
 });
