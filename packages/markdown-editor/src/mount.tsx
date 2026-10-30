@@ -91,6 +91,7 @@ export function mount(target: HTMLElement | string, options: MountOptions = {}):
     openLinkPopover: () => void openLinkPopover(view),
     openImagePicker: (anchor) => bridge.actions?.openImagePicker(anchor),
     refreshPreview: () => bridge.actions?.refreshPreview(),
+    checkSpelling: () => bridge.actions?.checkSpelling(),
     setHints: (hints) => bridge.actions?.setHints(hints),
     on<K extends keyof EditorEvents>(event: K, listener: (value: EditorEvents[K]) => void) {
       let set = listeners.get(event);

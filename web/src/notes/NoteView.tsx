@@ -1,5 +1,5 @@
 import { openSearchPanel } from "@codemirror/search";
-import { keymap, type EditorView } from "@codemirror/view";
+import { EditorView, keymap } from "@codemirror/view";
 import {
   Editor,
   findReplace,
@@ -19,6 +19,8 @@ import {
   setWriting,
   writingMode,
   writingStats,
+  checkSpelling,
+  spellCount,
   type SelectionStats,
 } from "@markdown-studio/markdown-editor";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
@@ -148,6 +150,7 @@ function TextFile({
     // A note last opened in Split or Preview is saved as the live view from now on.
     if (next !== place.view) rememberView(next);
   }, [markdown, place.view, rememberView]);
+  const [spellingIssues, setSpellingIssues] = useState<number | null>(null);
   const extensions = useMemo(
     () => [
       ...(live.note ? [yCollab(live.note.text, live.note.provider.awareness, { undoManager: live.note.undo }), keymap.of(yUndoManagerKeymap)] : []),
@@ -159,6 +162,10 @@ function TextFile({
       writingMode(),
       speechEditor(),
       writingStats({ onSelection: setSelection, onWritten: addWritten }),
+      EditorView.updateListener.of((u) => {
+        const issues = u.state.field(spellCount, false);
+        if (issues !== undefined && issues !== u.startState.field(spellCount, false)) setSpellingIssues(issues);
+      }),
     ],
     [live.note, comments.extensions, place.extensions, outline.extensions, markdown, uploadImage, addWritten, lint.extensions, format.extensions],
   );
@@ -303,6 +310,7 @@ function TextFile({
           onFind={() => editorView.current && openSearchPanel(editorView.current)}
           lint={markdown ? lint.status : undefined}
           {...(markdown && { proofing })}
+          {...(markdown && canEdit && { onCheckSpelling: () => editorView.current && checkSpelling(editorView.current), spellingIssues })}
         />
       )}
     </article>

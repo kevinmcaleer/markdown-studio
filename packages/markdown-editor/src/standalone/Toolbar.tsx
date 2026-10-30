@@ -17,8 +17,9 @@ const HEADINGS: { block: Block; label: string }[] = [
 type ViewTool = { id: string; label: string; keys?: string; icon: string };
 
 /** The buttons that change the view rather than the text. */
-export const VIEW_TOOLS: Record<"find" | "outline" | "raw" | "line-numbers" | "preview" | "side-by-side" | "fullscreen" | "guide", ViewTool> = {
+export const VIEW_TOOLS: Record<"find" | "spelling" | "outline" | "raw" | "line-numbers" | "preview" | "side-by-side" | "fullscreen" | "guide", ViewTool> = {
   find: { id: "find", label: "Find and replace", keys: "Mod-F", icon: "M7 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM10.75 10.75 14 14" },
+  spelling: { id: "spelling", label: "Check spelling", keys: "F7", icon: "M1.5 9.5 4 3l2.5 6.5M2.4 7.5h3.2M8 3v6.5h2.1a1.6 1.6 0 0 0 0-3.25H8M10 6.25H8M8.5 13l2 2 4-4.5" },
   outline: { id: "outline", label: "Outline", icon: "M2.5 4h11M5 8h8.5M7.5 12h6" },
   raw: { id: "raw", label: "Raw Markdown", icon: "M3.5 1.5h6l3 3v10h-9zM9.5 1.5v3h3M6.5 8 5 9.75l1.5 1.75M9.5 8 11 9.75l-1.5 1.75" },
   "line-numbers": { id: "line-numbers", label: "Line numbers", icon: "M2.5 3.5h1v3M2 6.5h2M2 9.5h1.75L2 12.5h2M6.5 4.5h7.5M6.5 8h7.5M6.5 11.5h7.5" },
@@ -37,6 +38,8 @@ export type ToolbarState = {
   raw: boolean;
   lineNumbers: boolean;
   previewEnabled: boolean;
+  /** Built-in spelling is on, so "spelling" has something to open. */
+  spelling: boolean;
   canUndo: boolean;
   canRedo: boolean;
 };
@@ -144,6 +147,7 @@ export function Toolbar({
     if (name in VIEW_TOOLS) {
       const tool = VIEW_TOOLS[name as keyof typeof VIEW_TOOLS];
       if ((name === "preview" || name === "side-by-side") && !state.previewEnabled) return null;
+      if (name === "spelling" && !state.spelling) return null;
       return (
         <button
           key={name}

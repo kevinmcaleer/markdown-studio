@@ -7,6 +7,7 @@ import { issueKey, personalDictionary } from "./dictionary";
 import { basicGrammar } from "./grammarRules";
 import { checkGrammar, type GrammarSegment } from "./languageApi";
 import { segments, words } from "./prose";
+import { ignoredOnce, isIgnoredOnce, spellPass } from "./spellPass";
 import { LANGUAGE_NAMES, proofingField } from "./settings";
 import { spellerFor, type ProofLanguage, type SpellChecker } from "./speller";
 
@@ -15,6 +16,7 @@ import { spellerFor, type ProofLanguage, type SpellChecker } from "./speller";
 // grammar is LanguageTool when the server has it, otherwise a few safe rules
 // that run here. Both report through the shared diagnostics layer.
 
+export { checkSpelling, spellCount } from "./spellPass";
 export { defaultProofing, LANGUAGE_NAMES, setProofing, type ProofingSettings } from "./settings";
 
 // ---------------------------------------------------------------- shared plumbing
@@ -94,6 +96,8 @@ class SpellChecking extends Checker {
     else if (u.selectionSet) this.typing = false;
     super.update(u);
     if (u.selectionSet && !u.docChanged) this.schedule(400);
+    // Ignored once in the spelling check.
+    if (u.startState.field(ignoredOnce, false) !== u.state.field(ignoredOnce, false)) this.schedule(0);
   }
 
   protected async check(run: number) {
@@ -111,6 +115,7 @@ class SpellChecking extends Checker {
       (w) =>
         speller.known(w.word) === false &&
         !personalDictionary.has(w.word) &&
+        !isIgnoredOnce(this.view.state, w.from, w.to) &&
         !(this.typing && cursor.empty && cursor.head === w.to) &&
         // The note may have moved on while the worker was busy.
         state.sliceDoc(w.from, w.to) === w.word,
@@ -294,5 +299,6 @@ export function proofing({ speller = spellerFor }: { speller?: (language: ProofL
       }),
     ),
     proofingMenu(speller),
+    spellPass(speller),
   ];
 }

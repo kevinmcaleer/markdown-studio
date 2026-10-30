@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LanguageChip } from "./proofing/LanguageChip";
+import { SpellingStatus } from "./proofing/SpellingStatus";
 import type { Proofing } from "./proofing/useProofing";
 import { READ_SHORTCUT } from "./speech/support";
 import { countChars, countWords, readingMinutes, type SelectionStats } from "./writingMode";
@@ -88,6 +89,8 @@ export function WritingBar({
   onReadAloud,
   lint,
   proofing,
+  onCheckSpelling,
+  spellingIssues,
 }: {
   text: string;
   selection: SelectionStats;
@@ -105,6 +108,10 @@ export function WritingBar({
   lint?: ReactNode;
   /** The language chip; left out where nothing is proofed. */
   proofing?: Proofing;
+  /** Offered in the language chip. */
+  onCheckSpelling?: () => void;
+  /** Misspelt words in the whole note (null while counting), for the book beside the chip; left out to hide it. */
+  spellingIssues?: number | null;
 }) {
   const stats = useMemo(() => {
     const words = countWords(text);
@@ -132,7 +139,8 @@ export function WritingBar({
           </>
         )}
       </span>
-      {proofing && <LanguageChip proofing={proofing} />}
+      {proofing && spellingIssues !== undefined && <SpellingStatus count={spellingIssues} onCheck={onCheckSpelling} />}
+      {proofing && <LanguageChip proofing={proofing} onCheckSpelling={onCheckSpelling} />}
       <GoalButton goal={goal} />
       {lint}
       <div className="spacer" />

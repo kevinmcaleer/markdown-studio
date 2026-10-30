@@ -41,6 +41,7 @@ export type BuiltInTool =
   | "divider"
   | "clear"
   | "find"
+  | "spelling"
   | "outline"
   | "raw"
   | "line-numbers"
@@ -255,6 +256,8 @@ export interface MarkdownEditor {
   openImagePicker(anchor?: HTMLElement): void;
   /** Re-runs the preview (after the host's renderer changes, say). */
   refreshPreview(): void;
+  /** Opens the spelling check (F7), which steps through each misspelt word from the cursor on. Needs spellcheck on. */
+  checkSpelling(): void;
   /** Replaces the host's hints in the hints panel; `[]` clears them. Needs `lint` on. */
   setHints(hints: EditorHint[]): void;
   on<K extends keyof EditorEvents>(event: K, listener: (value: EditorEvents[K]) => void): () => void;
@@ -292,6 +295,7 @@ export const DEFAULT_TOOLBAR: BuiltInTool[] = [
   "side-by-side",
   "fullscreen",
   "|",
+  "spelling",
   "guide",
 ];
 
