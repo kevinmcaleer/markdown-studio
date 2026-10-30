@@ -1,5 +1,5 @@
 # Runtime dependencies (pinned). Dependabot keeps these up to date.
-fastapi==0.161.1
+fastapi==0.162.0
 uvicorn[standard]==0.54.0
 argon2-cffi==25.1.0
 # Real-time co-editing: the server side of Yjs (prebuilt wheels for arm64 too).
