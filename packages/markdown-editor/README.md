@@ -14,7 +14,7 @@ What you get with no configuration:
 - **Writing hints** (passive voice, long sentences, readability), **outline**, **find and replace**, counts, cursor position.
 - **Preview and side by side** with synced scrolling, rendered by the built-in renderer or the host's own.
 - **Drafts**: with a `draft.key`, unsaved text survives a crash or reload and is offered back.
-- **Full screen** (`Ctrl/⌘+Shift+F`, Escape leaves), **link popover** on `Ctrl/⌘+K`, heading cycle on `Ctrl/⌘+Alt+=` and `Ctrl/⌘+Alt+-`, and a **"?" cheat sheet** of Markdown, shortcuts and `/` commands.
+- **Full screen** (`Ctrl/⌘+Shift+F`, Escape leaves), **link popover** on `Ctrl/⌘+K`, a **link card** (copy, edit, remove, or name a bare URL) when the caret is on a link, in text or a table cell, heading cycle on `Ctrl/⌘+Alt+=` and `Ctrl/⌘+Alt+-`, and a **"?" cheat sheet** of Markdown, shortcuts and `/` commands.
 
 ## Quick start
 
