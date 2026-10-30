@@ -3,7 +3,7 @@ import { Facet, StateField, type EditorState, type Range } from "@codemirror/sta
 import { Decoration, EditorView, runScopeHandlers, ViewPlugin, WidgetType, type DecorationSet } from "@codemirror/view";
 import { hasLinkPopover, linkCard, linkForm, linkInText, type LinkAt } from "./format/linkPopover";
 import { cellHasImage, isImageGrid } from "./imageGrid";
-import { renderInline } from "./markdown";
+import { renderCell } from "./markdown";
 import { applyCommand, commandsOf, filterCommands, hasSlashMenu, type SlashCommand } from "./slashMenu";
 import {
   deleteColumn,
@@ -263,7 +263,7 @@ class TableView {
       if (this.slash?.cell === cell) this.closeSlash();
       // Into the link's card or form keeps it open; anywhere else closes it.
       if (this.link?.cell === cell && !this.link.dom.contains((e as FocusEvent).relatedTarget as Node)) this.closeLink();
-      cell.innerHTML = renderInline(cell.dataset.raw ?? "");
+      cell.innerHTML = renderCell(cell.dataset.raw ?? "");
     });
     dom.addEventListener("input", (e) => {
       const cell = e.target as HTMLElement;
@@ -399,7 +399,7 @@ class TableView {
           // Someone else (or undo) changed the cell being typed in.
           cell.textContent = raw;
           caretAtEnd(cell);
-        } else cell.innerHTML = renderInline(raw);
+        } else cell.innerHTML = renderCell(raw);
       }
     }
     if (focused && !sameShape) this.focusCell(Math.min(focused.row, rows.length - 1), Math.min(focused.col, align.length - 1));
