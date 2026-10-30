@@ -647,13 +647,19 @@ const liveTheme = EditorView.theme({
   ".cm-md-link": { color: "var(--accent)", textDecoration: "underline", textUnderlineOffset: "2px" },
   ".cm-line.cm-md-quote": { borderLeft: "3px solid var(--border)", paddingLeft: "1em", color: "var(--muted)" },
   // Callouts: their colour and icon come from callouts.css's callout-<type> classes.
+  // A solid tint with rounded corners (callouts.css), no stripe down the left.
   ".cm-line.cm-md-callout": {
-    borderLeft: "3px solid rgb(var(--callout-color))",
-    backgroundColor: "rgb(var(--callout-color) / 0.08)",
+    backgroundColor: "rgb(var(--callout-color) / 0.1)",
     paddingInline: "1em",
   },
-  ".cm-line.cm-md-callout-first": { borderTopRightRadius: "8px", paddingTop: "0.35em" },
-  ".cm-line.cm-md-callout-last": { borderBottomRightRadius: "8px", paddingBottom: "0.35em" },
+  ".cm-line.cm-md-callout-first": { borderTopLeftRadius: "8px", borderTopRightRadius: "8px", paddingTop: "0.35em" },
+  ".cm-line.cm-md-callout-last": { borderBottomLeftRadius: "8px", borderBottomRightRadius: "8px", paddingBottom: "0.35em" },
+  // A folded callout is just its title line, so that line closes the box.
+  ".cm-line.cm-md-callout-title:has(.cm-md-callout-fold[aria-expanded=false])": {
+    borderBottomLeftRadius: "8px",
+    borderBottomRightRadius: "8px",
+    paddingBottom: "0.35em",
+  },
   ".cm-line.cm-md-callout .cm-md-quote-text": { color: "inherit" },
   ".cm-line.cm-md-callout .cm-md-quote-text:not(.cm-md-em)": { fontStyle: "normal" },
   ".cm-line.cm-md-callout-title": { color: "color-mix(in srgb, rgb(var(--callout-color)) var(--callout-title-tone, 60%), black)", fontWeight: "600" },
@@ -771,11 +777,11 @@ const liveTheme = EditorView.theme({
   // A table in a quote or callout (see tableWidget.ts) carries on its box.
   ".cm-md-table.cm-md-table-quoted": { borderLeft: "3px solid var(--border)", paddingLeft: "calc(1em + 6px)" },
   ".cm-md-table.cm-md-table-callout": {
-    borderLeftColor: "rgb(var(--callout-color))",
-    backgroundColor: "rgb(var(--callout-color) / 0.08)",
+    borderLeft: "0",
+    backgroundColor: "rgb(var(--callout-color) / 0.1)",
     paddingLeft: "1em",
   },
-  ".cm-md-table.cm-md-table-callout.cm-md-table-quote-last": { borderBottomRightRadius: "8px" },
+  ".cm-md-table.cm-md-table-callout.cm-md-table-quote-last": { borderBottomLeftRadius: "8px", borderBottomRightRadius: "8px" },
   // A table the host draws another way (see tableRenderer): just the drawing until it's edited.
   ".cm-md-table.previewing": { paddingRight: "6px" },
   ".cm-md-table.previewing > :not(.cm-md-table-preview)": { display: "none" },
