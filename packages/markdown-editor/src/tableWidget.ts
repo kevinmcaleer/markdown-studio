@@ -1,6 +1,7 @@
 import { syntaxTree } from "@codemirror/language";
 import { Facet, StateField, type EditorState, type Range } from "@codemirror/state";
 import { Decoration, EditorView, runScopeHandlers, ViewPlugin, WidgetType, type DecorationSet } from "@codemirror/view";
+import { cellHasImage, isImageGrid } from "./imageGrid";
 import { renderInline } from "./markdown";
 import { applyCommand, commandsOf, filterCommands, hasSlashMenu, type SlashCommand } from "./slashMenu";
 import {
@@ -312,8 +313,13 @@ class TableView {
 
   /** Draws the table, reusing the cells when its shape hasn't changed. */
   private render() {
-    if (this.renderPreview()) return;
+    const previewing = this.renderPreview();
     const { rows, align } = this.table;
+    // A table of images is a layout: cards in a borderless grid (imageGrid.ts).
+    const grid = !previewing && isImageGrid(rows);
+    this.dom.classList.toggle("image-grid", grid);
+    this.dom.classList.toggle("image-grid-nohead", grid && rows[0].every((cell) => !cell.trim()));
+    if (previewing) return;
     this.dom.classList.toggle("editable", this.editable);
     let table = this.scroller.querySelector("table");
     const sameShape =
@@ -341,6 +347,7 @@ class TableView {
         const raw = rows[r][c];
         cell.contentEditable = this.editable ? "true" : "false";
         cell.style.textAlign = align[c] ?? "";
+        cell.classList.toggle("image-card", grid && cellHasImage(raw));
         if (cell.dataset.raw === raw) continue;
         const editing = sameShape && focused?.row === r && focused.col === c;
         cell.dataset.raw = raw;

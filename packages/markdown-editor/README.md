@@ -234,6 +234,23 @@ modifier. In the live view, hovering an image shows its sizes and picking one
 rewrites the modifier. The stylesheet is `src/image-sizes.css`, which also works
 on its own, like `callouts.css`.
 
+### Image grids
+
+A table whose cells hold images is a layout, so it shows as a borderless grid of
+image cards, one column per table column, each image fitted to its card:
+
+```markdown
+| | | |
+| --- | --- | --- |
+| ![Base](/img/base.jpg) | ![Lid](/img/lid.jpg) The lid | ![Buttons](/img/buttons.jpg) |
+```
+
+Text beside an image is its card's caption. An empty header row is hidden, and a
+header row of plain text labels the columns. A table with any text-only cell
+outside its header stays an ordinary table. The preview marks the table
+`image-grid` (and `image-grid-nohead`) and each image cell `image-card`; the
+stylesheet is `src/image-grid.css`, which also works on its own.
+
 ### Shortcuts
 
 `Mod` is ⌘ on a Mac and Ctrl elsewhere. The names and defaults:

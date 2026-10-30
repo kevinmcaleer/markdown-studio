@@ -794,6 +794,35 @@ const liveTheme = EditorView.theme({
     borderRadius: "4px",
     padding: "0.1em 0.3em",
   },
+  // An image grid (imageGrid.ts): no borders, a card per image, equal columns,
+  // the empty header row hidden. Its look matches image-grid.css (the preview).
+  ".cm-md-table.image-grid table": { tableLayout: "fixed", borderCollapse: "separate", borderSpacing: "0.75rem", width: "calc(100% + 1.5rem)", margin: "0 -0.75rem" },
+  ".cm-md-table.image-grid th, .cm-md-table.image-grid td": {
+    border: "0",
+    padding: "0",
+    minWidth: "0",
+    background: "none",
+    fontWeight: "normal",
+    textAlign: "center",
+    borderRadius: "10px",
+  },
+  ".cm-md-table.image-grid-nohead thead": { display: "none" },
+  ".cm-md-table.image-grid th:not(.image-card)": { color: "var(--muted)", fontSize: "0.85em", fontWeight: "600" },
+  // An empty cell still shows where an image can go while editing.
+  ".cm-md-table.image-grid.editable td:not(.image-card)": { outline: "1px dashed var(--border)", minHeight: "3rem", height: "3rem" },
+  ".cm-md-table.image-grid .image-card": {
+    padding: "0.5rem 0.5rem 0.25rem",
+    border: "1px solid var(--border)",
+    backgroundColor: "var(--surface)",
+    boxShadow: "0 1px 2px rgb(0 0 0 / 0.06)",
+    color: "var(--muted)",
+    fontSize: "0.88em",
+    lineHeight: "1.4",
+  },
+  ".cm-md-table.image-grid .image-card img": { display: "block", width: "100%", maxWidth: "100%", height: "auto", aspectRatio: "4 / 3", objectFit: "contain", margin: "0 auto 0.25rem", borderRadius: "6px" },
+  ".cm-md-table.image-grid .image-card img.image-cover": { objectFit: "cover" },
+  // Any other image in a cell fits it rather than spilling out of the table.
+  ".cm-md-table img": { maxWidth: "100%", height: "auto" },
   ".cm-md-table mark": { backgroundColor: "var(--highlight)", color: "inherit", borderRadius: "2px" },
   ".cm-md-table a": { color: "var(--accent)" },
   ".cm-md-table button": {
