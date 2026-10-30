@@ -9,6 +9,7 @@ import { applyCommand, commandsOf, filterCommands, hasSlashMenu, type SlashComma
 import {
   deleteColumn,
   clearRow,
+  splitTable,
   deleteRow,
   diff,
   escapeCell,
@@ -132,7 +133,8 @@ export function unquote(text: string, depth: number): string {
 
 /** A table's lines with the quote markers put back. */
 export function requote(text: string, prefix: string): string {
-  return prefix ? text.split("\n").map((line) => prefix + line).join("\n") : text;
+  // A blank line (between two tables) keeps the quote going as a bare `>`.
+  return prefix ? text.split("\n").map((line) => (line ? prefix + line : prefix.trimEnd())).join("\n") : text;
 }
 
 /** The box a quoted table is drawn in: its outermost quote's (a callout's colour), and whether the table ends it. */
@@ -255,6 +257,7 @@ const ICONS = {
   moveRight: "M3 8h10M9.5 4.5 13 8l-3.5 3.5",
   delete: "M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.5 9h6l.5-9",
   clear: "M2.5 5.5h11v5h-11zM6 3.5l4 9",
+  split: "M2.5 2.5h11v4h-11zM2.5 9.5h11v4h-11zM1 8h2M5 8h2M9 8h2M13 8h2",
   copy: "M5.5 5.5h8v8h-8zM10.5 5.5v-3h-8v8h3",
   alignLeft: "M2.5 3.5h11M2.5 6.5h7M2.5 9.5h11M2.5 12.5h7",
   alignCenter: "M2.5 3.5h11M4.5 6.5h7M2.5 9.5h11M4.5 12.5h7",
@@ -974,6 +977,8 @@ class TableView {
       { label: "Move row up", icon: ICONS.moveUp, disabled: row === 0, run: () => this.move("row", row, row - 1) },
       { label: "Move row down", icon: ICONS.moveDown, disabled: row === this.table.rows.length - 1, run: () => this.move("row", row, row + 1) },
       { label: "Clear row", icon: ICONS.clear, run: () => this.structure((t) => clearRow(t, row), row, this.hover.col) },
+      // The row starts a second table under a copy of the header; the first keeps at least one body row.
+      { label: "Split table here", icon: ICONS.split, disabled: row < 2, run: () => this.split(row) },
       {
         // Deleting the header moves the first body row up to become it.
         label: row === 0 ? "Delete header row" : "Delete row",
@@ -983,6 +988,24 @@ class TableView {
       },
     ]);
     this.select((cell) => Number(cell.dataset.row) === row);
+  }
+
+  /** Splits the table in two at a row, keeping the caret in that row's cell in the new table. */
+  private split(row: number) {
+    this.closeMenu();
+    const { col } = this.hover;
+    const range = this.change((source) => {
+      const table = parseTable(source);
+      const parts = table && splitTable(table, row);
+      return parts ? `${formatTable(parts[0])}\n\n${formatTable(parts[1])}` : source;
+    });
+    if (!range) return;
+    // The first table is its header, delimiter and `row - 1` body rows; a blank line follows.
+    const { doc } = this.view.state;
+    const line = doc.lineAt(range.from).number + row + 2;
+    if (line > doc.lines) return;
+    const view = tableViewAt(this.view, range.from - doc.lineAt(range.from).from + doc.line(line).from);
+    view?.focusCell(1, Math.min(col, view.table.align.length - 1));
   }
 
   /** Moves a row or column to `to`, keeping the caret in the moved cell. */
@@ -1136,12 +1159,35 @@ class TableView {
     }
     const base = this.dom.getBoundingClientRect();
     const box = anchor.getBoundingClientRect();
-    menu.style.top = `${box.bottom - base.top + 4}px`;
     menu.style.left = `${Math.max(0, box.left - base.left)}px`;
     this.dom.append(menu);
+    // The menu can't rise above the editor's scroller (CodeMirror makes it a
+    // stacking context that clips), so it opens upward when the room below,
+    // above the sticky status bar, is too short and there's more room above.
+    const { top, bottom } = this.menuRoom();
+    const height = menu.offsetHeight;
+    const up = box.bottom + 4 + height > bottom && box.top - top > bottom - box.bottom;
+    menu.style.top = up ? `${box.top - base.top - 4 - height}px` : `${box.bottom - base.top + 4}px`;
     this.dom.classList.add("menu-open");
     this.menu = menu;
     window.setTimeout(() => document.addEventListener("mousedown", this.closeMenuListener));
+  }
+
+  /** The band of the window a menu can show in: inside the editor's scroller, between its sticky bars. */
+  private menuRoom(): { top: number; bottom: number } {
+    let top = 0;
+    let bottom = window.innerHeight;
+    const scroller = this.view.scrollDOM.getBoundingClientRect();
+    if (scroller.height) {
+      top = Math.max(top, scroller.top);
+      bottom = Math.min(bottom, scroller.bottom);
+    }
+    const editor = this.dom.closest(".mde");
+    const toolbar = editor?.querySelector(".mde-toolbar")?.getBoundingClientRect();
+    const status = editor?.querySelector(".mde-status")?.getBoundingClientRect();
+    if (toolbar?.height) top = Math.max(top, toolbar.bottom);
+    if (status?.height) bottom = Math.min(bottom, status.top);
+    return { top, bottom };
   }
 
   private closeMenu() {

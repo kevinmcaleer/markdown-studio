@@ -15,6 +15,7 @@ import {
   setAlign,
   setCell,
   splitRow,
+  splitTable,
   spreadsheetCells,
   tableFromCells,
 } from "./markdownTable";
@@ -194,5 +195,15 @@ describe("pasting cells", () => {
     const source = "| A | B |\n| --- | --- |\n| 1 | 2 |";
     expect(cellAt(source, source.indexOf("B"))).toEqual([0, 1]);
     expect(cellAt(source, source.indexOf("1"))).toEqual([1, 0]);
+  });
+
+  it("splits a table at a body row, copying the header and alignment", () => {
+    const table = parseTable("| Name | Qty |\n|:---|---:|\n| A | 1 |\n| B | 2 |\n| C | 3 |")!;
+    const [first, second] = splitTable(table, 2)!;
+    expect(formatTable(first)).toBe("| Name | Qty |\n| :--- | ---: |\n| A | 1 |");
+    expect(formatTable(second)).toBe("| Name | Qty |\n| :--- | ---: |\n| B | 2 |\n| C | 3 |");
+    expect(splitTable(table, 0)).toBeNull();
+    expect(splitTable(table, 1)).toBeNull();
+    expect(splitTable(table, 4)).toBeNull();
   });
 });

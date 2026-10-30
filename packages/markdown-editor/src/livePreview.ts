@@ -888,7 +888,7 @@ const liveTheme = EditorView.theme({
   ".cm-md-table-more svg": { strokeWidth: "2.5 !important" },
   ".cm-md-table-menu": {
     position: "absolute",
-    zIndex: "5",
+    zIndex: "20",
     minWidth: "13rem",
     padding: "4px",
     background: "var(--surface)",
