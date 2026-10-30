@@ -77,3 +77,13 @@ describe("callouts.css", () => {
     }
   });
 });
+
+describe("tables in callouts", () => {
+  it("renders an image-grid table with cell headings inside the callout", () => {
+    const html = renderMarkdown("> [!info] Ducks\n> Two robots\n>\n> | ## A | ## B |\n> | --- | --- |\n> | ![a](/a.jpg) | ![b](/b.jpg) |\n");
+    const content = html.slice(html.indexOf('class="callout-content"'));
+    expect(content).toContain('<table class="image-grid">');
+    expect(content).toContain('<h2 class="cell-heading">A</h2>');
+    expect(html).not.toContain("&gt;");
+  });
+});

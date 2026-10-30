@@ -1,6 +1,7 @@
 import { syntaxTree } from "@codemirror/language";
 import { Facet, StateField, type EditorState, type Range } from "@codemirror/state";
 import { Decoration, EditorView, runScopeHandlers, ViewPlugin, WidgetType, type DecorationSet } from "@codemirror/view";
+import { parseCalloutHeader } from "./callouts";
 import { hasLinkPopover, linkCard, linkForm, linkInText, type LinkAt } from "./format/linkPopover";
 import { cellHasImage, isImageGrid } from "./imageGrid";
 import { renderCell } from "./markdown";
@@ -36,6 +37,10 @@ import {
 // a gallery of thumbnails, say. It shows as that drawing until it's clicked or
 // the caret moves into it, then as the grid, and goes back once the focus
 // leaves it.
+//
+// A table in a quote or callout (`> | a | b |`) is drawn the same way, in the
+// quote's box. The widget works on the table without its `> ` markers, and
+// they're put back on every line it changes.
 
 type TableRange = { from: number; to: number };
 
@@ -71,18 +76,83 @@ function findTables(state: EditorState): DecorationSet {
     enter(node) {
       if (node.name === "Document") return true;
       if (/^(ATX|Setext)Heading/.test(node.name)) heading = headingText(state.sliceDoc(node.from, node.to));
-      // Only top-level tables: one inside a quote or list has its markers on every line.
-      if (node.name === "Table" && node.node.parent?.name === "Document") {
+      // Into quotes and callouts, for the tables in them.
+      if (node.name === "Blockquote") return true;
+      // Top-level and quoted tables; one in a list is left as text.
+      const quotes = node.name === "Table" ? quoteDepth(node.node) : null;
+      if (quotes !== null) {
         const from = state.doc.lineAt(node.from).from;
         const to = state.doc.lineAt(Math.max(node.from, node.to - 1)).to;
-        const source = state.sliceDoc(from, to);
+        const quoted = state.sliceDoc(from, to);
+        const prefix = quotes ? quotePrefix(quoted, quotes) : "";
+        const source = quotes ? unquote(quoted, quotes) : quoted;
+        const box = quotes ? quoteBox(state, node.node, to) : null;
         if (parseTable(source))
-          tables.push(Decoration.replace({ widget: new TableWidget(source, !state.readOnly, heading), block: true }).range(from, to));
+          tables.push(Decoration.replace({ widget: new TableWidget(source, !state.readOnly, heading, prefix, box), block: true }).range(from, to));
       }
       return false;
     },
   });
   return Decoration.set(tables);
+}
+
+type SyntaxNode = ReturnType<typeof syntaxTree>["topNode"];
+
+/** How many quotes a table sits in, or null when it's somewhere else (in a list, say). */
+function quoteDepth(node: SyntaxNode): number | null {
+  let depth = 0;
+  for (let parent = node.parent; parent; parent = parent.parent) {
+    if (parent.name === "Document") return depth;
+    if (parent.name !== "Blockquote") return null;
+    depth++;
+  }
+  return null;
+}
+
+/** `depth` quote markers at the start of a line: `> `, `>> `, `> > `. */
+function quoteMarkers(depth: number): RegExp {
+  return new RegExp(`^(?:[ \\t]{0,3}>[ \\t]?){${depth}}`);
+}
+
+/** The first line's quote markers, which go on every line the table changes. */
+function quotePrefix(text: string, depth: number): string {
+  const prefix = quoteMarkers(depth).exec(text)?.[0] ?? "";
+  // `>` with no space after it (on an empty line) is written as `> `.
+  return prefix.endsWith(">") ? `${prefix} ` : prefix;
+}
+
+/** A quoted table's lines without their quote markers. */
+export function unquote(text: string, depth: number): string {
+  const markers = quoteMarkers(depth);
+  return text
+    .split("\n")
+    .map((line) => line.replace(markers, ""))
+    .join("\n");
+}
+
+/** A table's lines with the quote markers put back. */
+export function requote(text: string, prefix: string): string {
+  return prefix ? text.split("\n").map((line) => prefix + line).join("\n") : text;
+}
+
+/** The box a quoted table is drawn in: its outermost quote's (a callout's colour), and whether the table ends it. */
+type QuoteBox = { callout: string | null; last: boolean };
+
+function quoteBox(state: EditorState, table: SyntaxNode, to: number): QuoteBox {
+  let quote = table.parent!;
+  while (quote.parent?.name === "Blockquote") quote = quote.parent;
+  const line = state.doc.lineAt(quote.from);
+  const header = /^>[ \t]?\[!/.test(line.text.slice(quote.from - line.from))
+    ? parseCalloutHeader(line.text.slice(quote.from - line.from).replace(/^>[ \t]?/, ""))
+    : null;
+  return { callout: header?.type ?? null, last: state.doc.lineAt(Math.max(quote.from, quote.to - 1)).to <= to };
+}
+
+/** How long the quote markers are at the start of a line of a quoted table. */
+function markersLength(line: string, prefix: string): number {
+  if (!prefix) return 0;
+  const depth = (prefix.match(/>/g) ?? []).length;
+  return quoteMarkers(depth).exec(line)?.[0].length ?? 0;
 }
 
 function headingText(source: string): string {
@@ -129,12 +199,22 @@ class TableWidget extends WidgetType {
     readonly source: string,
     readonly editable: boolean,
     readonly heading: string | null = null,
+    /** The quote markers on each line (`> `), for a table in a quote or callout. */
+    readonly prefix = "",
+    readonly box: QuoteBox | null = null,
   ) {
     super();
   }
 
   eq(other: TableWidget) {
-    return other.source === this.source && other.editable === this.editable && other.heading === this.heading;
+    return (
+      other.source === this.source &&
+      other.editable === this.editable &&
+      other.heading === this.heading &&
+      other.prefix === this.prefix &&
+      other.box?.callout === this.box?.callout &&
+      other.box?.last === this.box?.last
+    );
   }
 
   toDOM(view: EditorView) {
@@ -200,6 +280,7 @@ class TableView {
   private source: string;
   private editable: boolean;
   private heading: string | null;
+  private prefix: string;
   /** The host's drawing of the table (see `tableRenderer`), shown while it isn't being edited. */
   private readonly preview = el("div", "cm-md-table-preview");
   private editing = false;
@@ -229,8 +310,10 @@ class TableView {
     this.source = widget.source;
     this.editable = widget.editable;
     this.heading = widget.heading;
+    this.prefix = widget.prefix;
     this.table = parseTable(this.source)!;
     dom.className = "cm-md-table";
+    this.setBox(widget.box);
     dom.contentEditable = "false";
     this.addCol.innerHTML = this.addRow.innerHTML = plusIcon();
     this.more.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 8h.01M8 8h.01M12 8h.01"/></svg>';
@@ -321,8 +404,20 @@ class TableView {
     this.source = widget.source;
     this.editable = widget.editable;
     this.heading = widget.heading;
+    this.prefix = widget.prefix;
+    this.setBox(widget.box);
     this.table = parseTable(this.source)!;
     this.render();
+  }
+
+  /** A quoted table sits in its quote's box: a callout's colour, or a plain quote's rule. */
+  private setBox(box: QuoteBox | null) {
+    const { classList } = this.dom;
+    for (const name of Array.from(classList)) if (name.startsWith("callout-")) classList.remove(name);
+    classList.toggle("cm-md-table-quoted", !!box);
+    classList.toggle("cm-md-table-callout", !!box?.callout);
+    classList.toggle("cm-md-table-quote-last", !!box?.last);
+    if (box?.callout) classList.add(`callout-${box.callout}`);
   }
 
   destroy() {
@@ -481,7 +576,9 @@ class TableView {
     const range = tableAt(this.view.state, pos);
     if (!range) return null;
     const current = this.view.state.sliceDoc(range.from, range.to);
-    const change = diff(current, edit(current));
+    const depth = (this.prefix.match(/>/g) ?? []).length;
+    const next = this.prefix ? requote(edit(unquote(current, depth)), this.prefix) : edit(current);
+    const change = diff(current, next);
     if (change)
       this.view.dispatch({
         changes: { from: range.from + change.from, to: range.from + change.to, insert: change.insert },
@@ -772,8 +869,9 @@ class TableView {
     const index = row === 0 ? 0 : row + 1;
     if (lines[index] === undefined) return null;
     const lineFrom = range.from + lines.slice(0, index).reduce((n, line) => n + line.length + 1, 0);
-    const offset = cellContentOffset(lines[index], Number(cell.dataset.col));
-    return offset === null ? null : lineFrom + offset;
+    const markers = markersLength(lines[index], this.prefix);
+    const offset = cellContentOffset(lines[index].slice(markers), Number(cell.dataset.col));
+    return offset === null ? null : lineFrom + markers + offset;
   }
 
   /** Moves the caret out of the table, to the line above or below it. */
@@ -796,6 +894,7 @@ class TableView {
     // Below: onto an empty line with a blank line between it and the table,
     // since a line of text right under a table would become one of its rows.
     const next = range.to < doc.length ? doc.lineAt(range.to + 1) : null;
+    if (this.prefix) return this.leaveQuote(range, next);
     if (next && next.text.trim()) {
       this.view.dispatch({ selection: { anchor: next.from }, scrollIntoView: true });
     } else if (next && next.number < doc.lines && !doc.line(next.number + 1).text.trim()) {
@@ -806,6 +905,25 @@ class TableView {
     } else {
       this.view.dispatch({ changes: { from: range.to, insert: "\n\n" }, selection: { anchor: range.to + 2 }, scrollIntoView: true });
     }
+  }
+
+  /** Below a quoted table: the quote's next line of text, or a new one in the quote. */
+  private leaveQuote(range: TableRange, next: ReturnType<EditorState["doc"]["lineAt"]> | null) {
+    const { doc } = this.view.state;
+    const text = (line: typeof next) => (line ? line.text.slice(markersLength(line.text, this.prefix)) : "");
+    const quoted = (line: typeof next) => !!line && markersLength(line.text, this.prefix) > 0;
+    if (quoted(next) && text(next).trim()) {
+      this.view.dispatch({ selection: { anchor: next!.from + markersLength(next!.text, this.prefix) }, scrollIntoView: true });
+      return;
+    }
+    const after = next && next.number < doc.lines ? doc.line(next.number + 1) : null;
+    if (quoted(next) && quoted(after)) {
+      this.view.dispatch({ selection: { anchor: after!.from + markersLength(after!.text, this.prefix) }, scrollIntoView: true });
+      return;
+    }
+    // A blank quoted line, so the new one isn't a row of the table.
+    const insert = `\n${this.prefix.trimEnd()}\n${this.prefix}`;
+    this.view.dispatch({ changes: { from: range.to, insert }, selection: { anchor: range.to + insert.length }, scrollIntoView: true });
   }
 
   private columnMenu() {
@@ -1064,12 +1182,18 @@ export const tableCursor = ViewPlugin.define(() => ({
       if (head <= from || head > to) return;
       const line = state.doc.lineAt(head);
       const index = line.number - state.doc.lineAt(from).number;
-      const before = line.text.slice(0, head - line.from);
+      // A quoted table's markers aren't part of its cells.
+      const first = state.doc.lineAt(from).text;
+      const depth = (/^(?:[ \t]{0,3}>[ \t]?)*/.exec(first)?.[0].match(/>/g) ?? []).length;
+      const markers = depth ? (quoteMarkers(depth).exec(line.text)?.[0].length ?? 0) : 0;
+      const text = line.text.slice(markers);
+      const lineFrom = line.from + markers;
+      const before = text.slice(0, Math.max(0, head - lineFrom));
       const pipes = (before.match(/(?<!\\)\|/g) ?? []).length;
-      const col = Math.max(0, line.text.trimStart().startsWith("|") ? pipes - 1 : pipes);
+      const col = Math.max(0, text.trimStart().startsWith("|") ? pipes - 1 : pipes);
       // The selection as offsets into the cell's text (on the delimiter line, its start).
-      const content = index === 1 ? null : cellContentOffset(line.text, col);
-      const offset = (pos: number) => (content === null || pos < line.from ? 0 : Math.max(0, pos - line.from - content));
+      const content = index === 1 ? null : cellContentOffset(text, col);
+      const offset = (pos: number) => (content === null || pos < lineFrom ? 0 : Math.max(0, pos - lineFrom - content));
       target = { from, row: index < 2 ? 0 : index - 1, col, start: offset(Math.min(anchor, head)), end: offset(Math.max(anchor, head)) };
     });
     if (!target) return;

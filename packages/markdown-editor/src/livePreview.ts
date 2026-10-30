@@ -768,6 +768,14 @@ const liveTheme = EditorView.theme({
   // and bars below and to the right that add a row or a column.
   ".cm-md-table": { position: "relative", padding: "0.85rem 2.75rem 1.1rem 6px", fontFamily: "var(--font-sans)" },
   ".cm-md-table-scroll": { overflowX: "auto" },
+  // A table in a quote or callout (see tableWidget.ts) carries on its box.
+  ".cm-md-table.cm-md-table-quoted": { borderLeft: "3px solid var(--border)", paddingLeft: "calc(1em + 6px)" },
+  ".cm-md-table.cm-md-table-callout": {
+    borderLeftColor: "rgb(var(--callout-color))",
+    backgroundColor: "rgb(var(--callout-color) / 0.08)",
+    paddingLeft: "1em",
+  },
+  ".cm-md-table.cm-md-table-callout.cm-md-table-quote-last": { borderBottomRightRadius: "8px" },
   // A table the host draws another way (see tableRenderer): just the drawing until it's edited.
   ".cm-md-table.previewing": { paddingRight: "6px" },
   ".cm-md-table.previewing > :not(.cm-md-table-preview)": { display: "none" },
