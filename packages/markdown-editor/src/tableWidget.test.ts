@@ -90,4 +90,35 @@ describe("table widget", () => {
     expect(view.dom.querySelector(".cm-md-table-menu")).toBeNull();
     expect(view.dom.querySelector(".cm-md-table-dropline")).toBeNull();
   });
+
+  it("draws a table in a callout, in the callout's box", () => {
+    const doc = "> [!info] Ducks\n> Two robots\n>\n> | ## A | ## B |\n> | --- | --- |\n> | ![a](/a.jpg) | ![b](/b.jpg) |\n\nAfter";
+    const table = tableDom(doc);
+    expect(table.classList.contains("cm-md-table-callout")).toBe(true);
+    expect(table.classList.contains("callout-info")).toBe(true);
+    expect(table.classList.contains("cm-md-table-quote-last")).toBe(true);
+    expect(table.classList.contains("image-grid")).toBe(true);
+    expect(table.querySelector("th h2.cell-heading")?.textContent).toBe("A");
+  });
+
+  it("draws a table in a plain quote, and in a nested one", () => {
+    expect(tableDom("> | a | b |\n> |---|---|\n> | 1 | 2 |\n> more\n").classList.contains("cm-md-table-quoted")).toBe(true);
+    const nested = tableDom("> > | a |\n> > |---|\n> > | 1 |\n");
+    expect(nested.querySelector("td")?.textContent).toBe("1");
+  });
+
+  it("leaves a table in a list as text", () => {
+    expect(tableDom("- item\n\n  | a |\n  |---|\n  | 1 |\n")).toBeNull();
+  });
+
+  it("keeps a quoted table's markers when it changes", () => {
+    const view = tableView("> [!note]\n> | Part | Qty |\n> |---|---|\n> | Servo | 4 |\n");
+    const table = view.dom.querySelector<HTMLElement>(".cm-md-table")!;
+    table.querySelector<HTMLElement>(".cm-md-table-addrow")!.click();
+    expect(view.state.doc.toString()).toBe("> [!note]\n> | Part | Qty |\n> | --- | --- |\n> | Servo | 4 |\n> |  |  |\n");
+    const cell = view.dom.querySelector<HTMLElement>('.cm-md-table td[data-row="1"][data-col="1"]')!;
+    cell.textContent = "6";
+    cell.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    expect(view.state.doc.line(4).text).toBe("> | Servo | 6 |");
+  });
 });
