@@ -138,3 +138,42 @@
   gap: 0.5rem;
   padding: 0.1rem 0 0.1rem 0.65rem;
 }
+
+.language-popover .language-check {
+  display: block;
+  width: 100%;
+  margin: 0.15rem 0 0.35rem;
+  text-align: center;
+}
+
+/* The proofing book beside the language chip. */
+.writing-toggle.spelling-status {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.spelling-status:disabled {
+  cursor: default;
+}
+
+.spelling-status.checking {
+  color: var(--muted);
+}
+
+.spelling-status .spelling-badge {
+  stroke: var(--surface, #fff);
+  stroke-width: 1;
+}
+
+.spelling-status.ok .spelling-badge {
+  fill: #2f8a4c;
+}
+
+.spelling-status.issues .spelling-badge {
+  fill: var(--danger, #b4322a);
+}
+
+.spelling-count {
+  font-variant-numeric: tabular-nums;
+}

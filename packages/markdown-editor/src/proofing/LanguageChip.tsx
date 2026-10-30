@@ -6,7 +6,7 @@ import type { Proofing } from "./useProofing";
 // The status bar's language chip, like Word's: the proofing language, and
 // switches for spelling and grammar.
 
-export function LanguageChip({ proofing }: { proofing: Proofing }) {
+export function LanguageChip({ proofing, onCheckSpelling }: { proofing: Proofing; onCheckSpelling?: () => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const { settings, features, signedIn } = proofing;
@@ -75,6 +75,19 @@ export function LanguageChip({ proofing }: { proofing: Proofing }) {
             Check grammar as you type
           </label>
           <p className="muted small">{grammarNote}</p>
+          {onCheckSpelling && (
+            <button
+              type="button"
+              className="menu-button language-check"
+              title="Step through each misspelt word (F7)"
+              onClick={() => {
+                setOpen(false);
+                onCheckSpelling();
+              }}
+            >
+              Check spelling…
+            </button>
+          )}
           {proofing.dictionarySize > 0 && (
             <div className="language-dictionary small">
               <span>

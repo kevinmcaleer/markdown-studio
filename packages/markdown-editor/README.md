@@ -10,7 +10,7 @@ What you get with no configuration:
 - **`/` menu** for headings, lists, tables, code, images, links, dates, and the host's own commands.
 - **Toolbar** (undo/redo, text style, marks, lists, inserts, preview, side by side, full screen, Markdown guide) and a **selection toolbar** over selected text, with Clear formatting.
 - **Tables** you edit as a grid, **smart paste** (rich text, spreadsheet cells, code from an IDE and URLs arrive as Markdown) and **image upload** by paste, drop or picker.
-- **Proofing**: Hunspell spelling (offline, en-GB and en-US), basic grammar, and a right-click menu with suggestions; Look Up, Synonyms, LanguageTool grammar and translation when pointed at a Markdown Studio server (or anything serving the same `/api/language` endpoints).
+- **Proofing**: Hunspell spelling (offline, en-GB and en-US), basic grammar, and a right-click menu with suggestions, a Word-style spelling check (F7) that steps through each misspelt word with Change, Change all, Ignore, Ignore all and Add to dictionary, and a book in the status bar that shows a tick when the whole document is spelt right (or how many words aren't); Look Up, Synonyms, LanguageTool grammar and translation when pointed at a Markdown Studio server (or anything serving the same `/api/language` endpoints).
 - **Writing hints** (passive voice, long sentences, readability), **outline**, **find and replace**, counts, cursor position.
 - **Preview and side by side** with synced scrolling, rendered by the built-in renderer or the host's own.
 - **Drafts**: with a `draft.key`, unsaved text survives a crash or reload and is offered back.
@@ -137,7 +137,7 @@ Every option is optional.
 ["undo", "redo", "|", "heading", "|", "bold", "italic", "strike", "highlight", "code", "link", "|",
  "bullet", "numbered", "checklist", "outdent", "indent", "|",
  "quote", "codeBlock", "table", "image", "divider", "|",
- "preview", "side-by-side", "fullscreen", "|", "guide"]
+ "preview", "side-by-side", "fullscreen", "|", "spelling", "guide"]
 ```
 
 Also available: `headingBigger`, `headingSmaller`, `clear`, `find`, `outline`, `raw`, `line-numbers`, and
@@ -276,6 +276,8 @@ stylesheet is `src/image-grid.css`, which also works on its own.
 | `h1`, `h2`, `h3` | `Mod-Alt-1`…`3` | `fullscreen` | `Mod-Shift-f` |
 | `preview` | `Mod-Shift-p` | `sideBySide` | `F9` |
 
+F7 opens the spelling check (the `spelling` button does too).
+
 Undo, redo and find and replace keep CodeMirror's usual keys.
 
 ## The editor's API
@@ -291,6 +293,7 @@ Undo, redo and find and replace keep CodeMirror's usual keys.
 | `setPane("edit" \| "preview" \| "split")`, `setFullscreen(on)`, `setLineNumbers(on)` | |
 | `openLinkPopover()`, `openImagePicker(anchorElement?)` | The same as the Link and image buttons. |
 | `refreshPreview()` | Renders the preview again (after the host's renderer has changed). |
+| `checkSpelling()` | Opens the spelling check at the cursor, as F7 and the `spelling` button do. |
 | `setHints(hints)` | Replaces the host's hints in the hints panel (see the `hints` option); `[]` clears them. |
 | `clearDraft()` | Forget the stored draft: call it once the host has saved. |
 | `on(event, listener)` | Returns a function that removes the listener; `off(event, listener)` does too. |

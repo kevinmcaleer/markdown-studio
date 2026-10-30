@@ -675,3 +675,9 @@
   background: var(--accent);
   color: var(--accent-text);
 }
+
+.mde-status-language {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}

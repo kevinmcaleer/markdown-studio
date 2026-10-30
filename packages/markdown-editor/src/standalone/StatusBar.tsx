@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { DraftState } from "../draft";
 import { LanguageChip } from "../proofing/LanguageChip";
+import { SpellingStatus } from "../proofing/SpellingStatus";
 import type { Proofing } from "../proofing/useProofing";
 import type { SelectionStats } from "../writingMode";
 import { when } from "./DraftBar";
@@ -21,6 +22,8 @@ export function StatusBar({
   proofing,
   lint,
   readAloud,
+  onCheckSpelling,
+  spellingIssues,
 }: {
   items: StatusItem[];
   stats: Stats;
@@ -30,6 +33,10 @@ export function StatusBar({
   proofing?: Proofing;
   lint?: ReactNode;
   readAloud?: { reading: boolean; toggle: () => void };
+  /** Offered in the language chip; left out where the note can't be checked. */
+  onCheckSpelling?: () => void;
+  /** Misspelt words in the whole note, for the book beside the language chip (null while counting); left out to hide it. */
+  spellingIssues?: number | null;
 }) {
   const item = (name: StatusItem) => {
     switch (name) {
@@ -75,7 +82,12 @@ export function StatusBar({
           </span>
         );
       case "language":
-        return proofing ? <LanguageChip key={name} proofing={proofing} /> : null;
+        return proofing ? (
+          <span key={name} className="mde-status-language">
+            {spellingIssues !== undefined && <SpellingStatus count={spellingIssues} onCheck={onCheckSpelling} />}
+            <LanguageChip proofing={proofing} onCheckSpelling={onCheckSpelling} />
+          </span>
+        ) : null;
       case "lint":
         return lint ? <span key={name}>{lint}</span> : null;
       case "read-aloud":

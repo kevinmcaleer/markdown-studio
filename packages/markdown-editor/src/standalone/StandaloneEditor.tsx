@@ -15,7 +15,7 @@ import { linkPopover } from "../format/linkPopover";
 import { selectionToolbar } from "../format/selectionToolbar";
 import { useWritingLint } from "../lint/useWritingLint";
 import { createMarkdownIt } from "../markdown";
-import { proofing as proofingExtension, setProofing } from "../proofing/proofing";
+import { checkSpelling, proofing as proofingExtension, setProofing, spellCount } from "../proofing/proofing";
 import { useProofing } from "../proofing/useProofing";
 import { slashCommands as defaultCommands, slashMenu, withInsertTexts, type SlashCommand } from "../slashMenu";
 import { imageSizeMarkdown, type ImageSize } from "../imageSize";
@@ -56,6 +56,7 @@ export type Bridge = {
     openImagePicker(anchor?: HTMLElement): void;
     refreshPreview(): void;
     setHints(hints: EditorHint[]): void;
+    checkSpelling(): void;
   } | null;
 };
 
@@ -163,6 +164,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
   const proofSettingsRef = useRef(proofSettings);
   proofSettingsRef.current = proofSettings;
   const lintEnabled = options.lint !== false;
+  const [spellingIssues, setSpellingIssues] = useState<number | null>(null);
   const [hints, setHints] = useState<EditorHint[]>(options.hints ?? []);
   const lint = useWritingLint(hints);
 
@@ -271,6 +273,8 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
           const redo = options.history === false || redoDepth(u.state) > 0;
           setHistory((h) => (h.undo === undo && h.redo === redo ? h : { undo, redo }));
         }
+        const issues = u.state.field(spellCount, false);
+        if (issues !== undefined && issues !== u.startState.field(spellCount, false)) setSpellingIssues(issues);
         if (u.focusChanged) bridge.emit(u.view.hasFocus ? "focus" : "blur");
       }),
       ...(options.extensions ?? []),
@@ -353,6 +357,14 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
     if (doc !== undefined && doc !== initialDoc) keeper.changed(doc);
   }, [keeper]);
 
+  // The spelling check works on the text, so it leaves the Preview for the editor first.
+  const runSpelling = () => {
+    const v = view.current;
+    if (!v || spellcheck === "off") return;
+    if (live.current.pane === "preview") setPane("edit");
+    checkSpelling(v);
+  };
+
   useLayoutEffect(() => {
     bridge.actions = {
       setReadOnly,
@@ -373,6 +385,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
       },
       refreshPreview: () => setPreviewVersion((n) => n + 1),
       setHints: (next) => setHints([...next]),
+      checkSpelling: () => runSpelling(),
     };
   }, [keeper]);
 
@@ -386,6 +399,9 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
   const onTool = (id: keyof typeof VIEW_TOOLS, button: HTMLButtonElement) => {
     const v = view.current;
     switch (id) {
+      case "spelling":
+        runSpelling();
+        break;
       case "find":
         if (v) {
           if (live.current.pane === "preview") setPane("edit");
@@ -424,6 +440,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
     const keys = { ...DEFAULT_SHORTCUTS, ...options.shortcuts };
     const list: GuideShortcut[] = (Object.keys(SHORTCUT_LABELS) as ShortcutName[]).flatMap((name) => (keys[name] ? [{ label: SHORTCUT_LABELS[name], keys: keys[name]! }] : []));
     list.push({ label: "Undo", keys: "Mod-z" }, { label: "Redo", keys: "Mod-Shift-z" }, { label: "Find and replace", keys: "Mod-f" });
+    if (spellcheck !== "off") list.push({ label: "Check spelling", keys: "F7" });
     if (shortcutKeys.fullscreen) list.push({ label: "Full screen", keys: shortcutKeys.fullscreen });
     if (previewEnabled && shortcutKeys.preview) list.push({ label: "Preview", keys: shortcutKeys.preview });
     if (previewEnabled && shortcutKeys.sideBySide) list.push({ label: "Side by side", keys: shortcutKeys.sideBySide });
@@ -439,7 +456,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
       {toolbar && active && (
         <Toolbar
           items={toolbar}
-          state={{ active, readOnly, pane, fullscreen, outline: outlineOpen, raw, lineNumbers: lineNumbersOn, previewEnabled, canUndo: history.undo, canRedo: history.redo }}
+          state={{ active, readOnly, pane, fullscreen, outline: outlineOpen, raw, lineNumbers: lineNumbersOn, previewEnabled, spelling: spellcheck !== "off" && !readOnly, canUndo: history.undo, canRedo: history.redo }}
           onFormat={onFormat}
           onHeading={(block) => view.current && runFormat(view.current, { block })}
           onTool={onTool}
@@ -497,6 +514,8 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
           cursor={cursor}
           draft={draftState}
           proofing={spellcheck === "off" ? undefined : proofing}
+          onCheckSpelling={spellcheck === "off" || readOnly ? undefined : runSpelling}
+          spellingIssues={spellcheck === "off" || readOnly ? undefined : spellingIssues}
           lint={lintEnabled ? lint.status : undefined}
           readAloud={options.speech && readAloud.supported ? { reading: readAloud.reading, toggle: readAloud.toggle } : undefined}
         />

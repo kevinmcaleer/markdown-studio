@@ -53,7 +53,7 @@ export { runFormat, formatKeymap, formatKeys, activeFormats, cycleHeading, clear
 export { selectionToolbar } from "./format/selectionToolbar";
 
 // ---------------------------------------------------------------- proofing and hints
-export { proofing, setProofing, defaultProofing, type ProofingSettings } from "./proofing/proofing";
+export { proofing, setProofing, defaultProofing, checkSpelling, spellCount, type ProofingSettings } from "./proofing/proofing";
 export { useProofing, type Proofing } from "./proofing/useProofing";
 export { configureLanguageApi, fetchLanguageApi, type LanguageRequest } from "./proofing/languageApi";
 export { setDictionaryBase } from "./proofing/dictionaryUrls";
