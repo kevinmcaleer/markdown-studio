@@ -656,7 +656,7 @@ const liveTheme = EditorView.theme({
   ".cm-line.cm-md-callout-last": { borderBottomRightRadius: "8px", paddingBottom: "0.35em" },
   ".cm-line.cm-md-callout .cm-md-quote-text": { color: "inherit" },
   ".cm-line.cm-md-callout .cm-md-quote-text:not(.cm-md-em)": { fontStyle: "normal" },
-  ".cm-line.cm-md-callout-title": { color: "rgb(var(--callout-color))", fontWeight: "600" },
+  ".cm-line.cm-md-callout-title": { color: "color-mix(in srgb, rgb(var(--callout-color)) var(--callout-title-tone, 60%), black)", fontWeight: "600" },
   ".cm-md-callout-head": { display: "inline-flex", alignItems: "center", gap: "0.5em", marginRight: "0.5em", verticalAlign: "-0.15em" },
   ".cm-md-callout-head .callout-icon": { width: "1.1em", height: "1.1em" },
   ".cm-md-callout-fold": {

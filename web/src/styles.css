@@ -24,7 +24,7 @@
   --code-text: #3d3929;
   --syntax-keyword: #a3367a;
   --syntax-string: #3d7a3d;
-  --syntax-number: #b45f06;
+  --syntax-number: #9a5205;
   --syntax-function: #2f5fa7;
   --syntax-type: #8a5a00;
   --syntax-attr: #6b4fbb;
@@ -33,6 +33,7 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
+    --callout-title-tone: 100%;
     --bg: #262624;
     --surface: #30302e;
     --surface-2: #3a3a37;

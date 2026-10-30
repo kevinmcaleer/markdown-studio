@@ -24,7 +24,7 @@
   --code-text: #3d3929;
   --syntax-keyword: #a3367a;
   --syntax-string: #3d7a3d;
-  --syntax-number: #b45f06;
+  --syntax-number: #9a5205;
   --syntax-function: #2f5fa7;
   --syntax-type: #8a5a00;
   --syntax-attr: #6b4fbb;
@@ -54,6 +54,7 @@
   --syntax-function: #8ab4f8;
   --syntax-type: #e8c47c;
   --syntax-attr: #b9a5f2;
+  --callout-title-tone: 100%;
   color-scheme: dark;
 }
 
@@ -76,6 +77,7 @@
     --syntax-function: #8ab4f8;
     --syntax-type: #e8c47c;
     --syntax-attr: #b9a5f2;
+    --callout-title-tone: 100%;
     color-scheme: dark;
   }
 }
