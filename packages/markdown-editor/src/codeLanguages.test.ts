@@ -30,6 +30,22 @@ describe("codeLanguageDescriptions", () => {
     expect(styled).toContain("HELLO:tok-keyword");
   });
 
+  it("loads a parser the first time a fence uses it", async () => {
+    let loads = 0;
+    const [lazy] = codeLanguageDescriptions({ shout: async () => (loads++, shout) });
+    expect(loads).toBe(0);
+    await lazy.load();
+    expect(loads).toBe(1);
+    const state = EditorState.create({
+      doc: "```shout\nHI\n```\n",
+      extensions: markdown({ base: markdownLanguage, codeLanguages: [lazy] }),
+    });
+    const tree = ensureSyntaxTree(state, state.doc.length, 5000) ?? syntaxTree(state);
+    const styled: string[] = [];
+    highlightTree(tree, classHighlighter, (from, to, classes) => void styled.push(state.sliceDoc(from, to) + ":" + classes));
+    expect(styled).toContain("HI:tok-keyword");
+  });
+
   it("is empty without languages", () => {
     expect(codeLanguageDescriptions(undefined)).toEqual([]);
   });

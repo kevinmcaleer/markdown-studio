@@ -185,7 +185,8 @@ export type MountOptions = {
    * Highlighting for fenced code in more languages, by name: a plain stream
    * parser (`{ token(stream, state), startState? }`, as CodeMirror's
    * StreamLanguage takes), so it can come from another bundle, such as
-   * Mermaid Factory's `mermaidStreamParser`. Read once, at mount.
+   * Mermaid Factory's `mermaidStreamParser`. A function resolving to one
+   * loads it the first time a fence needs it. Read once, at mount.
    */
   codeLanguages?: Record<string, CodeLanguage>;
   /** Which view to open in. Defaults to "edit". */
