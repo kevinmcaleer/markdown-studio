@@ -153,6 +153,9 @@
   flex: 1;
   height: auto;
   min-height: 100%;
+  /* A flex item, so without this a wide table (or any line that can't
+     break) widens the whole editor past a phone's screen. */
+  min-width: 0;
 }
 
 .mde .cm-scroller {
@@ -161,6 +164,13 @@
 
 .mde .cm-content {
   padding: 1.25rem 1.25rem 3rem;
+}
+
+/* With wrapping on, lines wrap to the editor's width and a wide table
+   scrolls sideways in its own box, rather than the content growing to
+   the table's width. */
+.mde .cm-content.cm-lineWrapping {
+  min-width: 0;
 }
 
 .mde .cm-gutters {
