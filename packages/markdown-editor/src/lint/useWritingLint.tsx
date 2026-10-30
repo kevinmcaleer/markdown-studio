@@ -9,6 +9,21 @@ import "./lint.css";
 // Writing hints for one note: the switch, the score in the status bar, and a
 // panel of hints grouped by rule. The choices are kept on this device only.
 
+/**
+ * A hint of the host's own, listed in the writing hints panel and counted on
+ * its status bar button (a Bill of Materials row without a link, say). It is
+ * listed whether or not writing hints are on.
+ */
+export type EditorHint = {
+  /** Keeps the hint's place when the list is set again. */
+  id: string;
+  title: string;
+  /** A line under the title. */
+  detail?: string;
+  /** Buttons under the hint. Running one closes the panel. */
+  actions?: { label: string; run: () => void }[];
+};
+
 const KEY = "notes.lint";
 
 export function readLintSettings(): LintSettings {
@@ -35,7 +50,7 @@ export function gradeLabel(r: Readability): string {
   return g <= 5 ? "Easy to read" : g >= 13 ? `Grade ${g}: hard to read` : `Grade ${g}`;
 }
 
-export function useWritingLint() {
+export function useWritingLint(hostHints: EditorHint[] = []) {
   const [settings, setSettings] = useState(readLintSettings);
   const [report, setReport] = useState<LintReport | null>(null);
   const view = useRef<EditorView | null>(null);
@@ -74,13 +89,14 @@ export function useWritingLint() {
     if (view.current) applyFix(view.current, f);
   }, []);
 
-  const status = <LintStatus settings={settings} report={settings.on ? report : null} onToggle={toggle} onToggleRule={toggleRule} onJump={jump} onFix={fix} />;
+  const status = <LintStatus settings={settings} report={settings.on ? report : null} hostHints={hostHints} onToggle={toggle} onToggleRule={toggleRule} onJump={jump} onFix={fix} />;
   return { extensions, onReady, status };
 }
 
 function LintStatus({
   settings,
   report,
+  hostHints,
   onToggle,
   onToggleRule,
   onJump,
@@ -88,6 +104,7 @@ function LintStatus({
 }: {
   settings: LintSettings;
   report: LintReport | null;
+  hostHints: EditorHint[];
   onToggle: () => void;
   onToggleRule: (rule: LintRule) => void;
   onJump: (from: number, to: number) => void;
@@ -119,7 +136,7 @@ function LintStatus({
     for (const h of report?.hints ?? []) c.set(h.rule, (c.get(h.rule) ?? 0) + 1);
     return c;
   }, [report]);
-  const total = report?.hints.length ?? 0;
+  const total = (report?.hints.length ?? 0) + hostHints.length;
   const score = report?.selection ?? report?.doc ?? null;
 
   return (
@@ -133,7 +150,7 @@ function LintStatus({
         title="Writing hints: readability, long sentences, passive voice and more. Only you see them."
         onClick={() => setOpen((o) => !o)}
       >
-        {settings.on ? `${total === 0 ? "No" : total.toLocaleString()} ${total === 1 ? "hint" : "hints"}` : "Hints"}
+        {settings.on || hostHints.length ? `${total === 0 ? "No" : total.toLocaleString()} ${total === 1 ? "hint" : "hints"}` : "Hints"}
       </button>
       {score && (
         <span className="lint-score muted" title={`Flesch-Kincaid grade ${score.grade.toFixed(1)}, ${score.sentences} sentences${report?.selection ? ", in the selection" : ""}`}>
@@ -143,6 +160,33 @@ function LintStatus({
       )}
       {open && (
         <div className="menu-list lint-panel" role="dialog" aria-label="Writing hints">
+          {hostHints.length > 0 && (
+            <ul className="lint-host-hints">
+              {hostHints.map((h) => (
+                <li key={h.id} className="lint-host-hint">
+                  <span className="lint-host-title">{h.title}</span>
+                  {h.detail && <span className="muted small">{h.detail}</span>}
+                  {h.actions && h.actions.length > 0 && (
+                    <span className="lint-host-actions">
+                      {h.actions.map((a) => (
+                        <button
+                          key={a.label}
+                          type="button"
+                          className="lint-fix"
+                          onClick={() => {
+                            setOpen(false);
+                            a.run();
+                          }}
+                        >
+                          {a.label}
+                        </button>
+                      ))}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
           <label className="lint-switch">
             <input type="checkbox" checked={settings.on} onChange={onToggle} />
             <span>Show writing hints</span>

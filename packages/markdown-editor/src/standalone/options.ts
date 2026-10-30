@@ -4,6 +4,7 @@ import type { CodeLanguage } from "../codeLanguages";
 import type { CodeEditor, CodeRenderer } from "../codeRenderers";
 import type { DraftOptions, DraftState } from "../draft";
 import type { ShortcutName } from "../format/formatting";
+import type { EditorHint } from "../lint/useWritingLint";
 import type { MarkdownItInstance } from "../markdown";
 import type { LanguageRequest } from "../proofing/languageApi";
 import type { ProofLanguage } from "../proofing/speller";
@@ -12,6 +13,8 @@ import type { TableRenderer } from "../tableWidget";
 
 // The options `mount()` takes, and the editor it hands back. Every option has
 // a default, so `mount(el)` alone gives the full editor.
+
+export type { EditorHint };
 
 /** A built-in toolbar button, by name; "|" draws a separator. */
 export type BuiltInTool =
@@ -79,6 +82,7 @@ export type ImageInfo = {
 };
 
 export type Pane = "edit" | "preview" | "split";
+
 
 export type Stats = { words: number; chars: number; readingMinutes: number; lines: number };
 
@@ -214,6 +218,8 @@ export type MountOptions = {
   };
   /** Writing hints (passive voice, long sentences…) in the status bar. Defaults to on. */
   lint?: boolean;
+  /** The host's own hints, listed above the writing hints. Change them with `setHints`. */
+  hints?: EditorHint[];
   /** Opens the outline (the headings) beside the text. */
   outline?: boolean;
   /** Dictation and read aloud, where the browser can. Defaults to off. */
@@ -249,6 +255,8 @@ export interface MarkdownEditor {
   openImagePicker(anchor?: HTMLElement): void;
   /** Re-runs the preview (after the host's renderer changes, say). */
   refreshPreview(): void;
+  /** Replaces the host's hints in the hints panel; `[]` clears them. Needs `lint` on. */
+  setHints(hints: EditorHint[]): void;
   on<K extends keyof EditorEvents>(event: K, listener: (value: EditorEvents[K]) => void): () => void;
   off<K extends keyof EditorEvents>(event: K, listener: (value: EditorEvents[K]) => void): void;
   /** Takes the editor out of the page; a `<textarea>` it was mounted on comes back. */

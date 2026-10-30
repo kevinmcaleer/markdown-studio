@@ -119,6 +119,47 @@
   color: var(--accent);
 }
 
+/* The host's own hints, above the switch. */
+.lint-host-hints {
+  list-style: none;
+  margin: 0 0 0.35rem;
+  padding: 0 0 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.lint-host-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0.2rem 0;
+}
+
+.lint-host-title {
+  font-weight: 600;
+}
+
+.lint-host-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.2rem;
+}
+
+.lint-host-actions button {
+  font: inherit;
+  font-size: 0.85em;
+  color: var(--accent);
+  background: none;
+  border: 1px solid var(--border);
+  padding: 0.1rem 0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.lint-host-actions button:hover {
+  background: var(--surface-2);
+}
+
 @media (max-width: 640px) {
   .lint-score {
     display: none;
