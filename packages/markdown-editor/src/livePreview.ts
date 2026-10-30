@@ -8,6 +8,7 @@ import "./image-sizes.css";
 import { imageSizeClass, imageSizeMarkdown, imageSizes, parseImageSize, type ImageSize } from "./imageSize";
 import { renderedCodeField, renderedCodeTheme } from "./codeRenderers";
 import { tableCursor, tableField } from "./tableWidget";
+import { sizePicture } from "./steadyScroll";
 
 // The live view: Markdown shown as it reads, and still edited as text, like
 // Obsidian's live preview. Headings, emphasis, links, list bullets, quotes
@@ -238,6 +239,7 @@ class ImageWidget extends WidgetType {
     img.className = "cm-md-image";
     img.src = this.src;
     img.alt = this.alt;
+    sizePicture(img);
     wrap.append(img);
     if (this.readOnly) return wrap;
 
@@ -729,7 +731,7 @@ const liveTheme = EditorView.theme({
     strokeLinejoin: "round",
   },
   ".cm-md-rule": { display: "inline-block", width: "100%", verticalAlign: "middle", borderTop: "1px solid var(--border)" },
-  ".cm-md-image": { maxWidth: "100%", borderRadius: "6px", verticalAlign: "bottom" },
+  ".cm-md-image": { maxWidth: "100%", height: "auto", borderRadius: "6px", verticalAlign: "bottom" },
   // An image's sizes show on its top edge while it's hovered. A sized
   // image's wrapper takes the size, and the picture fills it.
   ".cm-md-image-wrap": { position: "relative", display: "inline-block", maxWidth: "100%", verticalAlign: "bottom" },
