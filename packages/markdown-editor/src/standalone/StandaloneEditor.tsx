@@ -28,7 +28,7 @@ import { countChars, countWords, readingMinutes, writingStats, type SelectionSta
 import { DraftBar } from "./DraftBar";
 import { Guide, type GuideShortcut } from "./Guide";
 import { ImagePicker } from "./ImagePicker";
-import { DEFAULT_STATUS, DEFAULT_TOOLBAR, VIEW_SHORTCUTS, type ImageInfo, type MarkdownEditor, type MountOptions, type Pane, type Stats, type ToolbarButton } from "./options";
+import { DEFAULT_STATUS, DEFAULT_TOOLBAR, VIEW_SHORTCUTS, type EditorHint, type ImageInfo, type MarkdownEditor, type MountOptions, type Pane, type Stats, type ToolbarButton } from "./options";
 import { Outline } from "./Outline";
 import { anchorOf, type Anchor } from "./Popover";
 import { PreviewPane, syncScroll, type Renderer } from "./PreviewPane";
@@ -55,6 +55,7 @@ export type Bridge = {
     clearDraft(): void;
     openImagePicker(anchor?: HTMLElement): void;
     refreshPreview(): void;
+    setHints(hints: EditorHint[]): void;
   } | null;
 };
 
@@ -162,7 +163,8 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
   const proofSettingsRef = useRef(proofSettings);
   proofSettingsRef.current = proofSettings;
   const lintEnabled = options.lint !== false;
-  const lint = useWritingLint();
+  const [hints, setHints] = useState<EditorHint[]>(options.hints ?? []);
+  const lint = useWritingLint(hints);
 
   // ------------------------------------------------------------ images
   const canUpload = Boolean(options.uploadImage);
@@ -370,6 +372,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
         else if (v) openPickerAtCursor(v);
       },
       refreshPreview: () => setPreviewVersion((n) => n + 1),
+      setHints: (next) => setHints([...next]),
     };
   }, [keeper]);
 

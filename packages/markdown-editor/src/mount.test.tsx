@@ -102,6 +102,24 @@ describe("mount", () => {
     editor.destroy();
   });
 
+  it("lists the host's hints in the hints panel, even with writing hints off", () => {
+    const el = host();
+    const run = vi.fn();
+    const editor = mount(el, { doc: "Text" });
+    const button = () => el.querySelector<HTMLButtonElement>(".writing-lint .writing-toggle")!;
+    expect(button().textContent).toBe("Hints");
+    flushSync(() => editor.setHints([{ id: "bom", title: "2 parts aren't linked", detail: "In the Bill of Materials", actions: [{ label: "Show the bar", run }] }]));
+    expect(button().textContent).toBe("1 hint");
+    flushSync(() => button().click());
+    expect(el.querySelector(".lint-host-title")?.textContent).toBe("2 parts aren't linked");
+    flushSync(() => el.querySelector<HTMLButtonElement>(".lint-host-actions button")!.click());
+    expect(run).toHaveBeenCalledOnce();
+    expect(el.querySelector(".lint-panel")).toBeNull();
+    flushSync(() => editor.setHints([]));
+    expect(button().textContent).toBe("Hints");
+    editor.destroy();
+  });
+
   it("finds its element by selector, and says when there's none", () => {
     expect(() => mount("#nowhere")).toThrow(/no element/);
   });

@@ -123,6 +123,7 @@ Every option is optional.
 | `proofing.dictionaryBase` | `dictionaries/` beside the script | Where `en-GB.dic` and `en-US.dic` are. |
 | `proofing.language` | `"en-GB"` | The proofing language until the writer picks one in the status bar. |
 | `lint` | `true` | Writing hints in the status bar. |
+| `hints` | `[]` | The host's own hints, `{ id, title, detail?, actions?: [{ label, run }] }`, listed at the top of the hints panel and counted on its button even with writing hints off. |
 | `outline` | `false` | Opens the outline beside the text (the `outline` toolbar button toggles it). |
 | `speech` | `false` | Dictation (toolbar) and read aloud (status bar), where the browser can. |
 | `extensions` | | More CodeMirror 6 extensions. |
@@ -290,6 +291,7 @@ Undo, redo and find and replace keep CodeMirror's usual keys.
 | `setPane("edit" \| "preview" \| "split")`, `setFullscreen(on)`, `setLineNumbers(on)` | |
 | `openLinkPopover()`, `openImagePicker(anchorElement?)` | The same as the Link and image buttons. |
 | `refreshPreview()` | Renders the preview again (after the host's renderer has changed). |
+| `setHints(hints)` | Replaces the host's hints in the hints panel (see the `hints` option); `[]` clears them. |
 | `clearDraft()` | Forget the stored draft: call it once the host has saved. |
 | `on(event, listener)` | Returns a function that removes the listener; `off(event, listener)` does too. |
 | `destroy()` | Takes the editor out; a textarea comes back with the latest Markdown. |
