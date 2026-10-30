@@ -1,5 +1,6 @@
 import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
+import type { CodeLanguage } from "../codeLanguages";
 import type { CodeEditor, CodeRenderer } from "../codeRenderers";
 import type { DraftOptions, DraftState } from "../draft";
 import type { ShortcutName } from "../format/formatting";
@@ -180,6 +181,13 @@ export type MountOptions = {
    * and can hand the cursor back with `onExit("before" | "after")`.
    */
   codeEditors?: Record<string, CodeEditor>;
+  /**
+   * Highlighting for fenced code in more languages, by name: a plain stream
+   * parser (`{ token(stream, state), startState? }`, as CodeMirror's
+   * StreamLanguage takes), so it can come from another bundle, such as
+   * Mermaid Factory's `mermaidStreamParser`. Read once, at mount.
+   */
+  codeLanguages?: Record<string, CodeLanguage>;
   /** Which view to open in. Defaults to "edit". */
   pane?: Pane;
   /** Line numbers beside the live view too (the Raw view has its own, see `raw.lineNumbers`). The "line-numbers" button toggles them. */

@@ -1,5 +1,6 @@
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { markdown, markdownKeymap, markdownLanguage } from "@codemirror/lang-markdown";
+import { type LanguageDescription } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
 import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import {
@@ -33,14 +34,16 @@ export type EditorProps = {
   placeholder?: string;
   /** The browser's own spell check. Proofing turns it off where it underlines words itself. */
   spellcheck?: boolean;
+  /** More fence languages to highlight, ahead of CodeMirror's own. Read once, at mount. */
+  codeLanguages?: LanguageDescription[];
   /** What a screen reader calls the text area. */
   label?: string;
   onReady?: (view: EditorView) => void;
 };
 
-export function markdownExtensions(): Extension[] {
+export function markdownExtensions(extraLanguages: LanguageDescription[] = []): Extension[] {
   return [
-    markdown({ base: markdownLanguage, codeLanguages: languages, extensions: [Highlight], addKeymap: true }),
+    markdown({ base: markdownLanguage, codeLanguages: [...extraLanguages, ...languages], extensions: [Highlight], addKeymap: true }),
     keymap.of(markdownKeymap),
     editorHighlighting,
   ];
@@ -56,6 +59,7 @@ export function Editor({
   rawExtensions = [],
   placeholder: emptyText = "Start writing…",
   spellcheck = true,
+  codeLanguages = [],
   label = "Note text",
   onReady,
 }: EditorProps) {
@@ -79,7 +83,7 @@ export function Editor({
         EditorView.lineWrapping,
         keymap.of([...defaultKeymap, ...(ownHistory ? historyKeymap : []), indentWithTab]),
         placeholder(emptyText),
-        markdownExtensions(),
+        markdownExtensions(codeLanguages),
         editorTheme,
         preview.current.of(live ? livePreview() : rawExtensions),
         editable.current.of([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),

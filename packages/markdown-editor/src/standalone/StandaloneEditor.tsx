@@ -4,6 +4,7 @@ import { openSearchPanel } from "@codemirror/search";
 import { Compartment, EditorState, Prec, type Extension } from "@codemirror/state";
 import { EditorView, highlightActiveLineGutter, keymap, lineNumbers } from "@codemirror/view";
 import { useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { codeLanguageDescriptions } from "../codeLanguages";
 import { codeEditors, codeRenderers } from "../codeRenderers";
 import { recoverableDraft, DraftKeeper, type DraftState, type StoredDraft } from "../draft";
 import { Editor } from "../Editor";
@@ -118,6 +119,8 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
   const [picker, setPicker] = useState<Anchor | null>(null);
   const [previewVersion, setPreviewVersion] = useState(0);
   const view = useRef<EditorView | null>(null);
+  // Read once, at mount, like the Editor's other start-up options.
+  const [fenceLanguages] = useState(() => codeLanguageDescriptions(options.codeLanguages));
   const previewRef = useRef<HTMLDivElement>(null);
   const live = useRef({ readOnly, pane, fullscreen });
   live.current = { readOnly, pane, fullscreen };
@@ -465,6 +468,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
             extensions={extensions}
             placeholder={options.placeholder}
             spellcheck={spellcheck !== "off"}
+            codeLanguages={fenceLanguages}
             label="Markdown"
             onReady={onReady}
           />
