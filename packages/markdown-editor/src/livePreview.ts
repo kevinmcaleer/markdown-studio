@@ -849,7 +849,12 @@ const liveTheme = EditorView.theme({
   ".cm-md-table.editable:hover > button, .cm-md-table.editable.menu-open > button, .cm-md-table.editable:focus-within > button": { opacity: "1" },
   ".cm-md-table:not(.editable) > button": { display: "none" },
   ".cm-md-table button:hover": { color: "var(--text)", backgroundColor: "var(--surface-2)" },
-  ".cm-md-table-handle": { zIndex: "2", borderRadius: "999px", transform: "translate(-50%, -50%)" },
+  // A handle is pressed to open its menu or dragged to move its row or column.
+  ".cm-md-table-handle": { zIndex: "2", borderRadius: "999px", transform: "translate(-50%, -50%)", cursor: "grab", touchAction: "none" },
+  ".cm-md-table.dragging, .cm-md-table.dragging *": { cursor: "grabbing !important", userSelect: "none" },
+  ".cm-md-table-dropline": { position: "absolute", zIndex: "3", pointerEvents: "none", backgroundColor: "var(--accent)", borderRadius: "2px" },
+  ".cm-md-table-dropline-row": { height: "3px", transform: "translateY(-50%)" },
+  ".cm-md-table-dropline-col": { width: "3px", transform: "translateX(-50%)" },
   ".cm-md-table-colhandle": { width: "28px", height: "14px" },
   ".cm-md-table-colhandle svg": { strokeWidth: "2.5 !important" },
   ".cm-md-table-rowhandle": { width: "14px", height: "28px" },

@@ -108,6 +108,30 @@ export function deleteColumn(table: Table, index: number): Table {
   return { rows: table.rows.map(without), align: without(table.align) };
 }
 
+/** An array with the item at `from` taken out and put back at `to`. */
+function moved<T>(items: T[], from: number, to: number): T[] {
+  const next = items.slice();
+  next.splice(to, 0, ...next.splice(from, 1));
+  return next;
+}
+
+/**
+ * Moves a row so it ends up at `to`. The header is row 0, so moving a row to
+ * the top makes it the header and the old header the first body row.
+ */
+export function moveRow(table: Table, from: number, to: number): Table {
+  const last = table.rows.length - 1;
+  if (from === to || from < 0 || from > last || to < 0 || to > last) return table;
+  return { ...table, rows: moved(table.rows, from, to) };
+}
+
+/** Moves a column so it ends up at `to`, its alignment going with it. */
+export function moveColumn(table: Table, from: number, to: number): Table {
+  const last = table.align.length - 1;
+  if (from === to || from < 0 || from > last || to < 0 || to > last) return table;
+  return { rows: table.rows.map((cells) => moved(cells, from, to)), align: moved(table.align, from, to) };
+}
+
 /**
  * The table's Markdown with one column aligned (null for the default), as the
  * colons on its delimiter cell: `:---` left, `:---:` center, `---:` right. Only
