@@ -1,6 +1,7 @@
 import { syntaxTree } from "@codemirror/language";
 import { Facet, StateField, type EditorState, type Range } from "@codemirror/state";
 import { Decoration, EditorView, runScopeHandlers, ViewPlugin, WidgetType, type DecorationSet } from "@codemirror/view";
+import { hasLinkPopover, linkCard, linkForm, linkInText, type LinkAt } from "./format/linkPopover";
 import { cellHasImage, isImageGrid } from "./imageGrid";
 import { renderInline } from "./markdown";
 import { applyCommand, commandsOf, filterCommands, hasSlashMenu, type SlashCommand } from "./slashMenu";
@@ -203,6 +204,7 @@ class TableView {
   private readonly more = button("cm-md-table-more", "Table options");
   private menu: HTMLElement | null = null;
   private slash: CellSlash | null = null;
+  private link: { cell: HTMLElement; at: LinkAt; dom: HTMLElement; form: boolean } | null = null;
   private hover = { row: 0, col: 0 };
   private closeMenuListener = (event: Event) => {
     if (this.menu && !this.menu.contains(event.target as Node)) this.closeMenu();
@@ -248,6 +250,8 @@ class TableView {
       const cell = e.target as HTMLElement;
       if (!isCell(cell)) return;
       if (this.slash?.cell === cell) this.closeSlash();
+      // Into the link's card or form keeps it open; anywhere else closes it.
+      if (this.link?.cell === cell && !this.link.dom.contains((e as FocusEvent).relatedTarget as Node)) this.closeLink();
       cell.innerHTML = renderInline(cell.dataset.raw ?? "");
     });
     dom.addEventListener("input", (e) => {
@@ -259,6 +263,16 @@ class TableView {
       const col = Number(cell.dataset.col);
       this.change((source) => setCell(source, row, col, text));
       this.updateSlash(cell, e as InputEvent);
+      this.showLink(cell);
+    });
+    // The caret on a link, or a bare URL, shows its card (as in the note).
+    dom.addEventListener("click", (e) => {
+      const cell = e.target as HTMLElement;
+      if (isCell(cell)) this.showLink(cell);
+    });
+    dom.addEventListener("keyup", (e) => {
+      const cell = e.target as HTMLElement;
+      if (isCell(cell) && /^(Arrow|Home|End)/.test(e.key)) this.showLink(cell);
     });
     dom.addEventListener("paste", (e) => {
       const cell = e.target as HTMLElement;
@@ -301,6 +315,7 @@ class TableView {
   destroy() {
     this.closeMenu();
     this.closeSlash();
+    this.closeLink();
   }
 
   /** Back to the host's drawing once the focus has left the table. */
@@ -478,6 +493,11 @@ class TableView {
   private keydown(e: KeyboardEvent) {
     if (this.slash && this.slashKey(e)) return;
     const cell = e.target as HTMLElement;
+    if (this.link && e.key === "Escape" && isCell(cell)) {
+      e.preventDefault();
+      this.closeLink();
+      return;
+    }
     if (!isCell(cell)) {
       if (e.key === "Escape") this.closeMenu();
       return;
@@ -517,6 +537,86 @@ class TableView {
       e.preventDefault();
       this.leave(1);
     }
+  }
+
+  // ------------------------------------------------------------ links in a cell
+
+  /** Shows the card for the link at the caret in a cell, or closes it when there isn't one. */
+  private showLink(cell: HTMLElement) {
+    if (this.slash || !hasLinkPopover(this.view.state)) return this.closeLink();
+    const caret = caretOffset(cell);
+    const at = caret === null ? null : linkInText(cell.textContent ?? "", caret);
+    if (!at) return this.closeLink();
+    const open = this.link;
+    if (open && open.cell === cell && !open.form && open.at.from === at.from && open.at.to === at.to && open.at.label === at.label && open.at.url === at.url)
+      return;
+    const card = linkCard(at, {
+      edit: this.editable ? () => this.editLink() : undefined,
+      remove: this.editable && !at.bare ? () => this.replaceLink(at.label) : undefined,
+    });
+    this.placeLink(cell, at, card, false);
+  }
+
+  /** Swaps the card for the form for the link's text and URL. */
+  private editLink() {
+    const open = this.link;
+    if (!open) return;
+    const { cell, at } = open;
+    const form = linkForm(at, (markdown) => this.replaceLink(markdown), () => {
+      this.closeLink();
+      this.focusCellAt(Number(cell.dataset.row), Number(cell.dataset.col), at.to, at.to);
+    });
+    form.addEventListener("focusout", (e) => {
+      if (this.link?.dom === form && !form.contains(e.relatedTarget as Node)) this.closeLink();
+    });
+    form.style.left = open.dom.style.left;
+    form.style.top = open.dom.style.top;
+    this.placeLink(cell, at, form, true);
+  }
+
+  private placeLink(cell: HTMLElement, at: LinkAt, dom: HTMLElement, form: boolean) {
+    const left = dom.style.left;
+    const top = dom.style.top;
+    this.closeLink();
+    dom.classList.add("cm-tooltip", "cm-md-table-link");
+    if (left) {
+      dom.style.left = left;
+      dom.style.top = top;
+    } else {
+      // Under the start of the link.
+      const base = this.dom.getBoundingClientRect();
+      const range = document.createRange();
+      const node = cell.firstChild;
+      if (node && node.nodeType === 3 && at.from < (node.textContent ?? "").length) range.setStart(node, at.from);
+      else range.selectNodeContents(cell);
+      const box = range.getClientRects()[0] ?? cell.getBoundingClientRect();
+      dom.style.left = `${Math.max(0, box.left - base.left)}px`;
+      dom.style.top = `${box.bottom - base.top + 4}px`;
+    }
+    this.dom.append(dom);
+    this.link = { cell, at, dom, form };
+  }
+
+  /** Puts `markdown` in place of the link in its cell, then the caret after it. */
+  private replaceLink(markdown: string) {
+    const open = this.link;
+    if (!open) return;
+    const { cell, at } = open;
+    const row = Number(cell.dataset.row);
+    const col = Number(cell.dataset.col);
+    const raw = cell.dataset.raw ?? "";
+    this.closeLink();
+    const range = this.change((source) => setCell(source, row, col, raw.slice(0, at.from) + markdown + raw.slice(at.to)));
+    const view = range ? (tableViewAt(this.view, range.from) ?? this) : this;
+    view.focusCellAt(row, col, at.from + markdown.length, at.from + markdown.length);
+  }
+
+  private closeLink() {
+    const open = this.link;
+    if (!open) return;
+    // Removing the form blurs its field, which comes back here: forget it first.
+    this.link = null;
+    open.dom.remove();
   }
 
   // ------------------------------------------------------------ "/" in a cell
