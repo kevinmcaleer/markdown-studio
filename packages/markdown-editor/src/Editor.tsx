@@ -16,6 +16,7 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 import { editorHighlighting, editorTheme } from "./editorTheme";
 import { Highlight } from "./highlightSyntax";
 import { livePreview } from "./livePreview";
+import { steadyScroll } from "./steadyScroll";
 
 export type EditorProps = {
   /** The text to start with. Changing it later doesn't reset the editor; remount with a new `key`. */
@@ -85,6 +86,7 @@ export function Editor({
         placeholder(emptyText),
         markdownExtensions(codeLanguages),
         editorTheme,
+        steadyScroll,
         preview.current.of(live ? livePreview() : rawExtensions),
         editable.current.of([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),
         EditorView.updateListener.of((update) => {

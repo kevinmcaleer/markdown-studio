@@ -1,6 +1,7 @@
 import { syntaxTree } from "@codemirror/language";
 import { Facet, StateField, Transaction, type EditorState, type Range } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
+import { rememberedHeight, rememberHeight } from "./steadyScroll";
 
 // In the live view, a fenced block in a language the host can draw (```mermaid,
 // say) shows as its drawing while the cursor is outside it, and as its source
@@ -166,9 +167,13 @@ class RenderedCodeWidget extends WidgetType {
   eq(other: RenderedCodeWidget) {
     return other.language === this.language && other.source === this.source;
   }
+  get estimatedHeight() {
+    return rememberedHeight(`${this.language}\n${this.source}`) ?? -1;
+  }
   toDOM(view: EditorView) {
     const wrap = document.createElement("div");
     wrap.className = "cm-md-rendered";
+    rememberHeight(wrap, `${this.language}\n${this.source}`);
     wrap.title = "Click to edit";
     const body = document.createElement("div");
     body.className = `cm-md-rendered-body cm-md-rendered-${this.language}`;
