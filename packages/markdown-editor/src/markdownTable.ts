@@ -125,6 +125,21 @@ export function moveRow(table: Table, from: number, to: number): Table {
   return { ...table, rows: moved(table.rows, from, to) };
 }
 
+/**
+ * Splits a table in two at a body row: that row and the ones below it become a
+ * second table under a copy of the header, and both keep the column alignment.
+ * Returns null for the header or the first body row, which would leave the
+ * first table with no body.
+ */
+export function splitTable(table: Table, index: number): [Table, Table] | null {
+  if (index < 2 || index >= table.rows.length) return null;
+  const [header] = table.rows;
+  return [
+    { rows: table.rows.slice(0, index), align: table.align.slice() },
+    { rows: [header.slice(), ...table.rows.slice(index)], align: table.align.slice() },
+  ];
+}
+
 /** Moves a column so it ends up at `to`, its alignment going with it. */
 export function moveColumn(table: Table, from: number, to: number): Table {
   const last = table.align.length - 1;

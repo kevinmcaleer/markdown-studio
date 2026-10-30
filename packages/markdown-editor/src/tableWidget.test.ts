@@ -63,6 +63,36 @@ describe("table widget", () => {
     expect(view.state.doc.toString()).toBe("| Wheel | 2 |\n| --- | --- |\n| Part | Qty |\n| Servo | 4 |\n");
   });
 
+  it("splits a table at a row from its menu, the row starting a second table", () => {
+    const view = tableView("| Part | Qty |\n|---|:---:|\n| Servo | 4 |\n| Wheel | 2 |\n| Nut | 8 |\n");
+    const table = view.dom.querySelector<HTMLElement>(".cm-md-table")!;
+    const item = () =>
+      Array.from(view.dom.querySelectorAll<HTMLButtonElement>(".cm-md-table-menu [role=menuitem]")).find((b) => b.textContent === "Split table here")!;
+    table.querySelector<HTMLElement>('td[data-row="2"]')!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    table.querySelector<HTMLElement>(".cm-md-table-rowhandle")!.click();
+    item().click();
+    expect(view.state.doc.toString()).toBe(
+      "| Part | Qty |\n| --- | :---: |\n| Servo | 4 |\n\n| Part | Qty |\n| --- | :---: |\n| Wheel | 2 |\n| Nut | 8 |\n",
+    );
+    expect(view.dom.querySelectorAll(".cm-md-table").length).toBe(2);
+    // The first body row can't split off: the first table would have no body.
+    const second = view.dom.querySelectorAll<HTMLElement>(".cm-md-table")[1];
+    second.querySelector<HTMLElement>('td[data-row="1"]')!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    second.querySelector<HTMLElement>(".cm-md-table-rowhandle")!.click();
+    expect(item().disabled).toBe(true);
+  });
+
+  it("splits a table in a callout, keeping the quote markers", () => {
+    const view = tableView("> [!info] Parts\n> | Part | Qty |\n> |---|---|\n> | Servo | 4 |\n> | Wheel | 2 |\n");
+    const table = view.dom.querySelector<HTMLElement>(".cm-md-table")!;
+    table.querySelector<HTMLElement>('td[data-row="2"]')!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    table.querySelector<HTMLElement>(".cm-md-table-rowhandle")!.click();
+    Array.from(view.dom.querySelectorAll<HTMLButtonElement>(".cm-md-table-menu [role=menuitem]")).find((b) => b.textContent === "Split table here")!.click();
+    expect(view.state.doc.toString()).toBe(
+      "> [!info] Parts\n> | Part | Qty |\n> | --- | --- |\n> | Servo | 4 |\n>\n> | Part | Qty |\n> | --- | --- |\n> | Wheel | 2 |\n",
+    );
+  });
+
   it("moves a column right from its menu, taking its alignment", () => {
     const view = tableView("| Part | Qty |\n|:---:|---|\n| Servo | 4 |\n");
     view.dom.querySelector<HTMLElement>(".cm-md-table-colhandle")!.click();
