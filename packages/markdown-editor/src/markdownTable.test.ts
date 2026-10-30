@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   cellAt,
   deleteColumn,
+  clearRow,
   deleteRow,
   diff,
   formatTable,
@@ -50,14 +51,29 @@ describe("parseTable", () => {
 describe("table edits", () => {
   const table = parseTable(source)!;
 
-  it("adds and removes rows, never the header", () => {
+  it("adds and removes rows, moving the first body row up when the header goes", () => {
     expect(insertRow(table, 3).rows).toHaveLength(4);
     expect(insertRow(table, 0).rows[1]).toEqual(["", ""]);
     expect(deleteRow(table, 1).rows).toEqual([
       ["Name", "Qty"],
       ["Pear", "5"],
     ]);
-    expect(deleteRow(table, 0)).toBe(table);
+    expect(deleteRow(table, 0).rows).toEqual([
+      ["Apple", "3"],
+      ["Pear", "5"],
+    ]);
+    expect(deleteRow(table, 0).align).toEqual(table.align);
+    const headerOnly = { ...table, rows: [table.rows[0]] };
+    expect(deleteRow(headerOnly, 0)).toBe(headerOnly);
+  });
+
+  it("clears a row's cells, the header included", () => {
+    expect(clearRow(table, 0).rows).toEqual([
+      ["", ""],
+      ["Apple", "3"],
+      ["Pear", "5"],
+    ]);
+    expect(clearRow(table, 2).rows[2]).toEqual(["", ""]);
   });
 
   it("adds and removes columns, keeping at least one", () => {

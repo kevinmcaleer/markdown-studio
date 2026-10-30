@@ -6,6 +6,7 @@ import { renderInline } from "./markdown";
 import { applyCommand, commandsOf, filterCommands, hasSlashMenu, type SlashCommand } from "./slashMenu";
 import {
   deleteColumn,
+  clearRow,
   deleteRow,
   diff,
   escapeCell,
@@ -165,6 +166,7 @@ const ICONS = {
   rowAbove: "M2.5 6h11M6.5 2.5h3M8 1v3M2.5 9v4.5h11V9",
   rowBelow: "M2.5 10h11M6.5 13.5h3M8 12v3M2.5 7V2.5h11V7",
   delete: "M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.5 9h6l.5-9",
+  clear: "M2.5 5.5h11v5h-11zM6 3.5l4 9",
   copy: "M5.5 5.5h8v8h-8zM10.5 5.5v-3h-8v8h3",
   alignLeft: "M2.5 3.5h11M2.5 6.5h7M2.5 9.5h11M2.5 12.5h7",
   alignCenter: "M2.5 3.5h11M4.5 6.5h7M2.5 9.5h11M4.5 12.5h7",
@@ -729,11 +731,13 @@ class TableView {
       // The header is always the first row, so nothing goes above it.
       { label: "Insert row above", icon: ICONS.rowAbove, disabled: row === 0, run: () => this.structure((t) => insertRow(t, row), row, this.hover.col) },
       { label: "Insert row below", icon: ICONS.rowBelow, run: () => this.structure((t) => insertRow(t, row + 1), row + 1, this.hover.col) },
+      { label: "Clear row", icon: ICONS.clear, run: () => this.structure((t) => clearRow(t, row), row, this.hover.col) },
       {
-        label: "Delete row",
+        // Deleting the header moves the first body row up to become it.
+        label: row === 0 ? "Delete header row" : "Delete row",
         icon: ICONS.delete,
-        disabled: row === 0,
-        run: () => this.structure((t) => deleteRow(t, row), row - 1, this.hover.col),
+        disabled: this.table.rows.length < 2,
+        run: () => this.structure((t) => deleteRow(t, row), Math.max(0, row - 1), this.hover.col),
       },
     ]);
     this.select((cell) => Number(cell.dataset.row) === row);

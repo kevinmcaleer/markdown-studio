@@ -81,9 +81,19 @@ export function insertRow(table: Table, index: number): Table {
   return { ...table, rows };
 }
 
+/**
+ * Removes a row. Removing the header moves the first body row up to take its
+ * place; a table with only its header keeps it, as a table needs one.
+ */
 export function deleteRow(table: Table, index: number): Table {
-  if (index < 1 || table.rows.length < 2) return table;
+  if (index < 0 || index >= table.rows.length || table.rows.length < 2) return table;
   return { ...table, rows: table.rows.filter((_, i) => i !== index) };
+}
+
+/** Empties a row's cells, keeping the row. */
+export function clearRow(table: Table, index: number): Table {
+  if (index < 0 || index >= table.rows.length) return table;
+  return { ...table, rows: table.rows.map((cells, i) => (i === index ? cells.map(() => "") : cells)) };
 }
 
 export function insertColumn(table: Table, index: number): Table {
