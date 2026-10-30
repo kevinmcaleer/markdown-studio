@@ -1,5 +1,5 @@
 import { syntaxTree } from "@codemirror/language";
-import { StateField, type EditorState, type Range } from "@codemirror/state";
+import { Facet, StateField, type EditorState, type Range } from "@codemirror/state";
 import { Decoration, EditorView, runScopeHandlers, ViewPlugin, WidgetType, type DecorationSet } from "@codemirror/view";
 import { cellHasImage, isImageGrid } from "./imageGrid";
 import { renderInline } from "./markdown";
@@ -24,7 +24,27 @@ import {
 // or delete rows and columns from the handle on each one. Every change is an
 // edit to the Markdown underneath, so co-editing and undo work as for text.
 
+//
+// A host can draw a table some other way (`tableRenderer`): a Videos table as
+// a gallery of thumbnails, say. It shows as that drawing until it's clicked or
+// the caret moves into it, then as the grid, and goes back once the focus
+// leaves it.
+
 type TableRange = { from: number; to: number };
+
+/** What a table renderer is given. */
+export type TableRendererContext = {
+  /** The header row first, then the body rows, as each cell's Markdown. */
+  rows: string[][];
+  /** The text of the heading the table sits under, if there is one. */
+  heading: string | null;
+};
+
+/** Draws a table some other way, or returns null to keep the grid. */
+export type TableRenderer = (table: TableRendererContext) => HTMLElement | null;
+
+/** The table renderers; the first to draw a table wins. */
+export const tableRenderers = Facet.define<TableRenderer>();
 
 /** The table blocks in the note: each one's Markdown drawn as a table widget. */
 export const tableField = StateField.define<DecorationSet>({
@@ -39,21 +59,31 @@ export const tableField = StateField.define<DecorationSet>({
 
 function findTables(state: EditorState): DecorationSet {
   const tables: Range<Decoration>[] = [];
+  let heading: string | null = null;
   syntaxTree(state).iterate({
     enter(node) {
       if (node.name === "Document") return true;
+      if (/^(ATX|Setext)Heading/.test(node.name)) heading = headingText(state.sliceDoc(node.from, node.to));
       // Only top-level tables: one inside a quote or list has its markers on every line.
       if (node.name === "Table" && node.node.parent?.name === "Document") {
         const from = state.doc.lineAt(node.from).from;
         const to = state.doc.lineAt(Math.max(node.from, node.to - 1)).to;
         const source = state.sliceDoc(from, to);
         if (parseTable(source))
-          tables.push(Decoration.replace({ widget: new TableWidget(source, !state.readOnly), block: true }).range(from, to));
+          tables.push(Decoration.replace({ widget: new TableWidget(source, !state.readOnly, heading), block: true }).range(from, to));
       }
       return false;
     },
   });
   return Decoration.set(tables);
+}
+
+function headingText(source: string): string {
+  return source
+    .split("\n")[0]
+    .replace(/^\s*#{1,6}\s*/, "")
+    .replace(/\s+#+\s*$/, "")
+    .trim();
 }
 
 /** Whether `pos` is inside a table drawn as a grid (in one of its cells), where only inline Markdown fits. */
@@ -91,12 +121,13 @@ class TableWidget extends WidgetType {
   constructor(
     readonly source: string,
     readonly editable: boolean,
+    readonly heading: string | null = null,
   ) {
     super();
   }
 
   eq(other: TableWidget) {
-    return other.source === this.source && other.editable === this.editable;
+    return other.source === this.source && other.editable === this.editable && other.heading === this.heading;
   }
 
   toDOM(view: EditorView) {
@@ -145,6 +176,10 @@ class TableView {
   private table: Table;
   private source: string;
   private editable: boolean;
+  private heading: string | null;
+  /** The host's drawing of the table (see `tableRenderer`), shown while it isn't being edited. */
+  private readonly preview = el("div", "cm-md-table-preview");
+  private editing = false;
   private readonly scroller = el("div", "cm-md-table-scroll");
   private readonly colHandle = button("cm-md-table-handle cm-md-table-colhandle", "Column options");
   private readonly rowHandle = button("cm-md-table-handle cm-md-table-rowhandle", "Row options");
@@ -165,6 +200,7 @@ class TableView {
   ) {
     this.source = widget.source;
     this.editable = widget.editable;
+    this.heading = widget.heading;
     this.table = parseTable(this.source)!;
     dom.className = "cm-md-table";
     dom.contentEditable = "false";
@@ -172,8 +208,16 @@ class TableView {
     this.more.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 8h.01M8 8h.01M12 8h.01"/></svg>';
     this.colHandle.innerHTML = '<svg viewBox="0 0 16 8" aria-hidden="true"><path d="M4 4h.01M8 4h.01M12 4h.01"/></svg>';
     this.rowHandle.innerHTML = '<svg viewBox="0 0 8 16" aria-hidden="true"><path d="M4 4h.01M4 8h.01M4 12h.01"/></svg>';
-    dom.append(this.scroller, this.colHandle, this.rowHandle, this.addCol, this.addRow, this.more);
+    dom.append(this.scroller, this.colHandle, this.rowHandle, this.addCol, this.addRow, this.more, this.preview);
     this.render();
+
+    // Clicking the drawing edits the table (its links aren't followed while editing).
+    this.preview.addEventListener("click", (e) => {
+      if (!this.editable) return;
+      e.preventDefault();
+      this.focusCell(this.table.rows.length > 1 ? 1 : 0, 0);
+    });
+    dom.addEventListener("focusout", () => window.setTimeout(() => this.redraw()));
 
     dom.addEventListener("mouseover", (e) => {
       const cell = (e.target as HTMLElement).closest<HTMLElement>("th, td");
@@ -234,6 +278,7 @@ class TableView {
   update(widget: TableWidget) {
     this.source = widget.source;
     this.editable = widget.editable;
+    this.heading = widget.heading;
     this.table = parseTable(this.source)!;
     this.render();
   }
@@ -243,8 +288,32 @@ class TableView {
     this.closeSlash();
   }
 
+  /** Back to the host's drawing once the focus has left the table. */
+  private redraw() {
+    if (!this.editing || this.menu || this.slash) return;
+    if (this.dom.contains(this.dom.ownerDocument.activeElement)) return;
+    this.editing = false;
+    this.render();
+  }
+
+  /** Draws the host's version of the table in place of the grid; false if there isn't one. */
+  private renderPreview(): boolean {
+    let drawing: HTMLElement | null = null;
+    if (!this.editing) {
+      const context = { rows: this.table.rows.map((row) => [...row]), heading: this.heading };
+      for (const render of this.view.state.facet(tableRenderers)) {
+        drawing = render(context);
+        if (drawing) break;
+      }
+    }
+    this.dom.classList.toggle("previewing", !!drawing);
+    this.preview.replaceChildren(...(drawing ? [drawing] : []));
+    return !!drawing;
+  }
+
   /** Draws the table, reusing the cells when its shape hasn't changed. */
   private render() {
+    if (this.renderPreview()) return;
     const { rows, align } = this.table;
     this.dom.classList.toggle("editable", this.editable);
     // A table of images is a layout: cards in a borderless grid (imageGrid.ts).
@@ -302,8 +371,17 @@ class TableView {
     return { row: Number(active.dataset.row), col: Number(active.dataset.col) };
   }
 
+  /** Swaps the host's drawing for the grid. */
+  private edit() {
+    if (this.editing) return;
+    this.editing = true;
+    if (this.dom.classList.contains("previewing")) this.render();
+  }
+
   /** Puts the caret in a cell; `select` selects its text instead. */
   focusCell(row: number, col: number, select = false) {
+    if (!this.editable) return;
+    this.edit();
     const cell = this.cell(row, col);
     if (!cell || !this.editable) return;
     cell.focus();
@@ -318,6 +396,8 @@ class TableView {
 
   /** Puts the caret in a cell, selecting from..to of its Markdown text. */
   focusCellAt(row: number, col: number, from: number, to: number) {
+    if (!this.editable) return;
+    this.edit();
     const cell = this.cell(row, col);
     if (!cell || !this.editable) return;
     cell.focus();
@@ -691,6 +771,7 @@ class TableView {
     this.dom.classList.remove("menu-open");
     this.select(() => false);
     document.removeEventListener("mousedown", this.closeMenuListener);
+    window.setTimeout(() => this.redraw());
   }
 }
 
