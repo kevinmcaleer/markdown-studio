@@ -42,6 +42,8 @@ INTERNAL_IMAGE = re.compile(r"^(?:https?://[^/]+)?/api/files/(\d+)/content(?:\?.
 MONO = "Consolas"
 CODE_BG = "F0EEE6"
 MAX_IMAGE_WIDTH = Inches(6)
+# Headings in table cells, by level: a step under the document's own.
+CELL_HEADING_SIZES = (16, 13, 12, 11, 11, 11)
 
 
 def internal_file_id(src: str) -> int | None:
@@ -74,6 +76,9 @@ blockquote { margin-left: 0; padding-left: 10pt; border-left: 2.5pt solid #e3e0d
 table { border-collapse: collapse; }
 th, td { border: 0.75pt solid #d6d3c8; padding: 3pt 7pt; }
 th { background: #f0eee6; }
+table.has-widths { width: 100%; table-layout: fixed; }
+table.has-widths th, table.has-widths td { overflow-wrap: break-word; }
+.cell-heading { margin: 0; line-height: 1.25; }
 img { max-width: 100%; }
 hr { border: 0; border-top: 0.75pt solid #d6d3c8; }
 .contains-task-list { list-style: none; padding-left: 0.3em; }
@@ -132,6 +137,8 @@ class _DocxWriter:
         self.lists = _Lists()
         self.quote_depth = 0
         self.paragraph = None
+        self.cell = None  # the table cell being written, if any
+        self.cell_align = WD_ALIGN_PARAGRAPH.LEFT
         self.footnote_label: str | None = None
         self.code_colors = _code_colors()
         normal = self.doc.styles["Normal"]
@@ -269,6 +276,7 @@ class _DocxWriter:
         paragraph._p.get_or_add_pPr().append(border)
 
     def table(self, tokens: list[Token], i: int) -> int:
+        widths = tokens[i].meta.get("widths")
         rows: list[list[tuple[Token, str]]] = []
         while tokens[i].type != "table_close":
             token = tokens[i]
@@ -285,26 +293,58 @@ class _DocxWriter:
         table = self.doc.add_table(rows=len(rows), cols=columns)
         table.style = "Table Grid"
         table.alignment = WD_TABLE_ALIGNMENT.LEFT
+        if widths and len(widths) == columns:
+            # Widths from the delimiter row's dashes: the table fills the text width.
+            section = self.doc.sections[-1]
+            text_width = section.page_width - section.left_margin - section.right_margin
+            table.autofit = False
+            for c, share in enumerate(widths):
+                width = Emu(int(text_width * share / 100))
+                table.columns[c].width = width
+                for cell in table.columns[c].cells:
+                    cell.width = width
         for r, row in enumerate(rows):
             for c, (inline, align) in enumerate(row):
                 cell = table.cell(r, c)
-                self.paragraph = cell.paragraphs[0]
-                self.paragraph.alignment = {
+                self.cell = cell
+                self.cell_align = {
                     "right": WD_ALIGN_PARAGRAPH.RIGHT,
                     "center": WD_ALIGN_PARAGRAPH.CENTER,
                 }.get(align, WD_ALIGN_PARAGRAPH.LEFT)
+                self.paragraph = cell.paragraphs[0]
+                self.paragraph.alignment = self.cell_align
                 self.inline(inline, bold=r == 0)
                 if r == 0:
                     _shade(cell._tc.get_or_add_tcPr(), CODE_BG)
+        self.cell = None
         self.doc.add_paragraph()
         return i + 1
+
+    def cell_line(self) -> None:
+        """A new line in the table cell being written (around a heading in it)."""
+        if self.cell is None or not self.paragraph.runs:
+            return
+        self.paragraph = self.cell.add_paragraph()
+        self.paragraph.alignment = self.cell_align
 
     # -- inline
 
     def inline(self, token: Token, bold: bool = False) -> None:
         state = {"strong": bold, "em": False, "s": False, "mark": False, "link": None}
+        state["heading"] = 0
         for child in token.children or []:
             kind = child.type
+            # A line in a table cell that starts with #'s (see studio.markdown): its own paragraph.
+            if kind == "heading_open":
+                self.cell_line()
+                state["heading"] = int(child.tag[1])
+                continue
+            if kind == "heading_close":
+                state["heading"] = 0
+                state["after_heading"] = True
+                continue
+            if state.pop("after_heading", False):
+                self.cell_line()
             if kind.endswith("_open") and kind[:-5] in ("strong", "em", "s", "mark"):
                 state[kind[:-5]] = True
             elif kind.endswith("_close") and kind[:-6] in ("strong", "em", "s", "mark"):
@@ -361,6 +401,10 @@ class _DocxWriter:
 
 def _format(run, state: dict) -> None:
     run.bold = state["strong"] or None
+    if state.get("heading"):
+        run.bold = True
+        run.font.name = "Georgia"
+        run.font.size = Pt(CELL_HEADING_SIZES[min(state["heading"], 6) - 1])
     run.italic = state["em"] or None
     if state["s"]:
         run.font.strike = True
