@@ -136,6 +136,25 @@ describe("mount", () => {
     editor.destroy();
   });
 
+  it("shows the host's save state as a cloud at the toolbar's end", () => {
+    const el = host();
+    const editor = mount(el, { doc: "Text", saveStatus: "saved" });
+    const status = () => el.querySelector<HTMLElement>(".mde-toolbar .mde-save-status");
+    expect(status()?.classList.contains("mde-save-saved")).toBe(true);
+    expect(status()?.textContent).toBe("Saved");
+    expect(status()?.title).toBe("All changes saved");
+    flushSync(() => editor.setSaveStatus("saving"));
+    expect(status()?.textContent).toBe("Saving…");
+    expect(status()?.querySelector(".mde-save-turn")).not.toBeNull();
+    flushSync(() => editor.setSaveStatus("error", "Couldn't save: you're offline"));
+    expect(status()?.classList.contains("mde-save-error")).toBe(true);
+    expect(status()?.title).toBe("Couldn't save: you're offline");
+    expect(status()?.textContent).toContain("Not saved");
+    flushSync(() => editor.setSaveStatus(null));
+    expect(status()).toBeNull();
+    editor.destroy();
+  });
+
   it("finds its element by selector, and says when there's none", () => {
     expect(() => mount("#nowhere")).toThrow(/no element/);
   });

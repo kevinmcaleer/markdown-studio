@@ -941,3 +941,78 @@
   text-decoration: underline dashed var(--todo-border);
   text-underline-offset: 0.25em;
 }
+
+/* The host's save state at the toolbar's right end (setSaveStatus). It sticks
+   to the right edge, so it stays in sight when the toolbar scrolls sideways
+   on a narrow screen. */
+.mde .mde-save-status {
+  position: sticky;
+  right: 0;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: auto;
+  padding: 0 0.15rem 0 0.5rem;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: default;
+  user-select: none;
+}
+
+/* The cloud sits low in its box, so lift it level with the label. */
+.mde .mde-save-status svg {
+  flex-shrink: 0;
+  position: relative;
+  top: -1px;
+}
+
+.mde .mde-save-label {
+  position: relative;
+  top: 1px;
+}
+
+.mde .mde-save-saved {
+  color: var(--success);
+}
+
+.mde .mde-save-error {
+  color: var(--danger);
+}
+
+.mde .mde-save-turn {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: mde-save-turn 1.2s linear infinite;
+}
+
+@keyframes mde-save-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mde .mde-save-turn {
+    animation: none;
+  }
+}
+
+/* Only the cloud on a phone. */
+@media (max-width: 560px) {
+  .mde .mde-save-label {
+    display: none;
+  }
+}
+
+.mde .mde-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

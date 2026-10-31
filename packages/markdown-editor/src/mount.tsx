@@ -6,7 +6,7 @@ import { setDictionaryBase } from "./proofing/dictionaryUrls";
 import type { EditorEvents, MarkdownEditor, MountOptions } from "./standalone/options";
 import { StandaloneEditor, type Bridge } from "./standalone/StandaloneEditor";
 
-export type { BuiltInTool, EditorEvents, EditorHint, GuideSection, ImageInfo, MarkdownEditor, MountOptions, Pane, Stats, StatusItem, ToolbarButton, ToolbarItem } from "./standalone/options";
+export type { BuiltInTool, EditorEvents, EditorHint, GuideSection, ImageInfo, MarkdownEditor, MountOptions, Pane, SaveState, Stats, StatusItem, ToolbarButton, ToolbarItem } from "./standalone/options";
 export { DEFAULT_STATUS, DEFAULT_TOOLBAR } from "./standalone/options";
 
 // The framework-free way in: `mount(element, options)` puts the whole editor
@@ -93,6 +93,7 @@ export function mount(target: HTMLElement | string, options: MountOptions = {}):
     refreshPreview: () => bridge.actions?.refreshPreview(),
     checkSpelling: () => bridge.actions?.checkSpelling(),
     setHints: (hints) => bridge.actions?.setHints(hints),
+    setSaveStatus: (state, message) => bridge.actions?.setSaveStatus(state, message),
     on<K extends keyof EditorEvents>(event: K, listener: (value: EditorEvents[K]) => void) {
       let set = listeners.get(event);
       if (!set) listeners.set(event, (set = new Set()));

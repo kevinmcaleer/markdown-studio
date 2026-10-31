@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { Active, Block } from "../format/formatting";
 import { ITEMS, itemTitle, type FormatItem } from "../format/items";
-import type { BuiltInTool, Pane, ToolbarButton, ToolbarItem } from "./options";
+import type { BuiltInTool, Pane, SaveState, ToolbarButton, ToolbarItem } from "./options";
 
 // The mounted editor's toolbar: the Notes format bar's look, built from the
 // host's list of built-in names and its own buttons.
@@ -57,6 +57,49 @@ export function Icon({ icon, label }: { icon?: string; label: string }) {
   return <span className="mde-tool-text">{icon}</span>;
 }
 
+export type SaveStatus = { state: SaveState; message?: string };
+
+const SAVE_LABELS: Record<SaveState, { label: string; title: string }> = {
+  saved: { label: "Saved", title: "All changes saved" },
+  saving: { label: "Saving…", title: "Saving your changes…" },
+  error: { label: "Not saved", title: "Couldn't save your changes" },
+};
+
+// A 24×24 cloud, with turning arrows inside while saving and a cross when
+// saving failed.
+const CLOUD_SHAPE = "M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z";
+const SAVE_MARKS: Record<SaveState, string> = {
+  saved: "",
+  saving: "M9.3 13.3a2.7 2.7 0 0 1 4.7-1.8M14.7 13.3a2.7 2.7 0 0 1-4.7 1.8M14.3 9.8v1.8h-1.8M9.7 16.8v-1.8h1.8",
+  error: "M10.3 11.6l3.4 3.4M13.7 11.6l-3.4 3.4",
+};
+
+/** The cloud at the toolbar's right end: saved, saving or not saved. */
+export function SaveIndicator({ status }: { status: SaveStatus }) {
+  const { label, title } = SAVE_LABELS[status.state];
+  const mark = SAVE_MARKS[status.state];
+  return (
+    <div className={`mde-save-status mde-save-${status.state}`} role="status" aria-live="polite" title={status.message || title}>
+      <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+        <path d={CLOUD_SHAPE} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        {mark && (
+          <path
+            className={status.state === "saving" ? "mde-save-turn" : undefined}
+            d={mark}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        )}
+      </svg>
+      <span className="mde-save-label">{label}</span>
+      {status.message && <span className="mde-visually-hidden">{status.message}</span>}
+    </div>
+  );
+}
+
 /** Splits the list into groups at each "|". */
 function groups(items: ToolbarItem[]): ToolbarItem[][] {
   const out: ToolbarItem[][] = [[]];
@@ -76,6 +119,7 @@ export function Toolbar({
   onCustom,
   customActive,
   dictation,
+  saveStatus,
 }: {
   items: ToolbarItem[];
   state: ToolbarState;
@@ -85,6 +129,7 @@ export function Toolbar({
   onCustom: (tool: ToolbarButton, button: HTMLButtonElement) => void;
   customActive: (tool: ToolbarButton) => boolean | undefined;
   dictation?: ReactNode;
+  saveStatus?: SaveStatus | null;
 }) {
   const { active, readOnly } = state;
   const heading = HEADINGS.some((h) => h.block === active.block) ? active.block : "paragraph";
@@ -197,6 +242,7 @@ export function Toolbar({
           {group.map((item) => render(item as Exclude<ToolbarItem, "|">))}
         </div>
       ))}
+      {saveStatus && <SaveIndicator status={saveStatus} />}
     </div>
   );
 }
