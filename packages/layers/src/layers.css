@@ -372,3 +372,8 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
   .lyr-rail-btn span { display: none; }
   .lyr[data-mode="inline"] .lyr-panel, .lyr-panel { position: absolute; left: 56px !important; top: 0; bottom: 0; width: min(270px, 80vw); box-shadow: 8px 0 24px rgb(0 0 0 / 0.1); }
 }
+
+/* Over a connect handle: draw a line. */
+.lyr-board.lyr-on-handle .upper-canvas {
+  cursor: crosshair !important;
+}
