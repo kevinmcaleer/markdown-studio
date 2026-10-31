@@ -10,6 +10,12 @@ function at(doc: string, anchor: number, head = anchor) {
   return state;
 }
 
+describe("linkAtCursor", () => {
+  it("leaves a callout's [!type] alone: it isn't a link", () => {
+    expect(linkAtCursor(at("> [!tip] Rabbit holes", 5))).toBeNull();
+  });
+});
+
 describe("linkDraft", () => {
   it("starts from the selected text", () => {
     expect(linkDraft(at("see the docs here", 8, 12))).toEqual({ from: 8, to: 12, text: "docs", url: "" });
