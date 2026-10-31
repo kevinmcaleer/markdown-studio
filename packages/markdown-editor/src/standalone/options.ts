@@ -215,6 +215,13 @@ export type MountOptions = {
    */
   hiddenComments?: HiddenComment;
   /**
+   * `#todo` notes to self (default on): a `#todo what's left` line is marked
+   * in the text and listed in a small "N to do" list at the top right, where
+   * one click marks it done and takes it out of the text. The "/" menu gets a
+   * Todo command. `false` turns all of that off.
+   */
+  todos?: boolean;
+  /**
    * Up and down buttons on whole-number table cells in the live view, shown
    * on hover or focus (Alt+Up and Alt+Down step a focused cell too): a Bill
    * of Materials' Qty column, say. It's given each body cell that is empty or

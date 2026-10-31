@@ -157,6 +157,15 @@ export const slashCommands: SlashCommand[] = [
     insert: () => ({ before: "---\n\n" }),
   },
   {
+    id: "todo",
+    label: "Todo",
+    keywords: ["#todo", "to do", "task", "reminder", "later", "unfinished", "note to self", "fixme"],
+    group: "inline",
+    icon: "M8 14.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM5.25 8.25l1.9 1.9 3.6-3.9",
+    // Gathered into the todo list at the top right; one click there marks it done.
+    insert: () => ({ before: "#todo ", placeholder: "What still needs doing" }),
+  },
+  {
     id: "image",
     label: "Image",
     keywords: ["picture", "photo", "img"],

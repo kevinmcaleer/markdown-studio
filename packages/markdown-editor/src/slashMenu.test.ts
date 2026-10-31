@@ -34,7 +34,8 @@ describe("filterCommands", () => {
 
   it("finds commands by keyword", () => {
     expect(filterCommands("h2")[0].id).toBe("h2");
-    expect(filterCommands("todo")[0].id).toBe("checklist");
+    expect(filterCommands("todo")[0].id).toBe("todo");
+    expect(filterCommands("todo")[1].id).toBe("checklist");
     expect(filterCommands("hr")[0].id).toBe("divider");
   });
 
