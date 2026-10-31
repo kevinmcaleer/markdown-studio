@@ -377,3 +377,8 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 .lyr-board.lyr-on-handle .upper-canvas {
   cursor: crosshair !important;
 }
+
+/* Width and height of a shape. */
+.lyr-size-fields { display: inline-flex; align-items: center; gap: 6px; color: var(--lyr-muted); font-size: 12px; }
+.lyr-size-fields label { display: inline-flex; align-items: center; gap: 4px; }
+.lyr-size-fields .lyr-num { width: 64px; }
