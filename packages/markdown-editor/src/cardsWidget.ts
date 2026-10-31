@@ -3,7 +3,7 @@ import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemir
 import { cardHtml, cardMarkdown, cardsBlockMarkdown, findCardBlocks, parseCard, type Card } from "./cards";
 import "./cards.css";
 import { renderMarkdown } from "./markdown";
-import { rememberedHeight, rememberHeight, sizePictures } from "./steadyScroll";
+import { rememberedHeight, sizePictures, spacedBlock } from "./steadyScroll";
 
 // In the live view a `::: cards` block (see cards.ts) shows as its cards, and
 // is built by pointing and clicking: click a card to give it a picture, a
@@ -112,7 +112,6 @@ class CardsWidget extends WidgetType {
 
   toDOM(view: EditorView) {
     const wrap = el("div", `cm-md-cards${this.readOnly ? "" : " editable"}`);
-    rememberHeight(wrap, this.key);
     const grid = el("div", `md-cards${this.columns ? " md-cards-fixed" : ""}`);
     grid.dataset.cardsColumns = String(this.columns);
     if (this.columns) grid.style.setProperty("--md-cards-columns", String(this.columns));
@@ -229,7 +228,7 @@ class CardsWidget extends WidgetType {
         if (node?.classList.contains("md-card")) this.openEditor(view, wrap, node, pending.index, change);
       });
     }
-    return wrap;
+    return spacedBlock(wrap, this.key);
   }
 
   private drawCard(card: Card): HTMLElement {
@@ -495,7 +494,7 @@ export function insertCards(view: EditorView, from = view.state.selection.main.f
 
 export const cardsTheme = EditorView.theme({
   // Not the editor's pre-wrap: the rendered cards' line breaks are only HTML.
-  ".cm-md-cards": { whiteSpace: "normal", position: "relative", margin: "0.5rem 0", padding: "2.4rem 0.5rem 0.5rem", borderRadius: "14px", border: "1px dashed transparent" },
+  ".cm-md-cards": { whiteSpace: "normal", position: "relative", margin: "0", padding: "2.4rem 0.5rem 0.5rem", borderRadius: "14px", border: "1px dashed transparent" },
   ".cm-md-cards.editable:hover, .cm-md-cards.editable:focus-within": { borderColor: "var(--border)" },
   ".cm-md-cards:not(.editable)": { paddingTop: "0.5rem" },
   ".cm-md-cards .md-cards": { margin: "0" },

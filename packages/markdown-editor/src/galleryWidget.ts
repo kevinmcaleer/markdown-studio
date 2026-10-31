@@ -13,7 +13,7 @@ import {
 } from "./gallery";
 import "./gallery.css";
 import { imageMarkdown } from "./imagePopover";
-import { rememberedHeight, rememberHeight } from "./steadyScroll";
+import { rememberedHeight, spacedBlock } from "./steadyScroll";
 
 // In the live view a `::: gallery` block (see gallery.ts) shows as its
 // gallery, and is managed by pointing and clicking: "Add pictures" in its bar
@@ -130,7 +130,6 @@ class GalleryWidget extends WidgetType {
 
   toDOM(view: EditorView) {
     const wrap = el("div", `cm-md-gallery${this.readOnly ? "" : " editable"}`);
-    rememberHeight(wrap, this.key);
     const holder = el("div");
     holder.innerHTML = galleryHtml(this.layout, this.images);
     const gallery = holder.firstElementChild as HTMLElement;
@@ -142,7 +141,7 @@ class GalleryWidget extends WidgetType {
 
     if (this.readOnly) {
       wrap.append(gallery);
-      return wrap;
+      return spacedBlock(wrap, this.key);
     }
 
     const add = (anchor: HTMLElement) => this.addPictures(view, wrap, anchor);
@@ -258,7 +257,7 @@ class GalleryWidget extends WidgetType {
       if (target.closest("input")) return;
       if (target.closest("button")) e.preventDefault();
     });
-    return wrap;
+    return spacedBlock(wrap, this.key);
   }
 
   /** Opens the host's picker (or a field for a picture's address) and adds what's picked. */
@@ -385,7 +384,7 @@ const pill = {
 };
 
 export const galleryTheme = EditorView.theme({
-  ".cm-md-gallery": { whiteSpace: "normal", position: "relative", margin: "0.5rem 0", padding: "0.5rem", borderRadius: "14px", border: "1px dashed transparent" },
+  ".cm-md-gallery": { whiteSpace: "normal", position: "relative", margin: "0", padding: "0.5rem", borderRadius: "14px", border: "1px dashed transparent" },
   ".cm-md-gallery.editable": { paddingTop: "2.4rem" },
   ".cm-md-gallery.editable:hover, .cm-md-gallery.editable:focus-within": { borderColor: "var(--border)" },
   ".cm-md-gallery .md-gallery": { margin: "0" },
