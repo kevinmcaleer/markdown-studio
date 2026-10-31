@@ -3,6 +3,7 @@ import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { describe, expect, it } from "vitest";
+import { selectionToolbar } from "./format/selectionToolbar";
 import { tableField } from "./tableWidget";
 
 function tableView(doc: string): EditorView {
@@ -150,5 +151,49 @@ describe("table widget", () => {
     cell.textContent = "6";
     cell.dispatchEvent(new InputEvent("input", { bubbles: true }));
     expect(view.state.doc.line(4).text).toBe("> | Servo | 6 |");
+  });
+
+  it("shows the formatting toolbar over text selected in a cell, and bolds it", async () => {
+    const view = new EditorView({
+      state: EditorState.create({
+        doc: "| Part | Qty |\n|---|---|\n| Power cell | 2 |\n",
+        extensions: [markdown({ base: markdownLanguage }), tableField, selectionToolbar()],
+      }),
+      parent: document.body,
+    });
+    const cell = view.dom.querySelector<HTMLElement>(".cm-md-table td")!;
+    cell.focus();
+    cell.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    const range = document.createRange();
+    range.setStart(cell.firstChild!, 0);
+    range.setEnd(cell.firstChild!, 5);
+    document.getSelection()!.removeAllRanges();
+    document.getSelection()!.addRange(range);
+    document.dispatchEvent(new Event("selectionchange"));
+    const bar = view.dom.querySelector<HTMLElement>(".cm-md-table-format")!;
+    expect(bar).not.toBeNull();
+    // Only what a cell can hold: no lists, headings or quotes.
+    const labels = Array.from(bar.querySelectorAll("button"), (b) => b.getAttribute("aria-label"));
+    expect(labels).toEqual(["Bold", "Italic", "Strikethrough", "Highlight", "Inline code", "Link", "Clear formatting"]);
+    bar.querySelector<HTMLElement>("[aria-label=Bold]")!.click();
+    expect(view.state.doc.toString()).toBe("| Part | Qty |\n|---|---|\n| **Power** cell | 2 |\n");
+    const again = view.dom.querySelector<HTMLElement>(".cm-md-table-format [aria-label=Bold]")!;
+    expect(again.getAttribute("aria-pressed")).toBe("true");
+    again.click();
+    expect(view.state.doc.toString()).toBe("| Part | Qty |\n|---|---|\n| Power cell | 2 |\n");
+    view.destroy();
+  });
+
+  it("leaves the toolbar out of cells when the editor has none", () => {
+    const view = tableView("| Part | Qty |\n|---|---|\n| Power cell | 2 |\n");
+    const cell = view.dom.querySelector<HTMLElement>(".cm-md-table td")!;
+    cell.focus();
+    const range = document.createRange();
+    range.selectNodeContents(cell);
+    document.getSelection()!.removeAllRanges();
+    document.getSelection()!.addRange(range);
+    document.dispatchEvent(new Event("selectionchange"));
+    expect(view.dom.querySelector(".cm-md-table-format")).toBeNull();
+    view.destroy();
   });
 });

@@ -2,7 +2,12 @@ import { syntaxTree } from "@codemirror/language";
 import { Facet, StateField, type EditorState, type Range } from "@codemirror/state";
 import { Decoration, EditorView, runScopeHandlers, ViewPlugin, WidgetType, type DecorationSet } from "@codemirror/view";
 import { parseCalloutHeader } from "./callouts";
+import { clearCellFormatting, cellMarkActive, toggleCellMark, type CellEdit } from "./format/cellMarks";
+import type { Mark } from "./format/formatting";
+import type { FormatItem } from "./format/items";
+import { CELL_TOOLBAR, iconSvg, itemTitle } from "./format/items";
 import { hasLinkPopover, linkCard, linkForm, linkInText, type LinkAt } from "./format/linkPopover";
+import { hasSelectionToolbar } from "./format/selectionToolbar";
 import { cellHasImage, isImageGrid } from "./imageGrid";
 import { renderCell } from "./markdown";
 import { applyCommand, commandsOf, filterCommands, hasSlashMenu, type SlashCommand } from "./slashMenu";
@@ -346,6 +351,11 @@ class TableView {
   private menu: HTMLElement | null = null;
   private slash: CellSlash | null = null;
   private link: { cell: HTMLElement; at: LinkAt; dom: HTMLElement; form: boolean } | null = null;
+  /** The formatting toolbar over a selection in a cell, and the selection it's for. */
+  private format: { cell: HTMLElement; from: number; to: number; dom: HTMLElement; buttons: [HTMLButtonElement, FormatItem][] } | null = null;
+  /** A mouse button is down in a cell: the toolbar waits until it's let go, as in the note. */
+  private selecting = false;
+  private readonly selectionListener = () => this.updateFormat();
   private hover = { row: 0, col: 0 };
   /** A row or column being dragged by its handle, and the line showing where it will go. */
   private drag: { axis: "row" | "col"; from: number; to: number | null; line: HTMLElement } | null = null;
@@ -399,6 +409,7 @@ class TableView {
       if (this.slash?.cell === cell) this.closeSlash();
       // Into the link's card or form keeps it open; anywhere else closes it.
       if (this.link?.cell === cell && !this.link.dom.contains((e as FocusEvent).relatedTarget as Node)) this.closeLink();
+      if (this.format?.cell === cell) this.closeFormat();
       cell.innerHTML = renderCell(cell.dataset.raw ?? "");
       sizePictures(cell);
     });
@@ -443,7 +454,18 @@ class TableView {
     // Clicking a control shouldn't take the caret out of the cell first.
     dom.addEventListener("mousedown", (e) => {
       if ((e.target as HTMLElement).closest("button")) e.preventDefault();
+      if (e.button !== 0 || !(e.target as HTMLElement).closest("th, td")) return;
+      // Selecting text in a cell: the toolbar shows once the mouse is let go.
+      this.selecting = true;
+      this.closeFormat();
+      const up = () => {
+        document.removeEventListener("mouseup", up);
+        this.selecting = false;
+        window.setTimeout(() => this.updateFormat());
+      };
+      document.addEventListener("mouseup", up);
     });
+    document.addEventListener("selectionchange", this.selectionListener);
 
     this.addRow.addEventListener("click", () => this.structure((t) => insertRow(t, t.rows.length), this.table.rows.length, 0));
     this.addCol.addEventListener("click", () => this.structure((t) => insertColumn(t, t.align.length), 0, this.table.align.length));
@@ -479,6 +501,8 @@ class TableView {
     this.closeMenu();
     this.closeSlash();
     this.closeLink();
+    this.closeFormat();
+    document.removeEventListener("selectionchange", this.selectionListener);
   }
 
   /** Back to the host's drawing once the focus has left the table. */
@@ -685,6 +709,19 @@ class TableView {
       runScopeHandlers(this.view, e, "editor");
       return;
     }
+    const shortcut = mod && !e.altKey ? cellShortcut(e) : null;
+    if (shortcut) {
+      // The note's formatting keys, on the cell's text (not the browser's own <b> and <i>).
+      e.preventDefault();
+      this.formatCell(cell, shortcut);
+      return;
+    }
+    if (this.format && e.key === "Escape") {
+      // Puts the toolbar away; the selection stays.
+      e.preventDefault();
+      this.closeFormat();
+      return;
+    }
     if (e.key === "Enter" && e.shiftKey && !mod) {
       // A new line in the cell: a <br> in the Markdown, a line break while typing.
       e.preventDefault();
@@ -718,7 +755,110 @@ class TableView {
     }
   }
 
+  // ------------------------------------------------------------ formatting in a cell
+
+  /** Shows the formatting toolbar over the selection in a cell, or puts it away when there isn't one. */
+  private updateFormat() {
+    if (this.selecting) return;
+    const picked = this.editable && !this.menu && !this.slash && !this.link?.form && hasSelectionToolbar(this.view.state) ? cellSelection(this.dom) : null;
+    if (!picked || !(picked.cell.textContent ?? "").slice(picked.from, picked.to).trim()) return this.closeFormat();
+    const { cell, from, to, rect } = picked;
+    let open = this.format;
+    if (!open || open.cell !== cell) {
+      this.closeFormat();
+      const dom = el("div", "cm-tooltip cm-format-mini cm-md-table-format");
+      dom.setAttribute("role", "toolbar");
+      dom.setAttribute("aria-label", "Format selection");
+      // Clicking a button keeps the selection and the focus in the cell.
+      dom.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+      const buttons: [HTMLButtonElement, FormatItem][] = [];
+      CELL_TOOLBAR.forEach((group, i) => {
+        if (i > 0) dom.append(el("span", "cm-format-mini-sep"));
+        for (const item of group) {
+          const entry = document.createElement("button");
+          entry.type = "button";
+          entry.className = "cm-format-mini-btn";
+          entry.title = itemTitle(item);
+          entry.setAttribute("aria-label", item.label);
+          entry.innerHTML = iconSvg(item.icon);
+          entry.addEventListener("click", () => this.format && this.formatCell(this.format.cell, item.id));
+          dom.append(entry);
+          buttons.push([entry, item]);
+        }
+      });
+      this.dom.append(dom);
+      open = this.format = { cell, from, to, dom, buttons };
+    }
+    open.from = from;
+    open.to = to;
+    const text = cell.textContent ?? "";
+    for (const [entry, item] of open.buttons) {
+      const mark = "mark" in item.action ? item.action.mark : null;
+      if (mark) entry.setAttribute("aria-pressed", String(cellMarkActive(text, from, to, mark)));
+    }
+    // Above the selection, or under it when that would go behind the toolbar at the top.
+    const base = this.dom.getBoundingClientRect();
+    const { dom } = open;
+    const width = dom.offsetWidth;
+    const height = dom.offsetHeight;
+    const left = Math.min(rect.left - base.left, Math.max(0, base.width - width));
+    dom.style.left = `${Math.max(0, left)}px`;
+    const below = rect.top - 6 - height < this.menuRoom().top;
+    dom.style.top = below ? `${rect.bottom - base.top + 6}px` : `${rect.top - base.top - 6 - height}px`;
+  }
+
+  /** Bold, italic and so on for the selection in a cell; "link" opens the link form for it. */
+  private formatCell(cell: HTMLElement, id: string) {
+    const picked = cellSelection(this.dom);
+    if (!picked || picked.cell !== cell) return;
+    const text = cell.textContent ?? "";
+    const { from, to } = picked;
+    if (id === "link") {
+      if (to <= from || !hasLinkPopover(this.view.state)) return;
+      this.closeFormat();
+      const label = text.slice(from, to);
+      return this.newLink(cell, { from, to, text: label, url: "", label, bare: false });
+    }
+    let edit: CellEdit | null = null;
+    if (id === "clear") edit = clearCellFormatting(text, from, to);
+    else {
+      const mark = CELL_MARKS[id];
+      if (mark) edit = toggleCellMark(text, from, to, mark);
+    }
+    if (!edit) return;
+    const row = Number(cell.dataset.row);
+    const col = Number(cell.dataset.col);
+    const range = this.change((source) => setCell(source, row, col, edit.text));
+    const view = range ? (tableViewAt(this.view, range.from) ?? this) : this;
+    view.focusCellAt(row, col, rawOffset(edit.text, edit.from), rawOffset(edit.text, edit.to));
+    view.updateFormat();
+  }
+
+  private closeFormat() {
+    if (!this.format) return;
+    this.format.dom.remove();
+    this.format = null;
+  }
+
   // ------------------------------------------------------------ links in a cell
+
+  /** The link form for the selected text in a cell, to make it a link. */
+  private newLink(cell: HTMLElement, at: LinkAt) {
+    const done = (end: number) => {
+      this.closeLink();
+      const offset = rawOffset(cellText(cell.dataset.raw ?? ""), end);
+      this.focusCellAt(Number(cell.dataset.row), Number(cell.dataset.col), offset, offset);
+    };
+    const form = linkForm(at, (markdown) => this.replaceLink(markdown), () => done(at.to));
+    form.addEventListener("focusout", (e) => {
+      if (this.link?.dom === form && !form.contains(e.relatedTarget as Node)) this.closeLink();
+    });
+    this.placeLink(cell, at, form, true);
+    form.querySelectorAll("input")[1]?.focus();
+  }
 
   /** Shows the card for the link at the caret in a cell, or closes it when there isn't one. */
   private showLink(cell: HTMLElement) {
@@ -743,7 +883,7 @@ class TableView {
     const { cell, at } = open;
     const form = linkForm(at, (markdown) => this.replaceLink(markdown), () => {
       this.closeLink();
-      const to = rawOffset(cell.textContent ?? "", at.to);
+      const to = rawOffset(cellText(cell.dataset.raw ?? ""), at.to);
       this.focusCellAt(Number(cell.dataset.row), Number(cell.dataset.col), to, to);
     });
     form.addEventListener("focusout", (e) => {
@@ -784,7 +924,7 @@ class TableView {
     const { cell, at } = open;
     const row = Number(cell.dataset.row);
     const col = Number(cell.dataset.col);
-    const text = cell.textContent ?? "";
+    const text = cellText(cell.dataset.raw ?? "");
     this.closeLink();
     const range = this.change((source) => setCell(source, row, col, text.slice(0, at.from) + markdown + text.slice(at.to)));
     const view = range ? (tableViewAt(this.view, range.from) ?? this) : this;
@@ -1195,6 +1335,7 @@ class TableView {
 
   private openMenu(anchor: HTMLElement, items: MenuItem[], choices?: MenuChoices) {
     this.closeMenu();
+    this.closeFormat();
     if (!this.editable) return;
     const menu = el("div", "cm-md-table-menu");
     menu.setAttribute("role", "menu");
@@ -1411,4 +1552,33 @@ function caretAtEnd(cell: HTMLElement) {
   const selection = window.getSelection();
   selection?.removeAllRanges();
   selection?.addRange(range);
+}
+
+/** The note's mark for each of the cell toolbar's mark buttons. */
+const CELL_MARKS: Record<string, Mark | undefined> = { bold: "bold", italic: "italic", strike: "strike", highlight: "highlight", code: "code" };
+
+/** The formatting a key does in a cell, by toolbar id: ⌘B, ⌘I, ⌘E, ⌘K, ⌘⇧X, ⌘⇧H and ⌘\\. */
+function cellShortcut(e: KeyboardEvent): string | null {
+  const key = e.key.toLowerCase();
+  if (e.shiftKey) return key === "x" ? "strike" : key === "h" ? "highlight" : null;
+  return ({ b: "bold", i: "italic", e: "code", k: "link", "\\": "clear" } as Record<string, string>)[key] ?? null;
+}
+
+/** The selection, when it's inside one cell of the table: its cell, its offsets in the cell's text and where it is on screen. */
+function cellSelection(table: HTMLElement): { cell: HTMLElement; from: number; to: number; rect: DOMRect } | null {
+  const selection = table.ownerDocument.getSelection();
+  if (!selection?.rangeCount || selection.isCollapsed) return null;
+  const range = selection.getRangeAt(0);
+  const start = range.startContainer;
+  const cell = (start.nodeType === 1 ? (start as HTMLElement) : start.parentElement)?.closest<HTMLElement>("th, td");
+  if (!cell || !table.contains(cell) || !cell.contains(range.endContainer) || !isCell(cell)) return null;
+  const offset = (node: Node, at: number) => {
+    const before = document.createRange();
+    before.selectNodeContents(cell);
+    before.setEnd(node, at);
+    return before.toString().length;
+  };
+  const rects = range.getClientRects();
+  const rect = rects[0] ?? range.getBoundingClientRect();
+  return { cell, from: offset(range.startContainer, range.startOffset), to: offset(range.endContainer, range.endOffset), rect };
 }
