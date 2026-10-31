@@ -109,11 +109,13 @@ export const videosTheme = EditorView.theme({
     margin: "0",
     padding: "0.5rem",
     borderRadius: "12px",
-    border: "1px solid transparent",
+    // A faint dotted outline so the author can see where the block ends; only
+    // the editor draws it, never the published page.
+    border: "1.5px dotted color-mix(in srgb, var(--muted) 45%, transparent)",
     cursor: "pointer",
     whiteSpace: "normal",
   },
-  ".cm-md-videos:hover": { borderColor: "var(--border)" },
+  ".cm-md-videos:hover": { borderColor: "var(--muted)" },
   ".cm-md-videos .md-videos": { margin: "0" },
   ".cm-line.cm-md-videos-line": { backgroundColor: "rgb(var(--gallery-tint, 120 120 120) / 0.07)", paddingLeft: "0.75rem", paddingRight: "0.75rem" },
   ".cm-line.cm-md-videos-first": { borderTopLeftRadius: "8px", borderTopRightRadius: "8px", paddingTop: "0.3em", color: "var(--muted)" },

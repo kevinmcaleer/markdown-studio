@@ -384,9 +384,9 @@ const pill = {
 };
 
 export const galleryTheme = EditorView.theme({
-  ".cm-md-gallery": { whiteSpace: "normal", position: "relative", margin: "0", padding: "0.5rem", borderRadius: "14px", border: "1px dashed transparent" },
+  ".cm-md-gallery": { whiteSpace: "normal", position: "relative", margin: "0", padding: "0.5rem", borderRadius: "14px", border: "1.5px dotted color-mix(in srgb, var(--muted) 45%, transparent)" },
   ".cm-md-gallery.editable": { paddingTop: "2.4rem" },
-  ".cm-md-gallery.editable:hover, .cm-md-gallery.editable:focus-within": { borderColor: "var(--border)" },
+  ".cm-md-gallery.editable:hover, .cm-md-gallery.editable:focus-within": { borderColor: "var(--muted)" },
   ".cm-md-gallery .md-gallery": { margin: "0" },
   ".cm-md-gallery-bar": {
     position: "absolute",
