@@ -33,6 +33,15 @@ const editor = mount(el, {
 - **Selection bar**: changes with what's selected (font, size, colours,
   border, dashes, corners (slider plus a number box), step number, flip, fill page), plus
   transparency, position (layer order, line up on the page) and group.
+- **Connectors** for hand-made process maps: shapes have snap points in
+  the middle of each side. Hover a shape for + handles: drag one to draw an
+  arrow, or click it for a joined-on copy of the shape. Drag a line's end
+  onto a snap point (or onto a shape, for the side facing the other end)
+  and it stays fastened when the shape moves; Shift keeps the angle to 45°
+  steps, Alt places it freely. Lines have arrow-at-start/end toggles.
+- **Text in shapes**: double-click a shape (or select it and press Enter) to
+  type in it. The shape's bar has the font, size, colour, bold/italic/
+  underline and alignment for its text, which moves and turns with it.
 - Smart guides snap to the page's and other layers' edges and middles
   (hold Alt to move freely). Ctrl+Z/Ctrl+Shift+Z, Ctrl+D, Ctrl+C/V,
   Ctrl+G, arrows to nudge, Delete, T for text, R for a rectangle, Esc,
