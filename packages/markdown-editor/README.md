@@ -239,6 +239,14 @@ modifier. In the live view, hovering an image shows its sizes and picking one
 rewrites the modifier. The stylesheet is `src/image-sizes.css`, which also works
 on its own, like `callouts.css`.
 
+Clicking an image in the live view keeps the picture showing and opens a
+popover under it (`src/imagePopover.ts`): its title (the alt text) and URL, its
+size, **Choose image** (the host's image picker, the same one a `::: cards`
+card uses, so it offers the library and uploads), **Remove image** (the whole
+line when the image is all that's on it) and **Edit markdown**, which puts the
+caret in the image's Markdown. Everything is written back as plain
+`![title](url){size}`, and the arrow keys still reach the Markdown as before.
+
 ### Table column alignment
 
 Each column's handle menu has **Align column** buttons: left, center and right.
