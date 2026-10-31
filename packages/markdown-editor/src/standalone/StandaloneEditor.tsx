@@ -22,6 +22,7 @@ import { imageSizeMarkdown, type ImageSize } from "../imageSize";
 import { insertImages, smartPaste, type SmartPasteOptions } from "../smartPaste";
 import { cellCaretRect, inTable, tableNotes, tableRenderers, tableSteppers } from "../tableWidget";
 import { hiddenComments } from "../hiddenComments";
+import { completeTodo, findTodos, todoMarks, type Todo } from "../todos";
 import { cardPicturePicker } from "../cardsWidget";
 import { videoRenderers } from "../videosWidget";
 import { speechEditor } from "../speech/speechEditor";
@@ -36,6 +37,7 @@ import { Outline } from "./Outline";
 import { anchorOf, type Anchor } from "./Popover";
 import { PreviewPane, syncScroll, type Renderer } from "./PreviewPane";
 import { StatusBar } from "./StatusBar";
+import { TodoList } from "./TodoList";
 import { Toolbar, VIEW_TOOLS } from "./Toolbar";
 import "../format/format.css";
 import "./standalone.css";
@@ -201,9 +203,29 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
     setPicker(at ? { left: at.left, top: at.top, bottom: at.bottom } : { left: box.left, top: box.top, bottom: box.top });
   }, []);
 
+  // ------------------------------------------------------------ #todo notes
+  const todosOn = options.todos !== false;
+  const todos = useMemo(() => (todosOn ? findTodos(deferred) : []), [deferred]);
+  const doneTodo = useCallback((todo: Todo) => {
+    const v = view.current;
+    if (!v || live.current.readOnly) return;
+    const change = completeTodo(v.state, todo);
+    if (change) v.dispatch(change);
+  }, []);
+  const jumpToTodo = useCallback((todo: Todo) => {
+    const v = view.current;
+    if (!v) return;
+    if (live.current.pane === "preview") setPane("edit");
+    const at = Math.min(todo.from, v.state.doc.length);
+    const end = Math.min(todo.to, v.state.doc.length);
+    v.dispatch({ selection: { anchor: at, head: end }, effects: EditorView.scrollIntoView(at, { y: "center" }) });
+    v.focus();
+  }, []);
+
   // ------------------------------------------------------------ "/" commands
   const commands = useMemo<SlashCommand[]>(() => {
     let list = withInsertTexts(defaultCommands, options.insertTexts);
+    if (!todosOn) list = list.filter((c) => c.id !== "todo");
     // With somewhere to get images from, "/image" opens the picker.
     if (usePicker) list = list.map((c) => (c.id === "image" ? { ...c, insert: undefined, run: openPickerAtCursor } : c));
     const extra = options.slashCommands;
@@ -251,6 +273,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
       options.videoRenderer ? videoRenderers.of(options.videoRenderer) : [],
       options.tableNote ? tableNotes.of(options.tableNote) : [],
       options.hiddenComments ? hiddenComments.of(options.hiddenComments) : [],
+      todosOn ? todoMarks : [],
       options.tableStepper ? tableSteppers.of(options.tableStepper) : [],
       codeEditors.of(
         Object.fromEntries(Object.entries(options.codeEditors ?? {}).map(([language, mount]) => [language.toLowerCase(), mount])),
@@ -487,6 +510,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
           dictation={options.speech ? dictation.button : undefined}
         />
       )}
+      {todosOn && <TodoList todos={todos} readOnly={readOnly} onDone={doneTodo} onJump={jumpToTodo} />}
       <div className={`mde-main pane-${pane}`}>
         {outlineOpen && (
           <Outline
@@ -542,7 +566,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
           readAloud={options.speech && readAloud.supported ? { reading: readAloud.reading, toggle: readAloud.toggle } : undefined}
         />
       )}
-      {guide && <Guide anchor={guide} onClose={() => setGuide(null)} shortcuts={guideShortcuts} commands={commands} spelling={spellcheck !== "off"} hints={lintEnabled} sections={options.guide} />}
+      {guide && <Guide anchor={guide} onClose={() => setGuide(null)} shortcuts={guideShortcuts} commands={commands} spelling={spellcheck !== "off"} hints={lintEnabled} todos={todosOn} sections={options.guide} />}
       {picker && view.current && (
         <ImagePicker
           anchor={picker}

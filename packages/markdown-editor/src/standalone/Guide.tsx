@@ -34,6 +34,7 @@ const TEXT: GuideSection = {
     ["```", "Code block (a line of ``` above and below; ```python names the language)"],
     ["---", "Horizontal line"],
     ["[^1]", "Footnote"],
+    ["#todo what's left", "A note to self: listed in the \"to do\" box at the top right, where a click on its circle marks it done and takes it out of the text (or type /todo)"],
   ],
 };
 
@@ -106,6 +107,7 @@ export function Guide({
   commands,
   spelling = true,
   hints = true,
+  todos = true,
   sections = [],
 }: {
   anchor: Anchor;
@@ -116,6 +118,8 @@ export function Guide({
   spelling?: boolean;
   /** Whether writing hints are on. */
   hints?: boolean;
+  /** Whether `#todo` notes are listed, so their row applies. */
+  todos?: boolean;
   /** The host's own topics, after the built-in ones. */
   sections?: GuideSection[];
 }) {
@@ -123,7 +127,8 @@ export function Guide({
     ...CHECKING,
     rows: CHECKING.rows.filter(([what]) => (what === "Hints" ? hints : spelling)),
   };
-  const topics = [TEXT, PICTURES, VIDEOS, CALLOUTS, TABLES, ...(checking.rows.length ? [checking] : []), ...sections];
+  const text: GuideSection = todos ? TEXT : { ...TEXT, rows: TEXT.rows.filter(([code]) => !code.startsWith("#todo")) };
+  const topics = [text, PICTURES, VIDEOS, CALLOUTS, TABLES, ...(checking.rows.length ? [checking] : []), ...sections];
   return (
     <Popover anchor={anchor} onClose={onClose} className="mde-guide" label="Markdown guide">
       {topics.map((section, i) => (
