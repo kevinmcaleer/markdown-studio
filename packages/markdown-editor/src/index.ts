@@ -52,6 +52,7 @@ export {
   type TableStepperSpec,
 } from "./tableWidget";
 export { hiddenComments, hideComments, type HiddenComment } from "./hiddenComments";
+export { pageBreaks, pageBreaksOn, pageBreakCommand, isPageBreak, PAGE_BREAK } from "./pageBreaks";
 export { findTodos, completeTodo, todoMarks, type Todo } from "./todos";
 export { slashMenu, slashCommands, filterCommands, applyCommand, withInsertTexts, type SlashCommand, type InsertTexts } from "./slashMenu";
 export { smartPaste, insertImages, DEFAULT_MAX_IMAGE_BYTES, type SmartPasteOptions } from "./smartPaste";

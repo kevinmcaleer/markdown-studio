@@ -215,6 +215,13 @@ export type MountOptions = {
    */
   hiddenComments?: HiddenComment;
   /**
+   * Page breaks (default off): a line holding only `<!-- page -->` is drawn
+   * in the live view as a dashed rule naming the page it starts, and the "/"
+   * menu gets a Page break command. For a host that publishes the text a
+   * page at a time; anywhere else the comment reads as nothing.
+   */
+  pageBreaks?: boolean;
+  /**
    * `#todo` notes to self (default on): a `#todo what's left` line is marked
    * in the text and listed in a small "N to do" list at the top right, where
    * one click marks it done and takes it out of the text. The "/" menu gets a
