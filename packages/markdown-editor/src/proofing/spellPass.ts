@@ -1,6 +1,6 @@
 import { forceParsing } from "@codemirror/language";
 import { Facet, StateEffect, StateField, type EditorState, type Extension } from "@codemirror/state";
-import { EditorView, keymap, ViewPlugin, type ViewUpdate } from "@codemirror/view";
+import { Decoration, EditorView, keymap, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { matchCase } from "./contextMenu";
 import { personalDictionary } from "./dictionary";
 import { words, type Word } from "./prose";
@@ -35,6 +35,111 @@ export const ignoredOnce = StateField.define<{ from: number; to: number }[]>({
 
 export function isIgnoredOnce(state: EditorState, from: number, to: number): boolean {
   return (state.field(ignoredOnce, false) ?? []).some((s) => s.from === from && s.to === to);
+}
+
+// ---------------------------------------------------------------- the word being checked
+
+// The word the dialog is on is marked in the note, so it's easy to see while
+// the focus is in the dialog (the selection alone is faint then). Where the
+// note draws that part as something else (a table, cards), the word is marked
+// in the drawing instead: see `markInWidget`.
+
+const setChecking = StateEffect.define<{ from: number; to: number } | null>();
+
+const checkingMark = Decoration.mark({ class: "cm-spell-pass-current" });
+
+export const checking = StateField.define<{ from: number; to: number } | null>({
+  create: () => null,
+  update(value, tr) {
+    if (value && tr.docChanged) {
+      const from = tr.changes.mapPos(value.from, 1);
+      const to = tr.changes.mapPos(value.to, -1);
+      value = to > from ? { from, to } : null;
+    }
+    for (const e of tr.effects) if (e.is(setChecking)) value = e.value;
+    return value;
+  },
+  provide: (field) => EditorView.decorations.from(field, (value) => (value ? Decoration.set([checkingMark.range(value.from, value.to)]) : Decoration.none)),
+});
+
+/** The name the word's mark goes by in `CSS.highlights`, styled with `::highlight(mde-spell-pass)`. */
+const HIGHLIGHT = "mde-spell-pass";
+
+/** The outermost widget (a drawn table, cards, …) that the note at `pos` is drawn as, if it is. */
+function widgetAt(view: EditorView, pos: number): HTMLElement | null {
+  let best: HTMLElement | null = null;
+  let bestFrom = -1;
+  for (const dom of Array.from(view.contentDOM.querySelectorAll<HTMLElement>('[contenteditable="false"]'))) {
+    const outer = dom.parentElement?.closest('[contenteditable="false"]');
+    if (outer && view.contentDOM.contains(outer)) continue;
+    let from: number;
+    try {
+      from = view.posAtDOM(dom);
+    } catch {
+      continue;
+    }
+    if (from <= pos && from > bestFrom) {
+      best = dom;
+      bestFrom = from;
+    }
+  }
+  return best;
+}
+
+const BLOCKS = "p, div, td, th, li, dt, dd, h1, h2, h3, h4, h5, h6, blockquote, figcaption, pre";
+
+/** Whether `node` is drawn (not inside something hidden, or a button or menu). */
+function shown(node: Text): boolean {
+  const parent = node.parentElement;
+  if (!parent || parent.closest("button, [aria-hidden='true']")) return false;
+  return typeof parent.checkVisibility === "function" ? parent.checkVisibility() : true;
+}
+
+/**
+ * The `nth` (from 0) place `word` stands on its own in `root`'s drawn text,
+ * as a DOM range; the last one if there are fewer.
+ */
+export function findWordRange(root: HTMLElement, word: string, nth: number): Range | null {
+  const walker = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes: { node: Text; start: number }[] = [];
+  let text = "";
+  let block: Element | null = null;
+  for (let n = walker.nextNode() as Text | null; n; n = walker.nextNode() as Text | null) {
+    if (!n.data || !shown(n)) continue;
+    // Text in different cells or paragraphs doesn't run together into one word.
+    const inBlock = n.parentElement?.closest(BLOCKS) ?? null;
+    if (nodes.length && inBlock !== block) text += "\n";
+    block = inBlock;
+    nodes.push({ node: n, start: text.length });
+    text += n.data;
+  }
+  const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, "gu");
+  let match: RegExpExecArray | null = null;
+  let found: RegExpExecArray | null = null;
+  for (let i = 0; (match = re.exec(text)); i++) {
+    found = match;
+    if (i >= nth) break;
+  }
+  if (!found) return null;
+  const at = (offset: number, end: boolean) => {
+    // The text node the offset falls in (at a boundary, the one before for an end, the one after for a start).
+    let index = nodes.length - 1;
+    for (let i = 0; i < nodes.length; i++) {
+      const after = nodes[i].start + nodes[i].node.data.length;
+      if (end ? offset <= after : offset < after) {
+        index = i;
+        break;
+      }
+    }
+    return { node: nodes[index].node, offset: offset - nodes[index].start };
+  };
+  const start = at(found.index, false);
+  const end = at(found.index + found[0].length, true);
+  const range = root.ownerDocument.createRange();
+  range.setStart(start.node, start.offset);
+  range.setEnd(end.node, end.offset);
+  return range;
 }
 
 // ---------------------------------------------------------------- finding words
@@ -87,6 +192,11 @@ class SpellPass {
   private run = 0;
   private heading: HTMLElement;
   private body: HTMLElement;
+  /** The word last scrolled to inside a drawing, so redrawing doesn't scroll again. */
+  private scrolledTo: Word | null = null;
+  private frame = 0;
+  /** The table cell the word is in, outlined. */
+  private cell: HTMLElement | null = null;
 
   constructor(
     private view: EditorView,
@@ -129,11 +239,65 @@ class SpellPass {
     this.view.dispatch({
       selection: { anchor: word.from, head: word.to },
       // Clear of the dialog, which sits at the bottom of the window.
-      effects: EditorView.scrollIntoView(word.from, { y: "center" }),
+      effects: [setChecking.of({ from: word.from, to: word.to }), EditorView.scrollIntoView(word.from, { y: "center" })],
     });
+    this.scrolledTo = null;
+    this.markLater();
     this.show(word, null);
     const suggestions = await speller.suggest(word.word);
     if (run === this.run && this.current === word) this.show(word, suggestions);
+  }
+
+  /** Marks the word in a drawing once the editor has drawn (and scrolled to) it. */
+  private markLater() {
+    cancelAnimationFrame(this.frame);
+    this.frame = requestAnimationFrame(() => this.markInWidget());
+  }
+
+  /**
+   * A word in a table or another drawing isn't text the editor can mark, so
+   * it's found in the drawing: the same word, as many times along from the
+   * drawing's start as it is in the note, highlighted with `CSS.highlights`,
+   * its cell outlined, and scrolled to the middle of the window.
+   */
+  private markInWidget() {
+    this.unmarkWidget();
+    const view = this.view;
+    const current = view.state.field(checking, false);
+    const word = this.current;
+    if (!current || !word || !this.dom.isConnected || view.contentDOM.querySelector(".cm-spell-pass-current")) return;
+    const widget = widgetAt(view, current.from);
+    if (!widget) return;
+    let start: number;
+    try {
+      start = view.posAtDOM(widget);
+    } catch {
+      return;
+    }
+    const nth = words(view.state, start, current.from).filter((w) => w.word === word.word && w.to <= current.from).length;
+    const range = findWordRange(widget, word.word, nth);
+    if (!range) return;
+    const node = range.startContainer.parentElement;
+    this.cell = node?.closest<HTMLElement>("td, th") ?? null;
+    this.cell?.classList.add("cm-spell-pass-cell");
+    const registry = typeof CSS !== "undefined" ? CSS.highlights : undefined;
+    if (registry && typeof Highlight === "function") registry.set(HIGHLIGHT, new Highlight(range));
+    if (this.scrolledTo !== word) {
+      this.scrolledTo = word;
+      (this.cell ?? node)?.scrollIntoView({ block: "center", inline: "nearest" });
+    }
+  }
+
+  private unmarkWidget() {
+    this.cell?.classList.remove("cm-spell-pass-cell");
+    this.cell = null;
+    if (typeof CSS !== "undefined") CSS.highlights?.delete(HIGHLIGHT);
+  }
+
+  private unmark() {
+    cancelAnimationFrame(this.frame);
+    this.unmarkWidget();
+    if (this.view.state.field(checking, false)) this.view.dispatch({ effects: setChecking.of(null) });
   }
 
   private message(text: string) {
@@ -142,6 +306,7 @@ class SpellPass {
 
   private done() {
     this.current = null;
+    this.unmark();
     this.message("The spelling check is complete.");
     const close = button("Close", "spell-pass-btn primary", () => this.close());
     this.body.append(el("div", "spell-pass-actions"));
@@ -274,6 +439,8 @@ class SpellPass {
 
   /** Keeps the current word's place as the note changes. */
   update(u: ViewUpdate) {
+    // A drawing redrawn (an edit, or scrolled back into view) loses the mark.
+    if (this.current && (u.docChanged || u.viewportChanged || u.geometryChanged)) this.markLater();
     if (!u.docChanged || !this.current) return;
     const from = u.changes.mapPos(this.current.from, 1);
     const to = u.changes.mapPos(this.current.to, -1);
@@ -288,6 +455,12 @@ class SpellPass {
   close(refocus = true) {
     if (!this.dom.isConnected) return;
     this.run++;
+    // Not while the editor is being torn down (or reconfigured), when it can't take a transaction.
+    if (refocus) this.unmark();
+    else {
+      cancelAnimationFrame(this.frame);
+      this.unmarkWidget();
+    }
     this.dom.remove();
     this.onClose();
     if (refocus && this.view.dom.isConnected) this.view.focus();
@@ -383,5 +556,5 @@ export function checkSpelling(view: EditorView): boolean {
 
 /** The spelling check, its F7 key, the Ignore-once list and the whole-note count. Part of `proofing()`. */
 export function spellPass(speller: (language: ProofLanguage) => SpellChecker): Extension {
-  return [spellerSource.of(speller), ignoredOnce, spellCount, plugin, ViewPlugin.define((view) => new SpellCounter(view)), keymap.of([{ key: "F7", run: checkSpelling, preventDefault: true }])];
+  return [spellerSource.of(speller), ignoredOnce, checking, spellCount, plugin, ViewPlugin.define((view) => new SpellCounter(view)), keymap.of([{ key: "F7", run: checkSpelling, preventDefault: true }])];
 }

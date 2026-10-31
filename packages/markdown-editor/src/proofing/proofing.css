@@ -319,3 +319,21 @@
     width: auto;
   }
 }
+
+/* The word the spelling check is on, marked in the note while the dialog has the focus. */
+.cm-spell-pass-current {
+  background: var(--spell-pass-mark, rgb(255 196 0 / 0.45));
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px var(--spell-pass-mark-edge, rgb(214 150 0 / 0.9));
+}
+
+/* The same, for a word in a table or other drawing (CSS Custom Highlight API), and its cell outlined. */
+::highlight(mde-spell-pass) {
+  background-color: var(--spell-pass-mark, rgb(255 196 0 / 0.45));
+}
+
+.cm-editor .cm-md-table :is(td, th).cm-spell-pass-cell,
+.cm-spell-pass-cell {
+  outline: 2px solid var(--spell-pass-mark-edge, rgb(214 150 0 / 0.9));
+  outline-offset: -2px;
+}
