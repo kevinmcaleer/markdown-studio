@@ -7,16 +7,21 @@
 // selected. Done hands the host the layer document and a PNG of the page
 // with the document stored inside it.
 
-import { ActiveSelection, Canvas, FabricImage, FabricObject, Group, Textbox, type TPointerEventInfo, type TPointerEvent } from "fabric";
+import {
+  ActiveSelection, Canvas, Control, FabricImage, FabricObject, Group, Point, Polygon, Textbox, util, type TPointerEventInfo, type TPointerEvent,
+} from "fabric";
+import { Connector, type ConnectorEnd } from "./connector";
 import { blankDoc, clampSide, embedDoc, defaultFetch, MAX_SIDE, MIN_SIDE, normalizeDoc, SIZES, type LayersDoc } from "./doc";
 import {
-  ACCENT, badge, FONTS, INK, isLine, isText, kindOf, LINES, makeShape, makeText, newId, PALETTE, SHAPES, TEMPLATES, TEXT_STYLES, type Point,
+  ACCENT, badge, boundTo, canHoldText, FONTS, INK, isLine, isText, kindOf, LINES, makeShape, makeText, newId, PALETTE, SHAPES, shapeText, TEMPLATES, TEXT_STYLES,
+  type Point as XY,
 } from "./elements";
+import { boxSides, dist, distToSegment, facingSide, polygonSides, SIDES, snapAngle, type Pt, type Side } from "./geometry";
 import { icon } from "./icons";
 import { snap, type Box, type Guide } from "./snap";
 import css from "./layers.css?inline";
 
-FabricObject.customProperties = ["name", "layerId", "layerLocked", "badge"];
+FabricObject.customProperties = ["name", "layerId", "layerLocked", "badge", "boundTo"];
 // Corner handles that are easier to grab, and a selection colour that reads on any picture.
 Object.assign(FabricObject.ownDefaults, {
   borderColor: "#8b3dff",
@@ -293,8 +298,337 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     const isLocked = locked(o);
     o.set({ selectable: !isLocked && o.visible !== false, evented: !isLocked && o.visible !== false });
     if (o.type === "image") o.setControlsVisibility({ mt: false, mb: false, ml: false, mr: false });
-    if (isLine(o) && o.type === "line") o.setControlsVisibility({ mt: false, mb: false });
+    if (o instanceof Connector) {
+      // A line is changed by its two ends, which snap to other layers.
+      o.controls = lineControls;
+      o.hasBorders = false;
+      o.objectCaching = false;
+      o.setCoords();
+    }
+    // A shape's own text goes where the shape goes; it's changed through the shape.
+    if (boundTo(o)) o.set({ selectable: false, evented: false, lockMovementX: true, lockMovementY: true, hasControls: false });
   }
+
+  // ------------------------------------------------------------ connectors and shape text
+
+  const idOf = (o: FabricObject) => String((o as FabricObject & { layerId?: string }).layerId || "");
+  const byId = (id: string) => (id ? objects().find(o => idOf(o) === id) : undefined);
+  const textFor = (shape: FabricObject) => {
+    const id = idOf(shape);
+    return id ? (objects().find(o => boundTo(o) === id) as Textbox | undefined) : undefined;
+  };
+  /** The text a selection's text tools change: a text box's own, or a shape's. */
+  const textOf = (o: FabricObject | undefined): Textbox | undefined => (!o ? undefined : isText(o) ? o : canHoldText(o) ? textFor(o) : undefined);
+  const textTargets = () => selected().map(textOf).filter((t): t is Textbox => !!t);
+  /** Whether lines can be fastened to `o`. */
+  const connectable = (o: FabricObject) => o.visible !== false && !isLine(o) && !boundTo(o) && !locked(o);
+  const centreOf = (o: FabricObject) => new Point(0, 0).transform(o.calcTransformMatrix());
+
+  /** A layer's snap points on the page: the middle of each side, on the outline for a polygon. */
+  function anchorsOf(o: FabricObject): Record<Side, Point> {
+    let local: Record<Side, Pt>;
+    if (o instanceof Polygon) {
+      const off = o.pathOffset;
+      local = polygonSides(o.points.map(p => ({ x: p.x - off.x, y: p.y - off.y })));
+    } else {
+      const d = o._getNonTransformedDimensions();
+      local = boxSides(d.x, d.y);
+    }
+    const m = o.calcTransformMatrix();
+    const out = {} as Record<Side, Point>;
+    for (const side of SIDES) out[side] = new Point(local[side].x, local[side].y).transform(m);
+    return out;
+  }
+
+  /** Where a fastened end sits now, aiming an "auto" end at `toward`; null when what it's fastened to is gone or hidden. */
+  function endAt(end: ConnectorEnd | null | undefined, toward: Pt): Point | null {
+    const t = end && byId(end.id);
+    if (!end || !t || t.visible === false) return null;
+    const a = anchorsOf(t);
+    return a[end.side === "auto" ? facingSide(a, toward) : end.side] || null;
+  }
+
+  function syncConnector(c: Connector): void {
+    const from = c.connFrom;
+    const to = c.connTo;
+    if (!from && !to) return;
+    const [a, b] = c.ends();
+    // An end fastened to a side is settled first, so an "auto" end can face it.
+    const fixed = (end: ConnectorEnd | null | undefined) => (end && end.side !== "auto" ? endAt(end, a) : null);
+    const aim = (end: ConnectorEnd | null | undefined, free: Point) => {
+      const t = end && byId(end.id);
+      return t ? centreOf(t) : free;
+    };
+    let na = fixed(from);
+    let nb = fixed(to);
+    if (!na) na = endAt(from, nb || aim(to, b)) || a;
+    if (!nb) nb = endAt(to, na) || b;
+    if (dist(na, a) > 0.01 || dist(nb, b) > 0.01) c.setEnds(na, nb);
+  }
+
+  function syncText(t: Textbox): void {
+    const shape = byId(boundTo(t));
+    if (!shape) return;
+    const a = anchorsOf(shape);
+    const round = shape.type === "circle" || shape.type === "ellipse" || shape instanceof Polygon;
+    const width = Math.max(30, dist(a.left, a.right) * (round ? 0.72 : 0.86));
+    const c = centreOf(shape);
+    t.set({ originX: "center", originY: "center", left: c.x, top: c.y, angle: shape.getTotalAngle(), width, visible: shape.visible !== false });
+    t.setCoords();
+    // Always just in front of its shape.
+    const list = objects();
+    const si = list.indexOf(shape);
+    if (list.indexOf(t) < si) canvas.moveObjectTo(t, si);
+  }
+
+  /** Brings every line and shape text up to date with what it's fastened to. Things inside the selection move with it. */
+  function follow(): void {
+    for (const o of objects()) {
+      if (o.group) continue;
+      if (o instanceof Connector) syncConnector(o);
+      else if (boundTo(o)) syncText(o as Textbox);
+    }
+  }
+
+  /** What a line end dropped at `p` fastens to: a snap point under the pointer, or else the side of the shape under it that faces `other`. */
+  function findSnap(p: Point, exclude: FabricObject[], other: Pt): { shape: FabricObject; side: Side | "auto"; at: Point } | null {
+    const list = objects().filter(o => !exclude.includes(o) && connectable(o));
+    let best: { shape: FabricObject; side: Side; at: Point } | null = null;
+    let bestD = 14 / zoom;
+    for (const o of list) {
+      const a = anchorsOf(o);
+      for (const side of SIDES) {
+        const d = dist(a[side], p);
+        if (d <= bestD) {
+          bestD = d;
+          best = { shape: o, side, at: a[side] };
+        }
+      }
+    }
+    if (best) return best;
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (!list[i].containsPoint(p)) continue;
+      const a = anchorsOf(list[i]);
+      return { shape: list[i], side: "auto", at: a[facingSide(a, other)] };
+    }
+    return null;
+  }
+
+  /** While a line end is being placed: where the pointer is and what it would fasten to (drawn by the guides). */
+  let linking: { pointer: Point; hit: { shape: FabricObject; at: Point } | null; exclude: FabricObject[] } | null = null;
+  let drawing = false;
+
+  function placeEnd(c: Connector, i: 0 | 1, pointer: Point, e: { altKey?: boolean; shiftKey?: boolean }, exclude: FabricObject[]): void {
+    const ends = c.ends();
+    const other = ends[1 - i];
+    const hit = e.altKey ? null : findSnap(pointer, [c, ...exclude], other);
+    const p = hit ? hit.at : e.shiftKey ? snapAngle(other, pointer) : pointer;
+    const end = hit ? { id: idOf(hit.shape), side: hit.side } : null;
+    if (i) c.connTo = end;
+    else c.connFrom = end;
+    linking = { pointer, hit, exclude: [c, ...exclude] };
+    c.setEnds(i ? other : p, i ? p : other);
+    // The other end may be "auto" and want to face this one now.
+    syncConnector(c);
+  }
+
+  function endControl(i: 0 | 1): Control {
+    return new Control({
+      cursorStyle: "crosshair",
+      actionName: "lineEnd",
+      positionHandler: (_dim, _m, obj) => {
+        const p = (obj as Connector).calcLinePoints();
+        return new Point(i ? p.x2 : p.x1, i ? p.y2 : p.y1).transform(util.multiplyTransformMatrices(obj.getViewportTransform(), obj.calcTransformMatrix()));
+      },
+      actionHandler: (e, transform, x, y) => {
+        const c = transform.target as Connector;
+        if (c.group) return false;
+        placeEnd(c, i, new Point(x, y), e as MouseEvent, []);
+        floatBar.hidden = true;
+        return true;
+      },
+    });
+  }
+  const lineControls = { p1: endControl(0), p2: endControl(1) };
+
+  function editShapeText(shape: FabricObject): void {
+    let t = textFor(shape);
+    if (!t) {
+      t = shapeText("", textColourOn(shape));
+      (t as Textbox & { boundTo?: string }).boundTo = idOf(shape);
+      prepare(t);
+      canvas.insertAt(objects().indexOf(shape) + 1, t);
+      syncText(t);
+    }
+    t.set({ selectable: true, evented: true });
+    canvas.setActiveObject(t);
+    t.enterEditing();
+    t.selectAll();
+    canvas.requestRenderAll();
+  }
+
+  /** Dark text on a light shape, white on a dark one. */
+  function textColourOn(shape: FabricObject): string {
+    const c = String((typeof shape.fill === "string" && shape.fill) || "");
+    const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(c);
+    if (!m) return INK;
+    const [r, g, b] = [m[1], m[2], m[3]].map(h => parseInt(h, 16) / 255);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.55 ? "#ffffff" : INK;
+  }
+
+  /** Leaves a shape's text and selects the shape again. */
+  function leaveText(t: Textbox): void {
+    t.exitEditing();
+    const shape = boundTo(t) && byId(boundTo(t));
+    if (shape && objects().includes(t)) {
+      prepare(t);
+      canvas.setActiveObject(shape);
+    } else if (objects().includes(t)) canvas.setActiveObject(t);
+    canvas.requestRenderAll();
+  }
+
+  // The connect handles: a + just outside the middle of each side of the layer under the pointer.
+  // Drag one to draw an arrow to another layer, or click it for a copy of the shape, joined on.
+  let hover: FabricObject | null = null;
+  const HANDLE = 26;
+  function handlesOf(o: FabricObject): { side: Side; at: Point }[] {
+    const a = anchorsOf(o);
+    const c = centreOf(o);
+    // None under the floating bar.
+    const fr = floatBar.hidden ? null : floatBar.getBoundingClientRect();
+    const br = board.getBoundingClientRect();
+    return SIDES.map(side => {
+      const v = a[side];
+      const d = dist(v, c) || 1;
+      const k = HANDLE / zoom;
+      return { side, at: new Point(v.x + ((v.x - c.x) / d) * k, v.y + ((v.y - c.y) / d) * k) };
+    }).filter(h => {
+      if (!fr) return true;
+      const x = br.left + h.at.x * zoom;
+      const y = br.top + h.at.y * zoom;
+      return !(x > fr.left - 10 && x < fr.right + 10 && y > fr.top - 10 && y < fr.bottom + 10);
+    });
+  }
+  const handleAt = (p: Point) => (hover ? handlesOf(hover).find(h => dist(h.at, p) <= 11 / zoom) : undefined);
+
+  function updateHover(p: Point | null): void {
+    let next: FabricObject | null = null;
+    const editing = (active() as Textbox | undefined)?.isEditing;
+    if (p && !editing && !drawing) {
+      const list = objects().filter(connectable);
+      for (let i = list.length - 1; i >= 0 && !next; i--) if (list[i].containsPoint(p)) next = list[i];
+      // Moving out towards a handle keeps it showing.
+      if (!next && hover && list.includes(hover)) {
+        const b = hover.getBoundingRect();
+        const m = (HANDLE + 14) / zoom;
+        if (p.x > b.left - m && p.x < b.left + b.width + m && p.y > b.top - m && p.y < b.top + b.height + m) next = hover;
+      }
+    }
+    if (next !== hover) {
+      hover = next;
+      canvas.requestRenderAll();
+    }
+    board.classList.toggle("lyr-on-handle", !!(p && handleAt(p)));
+  }
+  canvas.on("mouse:move", e => {
+    if ((e.e as MouseEvent).buttons || canvas._currentTransform) return;
+    updateHover(canvas.getScenePoint(e.e));
+  });
+  board.addEventListener("pointerleave", () => {
+    if (!drawing) updateHover(null);
+  });
+
+  board.addEventListener(
+    "pointerdown",
+    e => {
+      if (e.button !== 0 || !hover || floatBar.contains(e.target as Node)) return;
+      const p = new Point(pointFromEvent(e));
+      const h = handleAt(p);
+      if (!h) return;
+      e.preventDefault();
+      e.stopPropagation();
+      root.focus({ preventScroll: true });
+      closePop();
+      startLine(hover, h.side, p);
+    },
+    true,
+  );
+
+  /** Draws a new arrow out of `shape`'s `side`; a click without a drag adds a joined-on copy of the shape instead. */
+  function startLine(shape: FabricObject, side: Side, down: Point): void {
+    drawing = true;
+    const from = anchorsOf(shape)[side];
+    const c = makeShape("arrow", { x: 0, y: 0 }, lastColor.line || INK) as Connector;
+    c.connFrom = { id: idOf(shape), side };
+    c.setEnds(from, from);
+    prepare(c);
+    let added = false;
+    const move = (ev: PointerEvent) => {
+      const p = new Point(pointFromEvent(ev));
+      if (!added) {
+        if (dist(p, down) < 6 / zoom) return;
+        canvas.discardActiveObject();
+        canvas.add(c);
+        added = true;
+      }
+      placeEnd(c, 1, p, ev, [shape]);
+      canvas.requestRenderAll();
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      drawing = false;
+      linking = null;
+      if (!added) {
+        void addJoined(shape, side);
+        return;
+      }
+      const [a, b] = c.ends();
+      if (dist(a, b) < 12 / zoom) canvas.remove(c);
+      else canvas.setActiveObject(c);
+      canvas.requestRenderAll();
+      changed();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+  }
+
+  const OPPOSITE: Record<Side, Side> = { top: "bottom", bottom: "top", left: "right", right: "left" };
+  /** A copy of `shape` (without its text) beside its `side`, with an arrow to it. */
+  async function addJoined(shape: FabricObject, side: Side): Promise<void> {
+    const copy = await shape.clone();
+    (copy as FabricObject & { layerId?: string }).layerId = newId();
+    (copy as FabricObject & { layerLocked?: boolean }).layerLocked = false;
+    const b = shape.getBoundingRect();
+    const gap = 120;
+    const c = centreOf(shape);
+    const dx = side === "left" ? -(b.width + gap) : side === "right" ? b.width + gap : 0;
+    const dy = side === "top" ? -(b.height + gap) : side === "bottom" ? b.height + gap : 0;
+    const at = new Point(Math.max(b.width / 2, Math.min(W - b.width / 2, c.x + dx)), Math.max(b.height / 2, Math.min(H - b.height / 2, c.y + dy)));
+    copy.setPositionByOrigin(at, "center", "center");
+    prepare(copy);
+    const line = makeShape("arrow", { x: 0, y: 0 }, lastColor.line || INK) as Connector;
+    line.connFrom = { id: idOf(shape), side };
+    line.connTo = { id: idOf(copy), side: OPPOSITE[side] };
+    prepare(line);
+    canvas.add(copy);
+    canvas.add(line);
+    follow();
+    canvas.setActiveObject(copy);
+    canvas.requestRenderAll();
+  }
+
+  // Lines are picked by the stroke, not the box around them, so a long diagonal doesn't cover what's under it.
+  const inArea = (canvas as unknown as { _pointIsInObjectSelectionArea(o: FabricObject, p: Point): boolean })._pointIsInObjectSelectionArea.bind(canvas);
+  (canvas as unknown as { _pointIsInObjectSelectionArea(o: FabricObject, p: Point): boolean })._pointIsInObjectSelectionArea = (o, p) => {
+    if (o instanceof Connector && !o.group) {
+      const [a, b] = o.ends();
+      return distToSegment(p, a, b) <= (Number(o.strokeWidth) || 1) / 2 + 8 / zoom;
+    }
+    return inArea(o, p);
+  };
 
   function getDoc(): LayersDoc {
     const json = canvas.toObject() as { objects: Record<string, unknown>[] };
@@ -313,7 +647,8 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
   const snapshot = () => JSON.stringify(getDoc());
 
   function changed(): void {
-    if (restoring) return;
+    if (restoring || drawing) return;
+    follow();
     clearTimeout(historyTimer);
     historyTimer = window.setTimeout(commit, 150);
     renderLayersList();
@@ -343,6 +678,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       await canvas.loadFromJSON({ objects: doc.objects });
       canvas.backgroundColor = "";
       objects().forEach(prepare);
+      follow();
     } finally {
       restoring = false;
     }
@@ -371,13 +707,13 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
 
   // ------------------------------------------------------------ adding
 
-  function centre(w = 0, h = 0): Point {
+  function centre(w = 0, h = 0): XY {
     // A little offset each time, so repeated adds don't stack exactly.
     const n = objects().length % 6;
     return { x: (W - w) / 2 + n * 12, y: (H - h) / 2 + n * 12 };
   }
 
-  function add(o: FabricObject, at?: Point, { select = true } = {}): void {
+  function add(o: FabricObject, at?: XY, { select = true } = {}): void {
     prepare(o);
     const box = o.getBoundingRect();
     // Big things come in at no more than 70% of the page.
@@ -397,7 +733,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     return Math.max(0, ...ns) + 1;
   }
 
-  function addKind(kind: string, at?: Point): void {
+  function addKind(kind: string, at?: XY): void {
     if (kind === "badge") {
       add(badge(nextBadge(), { x: 0, y: 0 }, lastColor.badge || ACCENT), at);
       return;
@@ -408,7 +744,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
   const isLineKind = (k: string) => LINES.some(l => l.id === k);
   const lastColor: Record<string, string> = {};
 
-  function addTextStyle(id: string, at?: Point): void {
+  function addTextStyle(id: string, at?: XY): void {
     const style = TEXT_STYLES.find(s => s.id === id);
     if (!style) return;
     const t = makeText(style, { x: 0, y: 0 });
@@ -417,7 +753,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     t.selectAll();
   }
 
-  async function addPicture(source: Blob | string, at?: Point, name = "Picture"): Promise<FabricImage | null> {
+  async function addPicture(source: Blob | string, at?: XY, name = "Picture"): Promise<FabricImage | null> {
     status("Adding the picture…", false, true);
     try {
       const blob = typeof source === "string" ? (source.startsWith("data:") ? await (await fetch(source)).blob() : await fetchImage(source)) : source;
@@ -463,23 +799,54 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     const sel = selected().filter(o => !locked(o));
     if (!sel.length) return;
     canvas.discardActiveObject();
-    sel.forEach(o => canvas.remove(o));
+    // A shape takes its text with it; lines fastened to it stay where they are.
+    const gone = new Set(sel);
+    sel.forEach(o => {
+      const t = textFor(o);
+      if (t) gone.add(t);
+    });
+    const ids = new Set([...gone].map(idOf));
+    for (const o of objects()) {
+      if (!(o instanceof Connector)) continue;
+      if (o.connFrom && ids.has(o.connFrom.id)) o.connFrom = null;
+      if (o.connTo && ids.has(o.connTo.id)) o.connTo = null;
+    }
+    gone.forEach(o => canvas.remove(o));
     canvas.requestRenderAll();
   }
 
   let clipboard: FabricObject[] = [];
   async function cloneAll(list: FabricObject[], offset: number): Promise<FabricObject[]> {
-    const out: FabricObject[] = [];
+    // Shapes bring their text. Copied lines stay fastened only to copied layers.
+    const all = [...list];
     for (const o of list) {
+      const t = canvas.contains(o) ? textFor(o) : undefined;
+      if (t && !all.includes(t)) all.push(t);
+    }
+    const out: FabricObject[] = [];
+    const ids = new Map<string, string>();
+    for (const o of all) {
       const c = await o.clone();
       c.set({ left: (c.left || 0) + offset, top: (c.top || 0) + offset });
-      (c as FabricObject & { layerId?: string }).layerId = newId();
+      const id = newId();
+      ids.set(idOf(o), id);
+      (c as FabricObject & { layerId?: string }).layerId = id;
       (c as FabricObject & { layerLocked?: boolean }).layerLocked = false;
       out.push(c);
+    }
+    const remap = (end: ConnectorEnd | null | undefined) => (end && ids.has(end.id) ? { id: ids.get(end.id)!, side: end.side } : null);
+    for (const c of out) {
+      if (c instanceof Connector) {
+        c.connFrom = remap(c.connFrom);
+        c.connTo = remap(c.connTo);
+      }
+      const b = c as FabricObject & { boundTo?: string };
+      if (b.boundTo) b.boundTo = ids.get(b.boundTo) || undefined;
     }
     return out;
   }
   function selectAll(list: FabricObject[]): void {
+    list = list.filter(o => !boundTo(o));
     canvas.discardActiveObject();
     if (list.length === 1) canvas.setActiveObject(list[0]);
     else if (list.length) canvas.setActiveObject(new ActiveSelection(list, { canvas }));
@@ -571,8 +938,12 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
   }
 
   function group(): void {
-    const list = selected();
+    const list = [...selected()];
     if (list.length < 2) return;
+    for (const o of selected()) {
+      const t = textFor(o);
+      if (t && !list.includes(t)) list.push(t);
+    }
     canvas.discardActiveObject();
     list.forEach(o => canvas.remove(o));
     const g = new Group(list);
@@ -617,7 +988,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       return;
     }
     const others: Box[] = objects()
-      .filter(o => o !== t && o.visible !== false && !(t instanceof ActiveSelection && t.contains(o)))
+      .filter(o => o !== t && o.visible !== false && !(t instanceof ActiveSelection && t.contains(o)) && !(o instanceof Connector) && !boundTo(o))
       .map(o => o.getBoundingRect());
     const r = snap(t.getBoundingRect(), { left: 0, top: 0, width: W, height: H }, others, 7 / zoom);
     if (r.dx || r.dy) {
@@ -626,8 +997,19 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     }
     guides = r.guides;
   });
+  // Lines and shape text keep up while things move. Moving a line itself unfastens it.
+  canvas.on("object:moving", e => {
+    if (e.target instanceof Connector) {
+      e.target.connFrom = null;
+      e.target.connTo = null;
+    }
+    follow();
+  });
+  for (const ev of ["object:scaling", "object:rotating", "object:resizing", "object:skewing"] as const) canvas.on(ev, () => follow());
   canvas.on("after:render", ({ ctx }) => {
-    if (!guides.length || !ctx) return;
+    if (!ctx) return;
+    drawConnectHints(ctx);
+    if (!guides.length) return;
     const r = canvas.getRetinaScaling();
     ctx.save();
     ctx.setTransform(r * zoom, 0, 0, r * zoom, 0, 0);
@@ -647,7 +1029,61 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     ctx.stroke();
     ctx.restore();
   });
+  /** The snap points near a line end being placed, and the + handles of the layer under the pointer. */
+  function drawConnectHints(ctx: CanvasRenderingContext2D): void {
+    const showHandles = hover && !drawing && !linking && objects().includes(hover) && !canvas._currentTransform;
+    if (!linking && !showHandles) return;
+    const r = canvas.getRetinaScaling();
+    ctx.save();
+    ctx.setTransform(r * zoom, 0, 0, r * zoom, 0, 0);
+    const u = 1 / zoom;
+    if (linking) {
+      const near = objects().filter(o => {
+        if (linking!.exclude.includes(o) || !connectable(o)) return false;
+        const b = o.getBoundingRect();
+        const m = 60 * u;
+        const p = linking!.pointer;
+        return p.x > b.left - m && p.x < b.left + b.width + m && p.y > b.top - m && p.y < b.top + b.height + m;
+      });
+      for (const o of near) {
+        const a = anchorsOf(o);
+        for (const side of SIDES) {
+          const on = !!linking.hit && dist(linking.hit.at, a[side]) < 0.01;
+          ctx.beginPath();
+          ctx.arc(a[side].x, a[side].y, (on ? 7 : 5) * u, 0, Math.PI * 2);
+          ctx.fillStyle = on ? "#8b3dff" : "#ffffff";
+          ctx.strokeStyle = "#8b3dff";
+          ctx.lineWidth = 2 * u;
+          ctx.fill();
+          ctx.stroke();
+        }
+      }
+    }
+    if (showHandles) {
+      for (const h of handlesOf(hover!)) {
+        ctx.beginPath();
+        ctx.arc(h.at.x, h.at.y, 9 * u, 0, Math.PI * 2);
+        ctx.fillStyle = "#8b3dff";
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(h.at.x - 4.5 * u, h.at.y);
+        ctx.lineTo(h.at.x + 4.5 * u, h.at.y);
+        ctx.moveTo(h.at.x, h.at.y - 4.5 * u);
+        ctx.lineTo(h.at.x, h.at.y + 4.5 * u);
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 2 * u;
+        ctx.lineCap = "round";
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
   canvas.on("mouse:up", () => {
+    if (linking) {
+      linking = null;
+      canvas.requestRenderAll();
+    }
     if (guides.length) {
       guides = [];
       canvas.requestRenderAll();
@@ -703,24 +1139,9 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       return;
     }
     let html = "";
-    const t = o as Textbox;
     if (isText(o)) {
-      const font = FONTS.find(([, v]) => v === t.fontFamily)?.[1] || t.fontFamily;
-      html += `
-        <select class="lyr-select" data-prop="fontFamily" aria-label="Font">
-          ${FONTS.map(([l, v]) => `<option value="${esc(v)}"${v === font ? " selected" : ""} style="font-family:${esc(v)}">${l}</option>`).join("")}
-        </select>
-        <span class="lyr-stepper">
-          <button type="button" class="lyr-btn" data-step="fontSize:-4" aria-label="Smaller">${icon("minus", 14)}</button>
-          <input class="lyr-num" type="number" min="6" max="600" data-prop="fontSize" value="${Math.round(Number(t.fontSize) * (t.scaleY || 1))}" aria-label="Font size">
-          <button type="button" class="lyr-btn" data-step="fontSize:4" aria-label="Bigger">${icon("plus", 14)}</button>
-        </span>
-        ${swatch("fill", String(t.fill || INK), "Text colour", "text")}
-        <button type="button" class="lyr-btn${Number(t.fontWeight) >= 600 || t.fontWeight === "bold" ? " lyr-on" : ""}" data-toggle="bold" title="Bold (Ctrl+B)" aria-label="Bold">${icon("bold")}</button>
-        <button type="button" class="lyr-btn${t.fontStyle === "italic" ? " lyr-on" : ""}" data-toggle="italic" title="Italic (Ctrl+I)" aria-label="Italic">${icon("italic")}</button>
-        <button type="button" class="lyr-btn${t.underline ? " lyr-on" : ""}" data-toggle="underline" title="Underline (Ctrl+U)" aria-label="Underline">${icon("underline")}</button>
-        <button type="button" class="lyr-btn" data-act="align-text" title="Alignment" aria-label="Alignment">${icon(t.textAlign === "center" ? "alignCenter" : t.textAlign === "right" ? "alignRight" : "alignLeft")}</button>
-        ${swatch("backgroundColor", String(t.backgroundColor || ""), "Highlight", "highlight")}`;
+      html += `${textTools(o, "fill")}
+        ${swatch("backgroundColor", String(o.backgroundColor || ""), "Highlight", "highlight")}`;
     } else if ((o as Group & { badge?: number }).badge) {
       const g = o as Group & { badge?: number };
       const circle = g.getObjects()[0];
@@ -744,6 +1165,9 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
         ${swatch("stroke", String(o.stroke || INK), "Colour")}
         ${borderWidth(o, "Thickness")}
         <button type="button" class="lyr-btn${o.strokeDashArray?.length ? " lyr-on" : ""}" data-toggle="dash" title="Dashed" aria-label="Dashed">${icon("dash")}</button>
+        ${o instanceof Connector ? `
+        <button type="button" class="lyr-btn${o.arrowStart ? " lyr-on" : ""}" data-toggle="arrowStart" title="Arrow at the start" aria-label="Arrow at the start">${icon("arrowStart")}</button>
+        <button type="button" class="lyr-btn${o.arrowEnd ? " lyr-on" : ""}" data-toggle="arrowEnd" title="Arrow at the end" aria-label="Arrow at the end">${icon("arrowEnd")}</button>` : ""}
         <button type="button" class="lyr-btn" data-act="flip-x" title="Flip direction" aria-label="Flip direction">${icon("flipH")}</button>`;
     } else if (!(o instanceof ActiveSelection) && !(o instanceof Group)) {
       html += `
@@ -752,6 +1176,12 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
         ${borderWidth(o)}
         <button type="button" class="lyr-btn${o.strokeDashArray?.length ? " lyr-on" : ""}" data-toggle="dash" title="Dashed border" aria-label="Dashed border">${icon("dash")}</button>
         ${o.type === "rect" ? cornerControl(o) : ""}`;
+      if (canHoldText(o)) {
+        const t = textFor(o);
+        html += t
+          ? `<span class="lyr-sep"></span>${textTools(t, "textFill")}`
+          : `<button type="button" class="lyr-btn" data-act="shape-text" title="Add text to the shape (Enter, or double-click it)">${icon("textInShape")}<span>Add text</span></button>`;
+      }
     } else {
       html += `<span class="lyr-label">${selected().length} selected</span>`;
     }
@@ -770,6 +1200,25 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     });
   }
   const radiusValue = (el: HTMLInputElement) => Math.max(0, Math.min(MAX_RADIUS, Math.round(Number(el.value)) || 0));
+
+  /** Font, size, colour, bold, italic, underline and alignment for the text box `t` (or a shape's text). */
+  function textTools(t: Textbox, colourProp: string): string {
+    const font = FONTS.find(([, v]) => v === t.fontFamily)?.[1] || t.fontFamily;
+    return `
+        <select class="lyr-select" data-prop="fontFamily" aria-label="Font">
+          ${FONTS.map(([l, v]) => `<option value="${esc(v)}"${v === font ? " selected" : ""} style="font-family:${esc(v)}">${l}</option>`).join("")}
+        </select>
+        <span class="lyr-stepper">
+          <button type="button" class="lyr-btn" data-step="fontSize:-4" aria-label="Smaller">${icon("minus", 14)}</button>
+          <input class="lyr-num" type="number" min="6" max="600" data-prop="fontSize" value="${Math.round(Number(t.fontSize) * (t.scaleY || 1))}" aria-label="Font size">
+          <button type="button" class="lyr-btn" data-step="fontSize:4" aria-label="Bigger">${icon("plus", 14)}</button>
+        </span>
+        ${swatch(colourProp, String(t.fill || INK), "Text colour", "text")}
+        <button type="button" class="lyr-btn${Number(t.fontWeight) >= 600 || t.fontWeight === "bold" ? " lyr-on" : ""}" data-toggle="bold" title="Bold (Ctrl+B)" aria-label="Bold">${icon("bold")}</button>
+        <button type="button" class="lyr-btn${t.fontStyle === "italic" ? " lyr-on" : ""}" data-toggle="italic" title="Italic (Ctrl+I)" aria-label="Italic">${icon("italic")}</button>
+        <button type="button" class="lyr-btn${t.underline ? " lyr-on" : ""}" data-toggle="underline" title="Underline (Ctrl+U)" aria-label="Underline">${icon("underline")}</button>
+        <button type="button" class="lyr-btn" data-act="align-text" title="Alignment" aria-label="Alignment">${icon(t.textAlign === "center" ? "alignCenter" : t.textAlign === "right" ? "alignRight" : "alignLeft")}</button>`;
+  }
 
   function borderWidth(o: FabricObject, label = "Border width"): string {
     return `<label class="lyr-inline" title="${label}"><input class="lyr-num" type="number" min="0" max="80" data-prop="strokeWidth" value="${Math.round(Number(o.strokeWidth) || 0)}" aria-label="${label}"></label>`;
@@ -812,17 +1261,22 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     if (el.dataset.pop) return openPop(el, el.dataset.pop);
     if (el.dataset.step && o) {
       const [prop, by] = el.dataset.step.split(":");
-      const t = o as Textbox;
+      const t = textOf(o);
+      if (!t) return;
       const size = Math.max(6, Math.round(Number(t.fontSize) * (t.scaleY || 1)) + Number(by));
       if (prop === "fontSize") applyFontSize(size);
       return;
     }
     if (el.dataset.badge && o) return setBadge(o, Number((o as Group & { badge?: number }).badge) + Number(el.dataset.badge));
     if (el.dataset.toggle && o) {
-      const t = o as Textbox;
-      if (el.dataset.toggle === "bold") apply({ fontWeight: Number(t.fontWeight) >= 600 || t.fontWeight === "bold" ? "400" : "700" });
-      if (el.dataset.toggle === "italic") apply({ fontStyle: t.fontStyle === "italic" ? "normal" : "italic" });
-      if (el.dataset.toggle === "underline") apply({ underline: !t.underline });
+      const t = textOf(o);
+      if (t && el.dataset.toggle === "bold") apply({ fontWeight: Number(t.fontWeight) >= 600 || t.fontWeight === "bold" ? "400" : "700" }, textTargets());
+      if (t && el.dataset.toggle === "italic") apply({ fontStyle: t.fontStyle === "italic" ? "normal" : "italic" }, textTargets());
+      if (t && el.dataset.toggle === "underline") apply({ underline: !t.underline }, textTargets());
+      if (o instanceof Connector && (el.dataset.toggle === "arrowStart" || el.dataset.toggle === "arrowEnd")) {
+        const key = el.dataset.toggle;
+        apply({ [key]: !o[key] }, selected().filter(x => x instanceof Connector));
+      }
       if (el.dataset.toggle === "dash") {
         const w = Math.max(2, Number(o.strokeWidth) || 4);
         apply({ strokeDashArray: o.strokeDashArray?.length ? null : [w * 3, w * 2.5] });
@@ -837,7 +1291,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     const prop = el.dataset.prop;
     const o = active();
     if (!prop || !o) return;
-    if (prop === "fontFamily") apply({ fontFamily: el.value });
+    if (prop === "fontFamily") apply({ fontFamily: el.value }, textTargets());
     if (prop === "fontSize") applyFontSize(Number(el.value));
     if (prop === "strokeWidth") {
       const w = Math.max(0, Number(el.value) || 0);
@@ -865,9 +1319,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
   function applyFontSize(size: number): void {
     const n = Math.max(6, Math.min(600, Math.round(size) || 12));
     // A scaled text box keeps its look: the size goes into fontSize with the scale taken out.
-    for (const o of selected()) {
-      if (!isText(o)) continue;
-      const t = o as Textbox;
+    for (const t of textTargets()) {
       const s = t.scaleY || 1;
       if (s !== 1) t.set({ width: (t.width || 0) * (t.scaleX || 1), scaleX: 1, scaleY: 1 });
       t.set({ fontSize: n });
@@ -914,6 +1366,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     if (prop === "page") return background;
     if (!o) return "";
     if (prop === "badgeFill") return String((o as Group).getObjects()[0]?.fill || "");
+    if (prop === "textFill") return String(textOf(o)?.fill || "");
     return String((o as unknown as Record<string, unknown>)[prop] || "");
   }
 
@@ -957,6 +1410,8 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       if (isLine(o)) lastColor.line = c;
     } else if (prop === "backgroundColor") {
       apply({ backgroundColor: c });
+    } else if (prop === "textFill") {
+      apply({ fill: c || INK }, textTargets());
     } else {
       apply({ [prop]: c });
       if (!isText(o)) lastColor.shape = c;
@@ -1175,8 +1630,9 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       if (!o) return;
       if (el.dataset.layerAct === "hide") return toggleHidden(o);
       if (el.dataset.layerAct === "lock") return toggleLock(o);
-      if (o.visible !== false && !locked(o)) {
-        canvas.setActiveObject(o);
+      const pick = (boundTo(o) && byId(boundTo(o))) || o;
+      if (pick.visible !== false && !locked(pick)) {
+        canvas.setActiveObject(pick);
         canvas.requestRenderAll();
       }
     }
@@ -1285,7 +1741,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
 
   // ------------------------------------------------------------ dropping and pasting
 
-  const pointFromEvent = (e: { clientX: number; clientY: number }): Point => {
+  const pointFromEvent = (e: { clientX: number; clientY: number }): XY => {
     const r = board.getBoundingClientRect();
     return { x: (e.clientX - r.left) / zoom, y: (e.clientY - r.top) / zoom };
   };
@@ -1375,10 +1831,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     }
     const t = active() as Textbox | undefined;
     if (t?.isEditing) {
-      if (e.key === "Escape") {
-        t.exitEditing();
-        canvas.requestRenderAll();
-      }
+      if (e.key === "Escape") leaveText(t);
       return;
     }
     if (isTyping(e.target)) {
@@ -1425,7 +1878,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       else group();
       return;
     }
-    if (mod && ["b", "i", "u"].includes(key) && isText(active())) {
+    if (mod && ["b", "i", "u"].includes(key) && textOf(active())) {
       e.preventDefault();
       const btn = contextBar.querySelector<HTMLElement>(`[data-toggle=${key === "b" ? "bold" : key === "i" ? "italic" : "underline"}]`);
       btn?.click();
@@ -1436,6 +1889,11 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     if (arrows[e.key] && active()) {
       e.preventDefault();
       nudge(...arrows[e.key]);
+      return;
+    }
+    if (e.key === "Enter" && !mod && canHoldText(active()) && !(active() instanceof ActiveSelection)) {
+      e.preventDefault();
+      editShapeText(active()!);
       return;
     }
     if (!mod && key === "t" && !e.altKey) {
@@ -1457,9 +1915,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     if (t?.isEditing && e.target === t.hiddenTextarea) {
       if (e.key === "Escape") {
         e.stopPropagation();
-        t.exitEditing();
-        canvas.setActiveObject(t);
-        canvas.requestRenderAll();
+        leaveText(t);
         root.focus({ preventScroll: true });
       } else if ((e.metaKey || e.ctrlKey) && (e.key === "s" || e.key === "Enter")) {
         e.preventDefault();
@@ -1539,14 +1995,27 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       case "ungroup": ungroup(); break;
       case "open-page": if (openPanel !== "page") showPanel("page"); break;
       case "align-text": {
-        if (!o) return;
+        const t = textOf(o);
+        if (!t) return;
         const order = ["left", "center", "right"];
-        const next = order[(order.indexOf(String((o as Textbox).textAlign || "left")) + 1) % 3];
-        apply({ textAlign: next });
+        const next = order[(order.indexOf(String(t.textAlign || "left")) + 1) % 3];
+        apply({ textAlign: next }, textTargets());
         renderContext();
         break;
       }
-      case "flip-x": if (o) apply({ flipX: !o.flipX }); break;
+      case "flip-x":
+        if (o instanceof Connector) {
+          // A line flips by swapping its ends, and what they're fastened to.
+          const [a, b] = o.ends();
+          const from = o.connFrom;
+          o.connFrom = o.connTo;
+          o.connTo = from;
+          o.setEnds(b, a);
+          canvas.requestRenderAll();
+          canvas.fire("object:modified", { target: o });
+        } else if (o) apply({ flipX: !o.flipX });
+        break;
+      case "shape-text": if (o && canHoldText(o)) editShapeText(o); break;
       case "flip-y": if (o) apply({ flipY: !o.flipY }); break;
       case "fill-page":
         if (o) {
@@ -1581,12 +2050,21 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
   };
   canvas.on("selection:created", onSelect);
   canvas.on("selection:updated", onSelect);
-  canvas.on("selection:cleared", onSelect);
+  canvas.on("selection:cleared", () => {
+    follow();
+    onSelect();
+  });
   canvas.on("text:editing:entered", () => (floatBar.hidden = true));
-  canvas.on("text:editing:exited", () => {
+  canvas.on("text:editing:exited", e => {
     // An emptied text box goes away.
     const t = canvas.getObjects().find(o => isText(o) && !(o as Textbox).text?.trim());
     if (t) canvas.remove(t);
+    // A shape's text goes back to moving with the shape.
+    const done = (e as { target?: FabricObject }).target;
+    if (done && boundTo(done) && canvas.contains(done)) {
+      prepare(done);
+      follow();
+    }
     placeFloat();
   });
   canvas.on("mouse:dblclick", (e: TPointerEventInfo<TPointerEvent>) => {
@@ -1595,6 +2073,9 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     if (!t) {
       const p = canvas.getScenePoint(e.e);
       addTextStyle("body", { x: p.x + 280, y: p.y + 20 });
+    } else if (canHoldText(t) && !locked(t)) {
+      // Double-click a shape: type in it.
+      editShapeText(t);
     }
   });
   titleInput.addEventListener("change", () => changed());

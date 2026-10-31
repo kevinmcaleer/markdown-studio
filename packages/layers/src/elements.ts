@@ -1,7 +1,8 @@
 // What the side panel adds: shapes, lines and arrows, text styles, step
 // badges, and the starting templates. Each is made at a point on the page.
 
-import { Circle, Ellipse, FabricObject, FabricText, Group, Line, Path, Polygon, Rect, Textbox } from "fabric";
+import { Circle, Ellipse, FabricObject, FabricText, Group, Path, Polygon, Rect, Textbox } from "fabric";
+import { Connector } from "./connector";
 
 export const INK = "#1f2328";
 export const ACCENT = "#e8590c";
@@ -73,7 +74,6 @@ export const LINES: ShapeKind[] = [
 ];
 
 const ARROW = "M 0 40 L 200 40 M 170 10 L 200 40 L 170 70";
-const DOUBLE = "M 0 40 L 200 40 M 170 10 L 200 40 L 170 70 M 30 10 L 0 40 L 30 70";
 const CURVED = "M 0 160 C 30 60 100 20 200 30 M 165 0 L 200 30 L 168 64";
 const BUBBLE = "M 0 0 L 240 0 L 240 150 L 110 150 L 60 200 L 60 150 L 0 150 Z";
 
@@ -124,10 +124,10 @@ export function makeShape(kind: string, at: Point, color: string): FabricObject 
     case "outline": return named(new Rect({ ...base, width: 260, height: 180, rx: 12, ry: 12, fill: "", stroke: color, strokeWidth: 8, strokeUniform: true }), "Outline box");
     case "ring": return named(new Ellipse({ ...base, rx: 120, ry: 120, fill: "", stroke: color, strokeWidth: 8, strokeUniform: true }), "Outline circle");
     case "bubble": return named(new Path(BUBBLE, { ...base, ...fill, strokeLineJoin: "round" }), "Speech bubble");
-    case "line": return named(new Line([0, 0, 300, 0], { ...base, ...lineStyle(color) }), "Line");
-    case "dashed": return named(new Line([0, 0, 300, 0], { ...base, ...lineStyle(color), strokeDashArray: [24, 20] }), "Dashed line");
-    case "arrow": return named(new Path(ARROW, { ...base, ...lineStyle(color) }), "Arrow");
-    case "double": return named(new Path(DOUBLE, { ...base, ...lineStyle(color) }), "Double arrow");
+    case "line": return named(new Connector([0, 0, 300, 0], { ...base, ...lineStyle(color) }), "Line");
+    case "dashed": return named(new Connector([0, 0, 300, 0], { ...base, ...lineStyle(color), strokeDashArray: [24, 20] }), "Dashed line");
+    case "arrow": return named(new Connector([0, 0, 300, 0], { ...base, ...lineStyle(color), arrowEnd: true }), "Arrow");
+    case "double": return named(new Connector([0, 0, 300, 0], { ...base, ...lineStyle(color), arrowStart: true, arrowEnd: true }), "Double arrow");
     case "curved": return named(new Path(CURVED, { ...base, ...lineStyle(color) }), "Curved arrow");
     default: return null;
   }
@@ -232,6 +232,7 @@ export function kindOf(o: FabricObject): { icon: string; label: string } {
   if (t === "image") return { icon: "image", label: "Picture" };
   if (t === "textbox" || t === "i-text" || t === "text") return { icon: "text", label: "Text" };
   if (t === "group" || t === "activeselection") return { icon: "group", label: (o as Group & { badge?: number }).badge ? "Step number" : "Group" };
+  if (o instanceof Connector) return { icon: "dash", label: o.arrowStart || o.arrowEnd ? "Arrow" : "Line" };
   if (t === "line" || t === "path") return { icon: "dash", label: "Line" };
   return { icon: "shapes", label: "Shape" };
 }
@@ -244,5 +245,33 @@ export function isText(o: FabricObject | undefined | null): o is Textbox {
 export function isLine(o: FabricObject | undefined | null): boolean {
   if (!o) return false;
   const t = String(o.type || "").toLowerCase();
-  return t === "line" || (t === "path" && !o.fill);
+  return o instanceof Connector || t === "line" || (t === "path" && !o.fill);
+}
+
+/** Text that belongs to a shape: it sits in the middle of the shape and moves with it. */
+export function boundTo(o: FabricObject | undefined | null): string {
+  return String((o as (FabricObject & { boundTo?: string }) | undefined)?.boundTo || "");
+}
+
+/** Whether `o` can hold text of its own (a filled or outlined shape, not a line, text, picture or group). */
+export function canHoldText(o: FabricObject | undefined | null): boolean {
+  if (!o || isLine(o) || isText(o)) return false;
+  const t = String(o.type || "").toLowerCase();
+  return ["rect", "circle", "ellipse", "polygon", "path", "triangle"].includes(t);
+}
+
+/** The text style a shape's own text starts with. */
+export function shapeText(text: string, color: string): Textbox {
+  const t = new Textbox(text, {
+    fontFamily: FONTS[0][1],
+    fontSize: 40,
+    fontWeight: "600",
+    fill: color,
+    textAlign: "center",
+    originX: "center",
+    originY: "center",
+    lineHeight: 1.15,
+    width: 200,
+  });
+  return named(t, "Shape text");
 }
