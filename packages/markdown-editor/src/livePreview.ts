@@ -883,6 +883,8 @@ const liveTheme = EditorView.theme({
   ".cm-md-table.has-range :is(th, td)": { caretColor: "transparent" },
   ".cm-md-table:focus": { outline: "none" },
   ".cm-md-table.range-selecting, .cm-md-table.range-selecting *": { userSelect: "none" },
+  // The handles stay on a picked block, in sight, for its rows' and columns' menus.
+  ".cm-md-table.editable.handles-pinned > .cm-md-table-handle": { opacity: "1", color: "var(--accent)", borderColor: "var(--accent)" },
   ".cm-md-table code": {
     fontFamily: "var(--font-mono)",
     fontSize: "0.88em",

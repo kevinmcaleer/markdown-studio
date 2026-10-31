@@ -272,7 +272,10 @@ In the live view, drag across cells (or Shift+click a cell, or Shift+arrow out o
 one) to pick a block of them. Clicking a row or column handle picks that row or
 column, and Shift+clicking another handle picks every row or column in between;
 the handle's menu then inserts, clears or deletes all of them (and aligns all the
-picked columns). A bar over the block (shown with the selection toolbar) applies
+picked columns). While cells are picked the handles stay on the block (accented)
+instead of following the mouse, so one click on the row handle offers "Delete N
+rows" for every row the block touches (the column handle likewise); holding Shift
+lets them follow the mouse again, to Shift+click another handle. A bar over the block (shown with the selection toolbar) applies
 bold, italic, strikethrough, highlight, code or Clear formatting to every cell,
 aligns the block's columns (alignment is a column's, in GFM), copies the cells,
 clears them, and deletes whole rows or columns. `Ctrl/⌘+B`, `I`, `E`, `Shift+X`,
