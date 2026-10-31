@@ -31,6 +31,12 @@ export const editorTheme = EditorView.theme({
   ".cm-activeLine": { backgroundColor: "transparent" },
   ".cm-placeholder": { color: "var(--muted)" },
   ".cm-md-em": { fontStyle: "italic" },
+  ".cm-md-mono": {
+    fontFamily: "var(--font-mono)",
+    color: "var(--code-text)",
+    backgroundColor: "var(--code-bg)",
+    borderRadius: "3px",
+  },
   ".cm-md-quote-text": { color: "var(--muted)", fontStyle: "italic" },
   ".cm-ySelectionInfo": {
     fontFamily: "var(--font-sans)",
@@ -56,7 +62,9 @@ const markdownHighlight = HighlightStyle.define([
   { tag: [t.processingInstruction, t.meta, t.contentSeparator], color: "var(--muted)" },
   { tag: t.link, color: "var(--accent)" },
   { tag: t.url, color: "var(--muted)", textDecoration: "underline" },
-  { tag: t.monospace, color: "var(--code-text)", backgroundColor: "var(--code-bg)", borderRadius: "3px" },
+  // Code text has a plain class name (styled in editorTheme) so inline `code`
+  // can take the code-block font and size without shrinking fenced code twice.
+  { tag: t.monospace, class: "cm-md-mono" },
   { tag: t.quote, class: "cm-md-quote-text" },
   // Code inside fences, coloured by the language's own parser.
   { tag: t.keyword, color: "var(--syntax-keyword)" },

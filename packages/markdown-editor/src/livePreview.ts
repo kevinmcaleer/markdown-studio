@@ -692,6 +692,8 @@ const liveTheme = EditorView.theme({
   },
   ".cm-md-callout-fold[aria-expanded=false]::before": { transform: "rotate(-45deg)" },
   ".cm-md-callout-fold:hover": { backgroundColor: "rgb(var(--callout-color) / 0.15)" },
+  // Inline `code` in prose: the code-block font, a touch smaller like on the page.
+  "&.cm-live .cm-line:not(.cm-md-code) .cm-md-mono": { fontSize: "0.88em", padding: "0.1em 0.2em" },
   ".cm-line.cm-md-code": {
     fontFamily: "var(--font-mono)",
     fontSize: "0.86em",
