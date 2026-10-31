@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
-import { EditorState } from "@codemirror/state";
+import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { afterEach, describe, expect, it } from "vitest";
 import { markdownExtensions } from "../Editor";
+import { tableField } from "../tableWidget";
 import { personalDictionary } from "./dictionary";
 import { proofing } from "./proofing";
-import { changeAll, checkSpelling, nextFrom, spellCount } from "./spellPass";
+import { changeAll, checkSpelling, checking, findWordRange, nextFrom, spellCount } from "./spellPass";
 import type { SpellChecker } from "./speller";
 
 const WRONG: Record<string, string[]> = { teh: ["the", "ten"], wrold: ["world"], zork: [] };
@@ -25,11 +26,11 @@ afterEach(() => {
   personalDictionary.clear();
 });
 
-function editor(doc: string, cursor = 0) {
+function editor(doc: string, cursor = 0, more: Extension = []) {
   const parent = document.body.appendChild(document.createElement("div"));
   view = new EditorView({
     parent,
-    state: EditorState.create({ doc, selection: { anchor: cursor }, extensions: [markdownExtensions(), proofing({ speller: () => fake })] }),
+    state: EditorState.create({ doc, selection: { anchor: cursor }, extensions: [markdownExtensions(), proofing({ speller: () => fake }), more] }),
   });
   return view;
 }
@@ -129,6 +130,55 @@ describe("check spelling", () => {
     await tick();
     dialog()!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
     expect(dialog()).toBeNull();
+  });
+});
+
+describe("marking the word being checked", () => {
+  const frame = () => new Promise((r) => requestAnimationFrame(() => r(null)));
+
+  it("marks the word in the note, moves on with the check, and clears when it closes", async () => {
+    const v = editor("Hello teh and zork.");
+    checkSpelling(v);
+    await tick();
+    expect(v.state.field(checking)).toEqual({ from: 6, to: 9 });
+    expect(v.contentDOM.querySelector(".cm-spell-pass-current")?.textContent).toBe("teh");
+    press("Ignore");
+    await tick();
+    expect(v.contentDOM.querySelector(".cm-spell-pass-current")?.textContent).toBe("zork");
+    dialog()!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(v.state.field(checking)).toBeNull();
+    expect(v.contentDOM.querySelector(".cm-spell-pass-current")).toBeNull();
+  });
+
+  it("marks a word in a table in the drawn table's cell", async () => {
+    const v = editor("Intro.\n\n| Part | Link |\n| --- | --- |\n| teh one | [fine teh](https://example.com/teh) |\n", 0, tableField);
+    checkSpelling(v);
+    await tick();
+    await frame();
+    expect(v.contentDOM.querySelector(".cm-spell-pass-current")).toBeNull();
+    expect(v.contentDOM.querySelector(".cm-spell-pass-cell")?.textContent).toBe("teh one");
+    press("Ignore");
+    await tick();
+    await frame();
+    // The second "teh" in the note (the one in the URL isn't prose): the link's.
+    expect(v.contentDOM.querySelector(".cm-spell-pass-cell")?.textContent).toBe("fine teh");
+    expect(v.contentDOM.querySelectorAll(".cm-spell-pass-cell")).toHaveLength(1);
+    dialog()!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(v.contentDOM.querySelector(".cm-spell-pass-cell")).toBeNull();
+  });
+
+  it("finds the nth time a word stands on its own in drawn text", () => {
+    const root = document.body.appendChild(document.createElement("div"));
+    root.innerHTML = "<p>tehx teh</p><p><b>te</b>h and teh</p><p>teh</p>";
+    const at = (n: number) => {
+      const r = findWordRange(root, "teh", n)!;
+      return [r.startContainer.textContent, r.startOffset, r.endContainer.textContent, r.endOffset];
+    };
+    expect(at(0)).toEqual(["tehx teh", 5, "tehx teh", 8]);
+    expect(at(1)).toEqual(["te", 0, "h and teh", 1]);
+    expect(at(2)).toEqual(["h and teh", 6, "h and teh", 9]);
+    expect(at(9)).toEqual(["teh", 0, "teh", 3]);
+    expect(findWordRange(root, "nope", 0)).toBeNull();
   });
 });
 
