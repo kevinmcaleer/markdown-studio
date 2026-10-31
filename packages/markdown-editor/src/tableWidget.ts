@@ -436,7 +436,7 @@ class TableView {
   /** The host's drawing of the table (see `tableRenderer`), shown while it isn't being edited. */
   private readonly preview = el("div", "cm-md-table-preview");
   private editing = false;
-  private readonly scroller = el("div", "cm-md-table-scroll");
+  private readonly scroller = el("div", "cm-md-table-scroll cm-md-select-box");
   private readonly colHandle = button("cm-md-table-handle cm-md-table-colhandle", "Column options");
   private readonly rowHandle = button("cm-md-table-handle cm-md-table-rowhandle", "Row options");
   private readonly addCol = button("cm-md-table-add cm-md-table-addcol", "Add column");
