@@ -15,7 +15,7 @@ const RETRY_MAX = 5 * 60_000;
 
 /** What the right-click menu says in place of Look Up and Translate when the server can't give them. */
 export function languageNote(features: LanguageFeatures): string {
-  if (features.unavailable === "offline") return "Look Up and Synonyms need the language server, which can't be reached right now.";
+  if (features.unavailable === "offline") return "Spelling still works. Look Up and Synonyms need the language server, which can't be reached right now.";
   if (features.unavailable === "signin") return "Sign in to use Look Up and Synonyms.";
   return "";
 }
@@ -81,11 +81,15 @@ export function useProofing(signedIn: boolean, defaultLanguage: ProofLanguage = 
     void check();
     window.addEventListener("online", again);
     window.addEventListener("focus", again);
+    // A right-click is when you want Look Up: ask again then too, so a server
+    // that's come back is offered without waiting for the next retry.
+    window.addEventListener("contextmenu", again, true);
     return () => {
       live = false;
       clearTimeout(timer);
       window.removeEventListener("online", again);
       window.removeEventListener("focus", again);
+      window.removeEventListener("contextmenu", again, true);
     };
   }, []);
   const dictionarySize = useSyncExternalStore(
