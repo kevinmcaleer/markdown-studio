@@ -494,8 +494,8 @@ export function insertCards(view: EditorView, from = view.state.selection.main.f
 
 export const cardsTheme = EditorView.theme({
   // Not the editor's pre-wrap: the rendered cards' line breaks are only HTML.
-  ".cm-md-cards": { whiteSpace: "normal", position: "relative", margin: "0", padding: "2.4rem 0.5rem 0.5rem", borderRadius: "14px", border: "1px dashed transparent" },
-  ".cm-md-cards.editable:hover, .cm-md-cards.editable:focus-within": { borderColor: "var(--border)" },
+  ".cm-md-cards": { whiteSpace: "normal", position: "relative", margin: "0", padding: "2.4rem 0.5rem 0.5rem", borderRadius: "14px", border: "1.5px dotted color-mix(in srgb, var(--muted) 45%, transparent)" },
+  ".cm-md-cards.editable:hover, .cm-md-cards.editable:focus-within": { borderColor: "var(--muted)" },
   ".cm-md-cards:not(.editable)": { paddingTop: "0.5rem" },
   ".cm-md-cards .md-cards": { margin: "0" },
   ".cm-md-cards .md-card": { position: "relative" },
