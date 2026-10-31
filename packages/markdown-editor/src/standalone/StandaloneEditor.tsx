@@ -25,6 +25,7 @@ import { hiddenComments } from "../hiddenComments";
 import { pageBreakCommand, pageBreaksOn } from "../pageBreaks";
 import { completeTodo, findTodos, todoMarks, type Todo } from "../todos";
 import { cardPicturePicker } from "../cardsWidget";
+import { layersBlocks, layersCommand, type LayersHost } from "../layersBlock";
 import { videoRenderers } from "../videosWidget";
 import { speechEditor } from "../speech/speechEditor";
 import { useDictation } from "../speech/useDictation";
@@ -223,6 +224,19 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
     v.focus();
   }, []);
 
+  // ------------------------------------------------------------ Layers graphics
+  // They're saved as uploaded pictures, so they need somewhere to upload to.
+  const layersHost = useMemo<LayersHost | null>(() => {
+    const upload = options.uploadImage;
+    if (!options.layers || !upload) return null;
+    const library = options.imageLibrary;
+    return {
+      ...options.layers,
+      uploadImage: upload,
+      listImages: library ? async () => (await library()).map((im) => ({ url: im.thumb && !im.url ? im.thumb : im.url, title: im.alt })) : undefined,
+    };
+  }, []);
+
   // ------------------------------------------------------------ "/" commands
   const commands = useMemo<SlashCommand[]>(() => {
     let list = withInsertTexts(defaultCommands, options.insertTexts);
@@ -231,6 +245,12 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
     if (options.pageBreaks) {
       const at = list.findIndex((c) => c.id === "divider");
       list = at < 0 ? [...list, pageBreakCommand] : [...list.slice(0, at + 1), pageBreakCommand, ...list.slice(at + 1)];
+    }
+    // "/Graphic" goes after the picture commands.
+    if (layersHost) {
+      const at = list.findIndex((c) => c.id === "image");
+      const cmd = layersCommand(layersHost);
+      list = at < 0 ? [...list, cmd] : [...list.slice(0, at + 1), cmd, ...list.slice(at + 1)];
     }
     // With somewhere to get images from, "/image" opens the picker.
     if (usePicker) list = list.map((c) => (c.id === "image" ? { ...c, insert: undefined, run: openPickerAtCursor } : c));
@@ -276,6 +296,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
             setPicker(anchorOf(anchor));
           })
         : [],
+      layersHost ? Prec.high(layersBlocks(layersHost)) : [],
       options.videoRenderer ? videoRenderers.of(options.videoRenderer) : [],
       options.tableNote ? tableNotes.of(options.tableNote) : [],
       options.hiddenComments ? hiddenComments.of(options.hiddenComments) : [],

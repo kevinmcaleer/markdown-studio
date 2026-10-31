@@ -3,6 +3,7 @@ import { StateEffect, StateField, type EditorState, type Extension } from "@code
 import { EditorView, showTooltip, type Tooltip } from "@codemirror/view";
 import { cardPicturePicker } from "./cardsWidget";
 import { imageSizeMarkdown, imageSizes, parseImageSize, type ImageSize } from "./imageSize";
+import { isLayersUrl, layersOpener } from "./layersFacet";
 
 // The image popover: clicking a picture in the live view keeps the picture
 // showing and opens a small form under it, like the link card: its title (the
@@ -188,9 +189,15 @@ function popover(view: EditorView, start: number): HTMLElement {
   const choose = picker ? button("Choose image", "Pick another picture from the project's images, or upload one") : null;
   const remove = button("Remove image", "Delete the picture and its Markdown", "danger");
   const markdown = button("Edit markdown", "Show the picture's Markdown to edit it by hand");
+  // Layers (layersBlock.ts): a graphic opens again; any other picture can be drawn on.
+  const layers = view.state.facet(layersOpener);
+  const graphic = first && isLayersUrl(first.url);
+  const draw = layers
+    ? button(graphic ? "Edit graphic" : "Draw on it", graphic ? "Change this graphic in Layers" : "Add text, arrows and shapes over this picture in Layers", graphic ? "layers" : "")
+    : null;
   const done = button("Done", "Save and close", "primary");
   done.type = "submit";
-  actions.append(...(choose ? [choose] : []), remove, markdown, el("span", "cm-image-popover-gap"), done);
+  actions.append(...(draw ? [draw] : []), ...(choose ? [choose] : []), remove, markdown, el("span", "cm-image-popover-gap"), done);
   dom.append(actions);
 
   let closed = false;
@@ -227,6 +234,13 @@ function popover(view: EditorView, start: number): HTMLElement {
     });
     // The picker may close without a pick; focus coming back ends picking.
     window.setTimeout(() => dom.addEventListener("focusin", () => (picking = false), { once: true }));
+  });
+  draw?.addEventListener("click", () => {
+    save();
+    const image = current();
+    closed = true;
+    view.dispatch({ effects: close.of(null) });
+    if (image) layers!.open(view, image.from);
   });
   remove.addEventListener("click", () => {
     const image = current();
@@ -330,6 +344,7 @@ const theme = EditorView.theme({
   },
   ".cm-image-popover-actions button:hover": { background: "var(--surface-2)" },
   ".cm-image-popover-actions button.danger": { color: "var(--danger, #b42318)" },
+  ".cm-image-popover-actions button.layers": { color: "#6d28d9", borderColor: "rgb(124 58 237 / 0.45)" },
   ".cm-image-popover-actions button.primary": { background: "var(--accent)", borderColor: "var(--accent)", color: "var(--accent-text, #fff)" },
   // The picture being edited is ringed while its popover is open.
   ".cm-md-image-wrap.cm-md-image-editing .cm-md-image": { outline: "2px solid var(--accent)", outlineOffset: "2px" },

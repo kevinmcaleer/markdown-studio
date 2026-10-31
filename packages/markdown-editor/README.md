@@ -382,6 +382,35 @@ first card open. The preview renders `cardsHtml` (classes `md-cards`,
 `md-card`, `md-card-media`, `md-card-body`), and `src/cards.css` styles it on
 its own. Card titles stay out of the outline.
 
+### Layers graphics
+
+With the `layers` option (and `uploadImage`), **/Graphic** draws a graphic
+where the cursor is: text, shapes, arrows, step numbers and pictures, in
+[Layers](../layers/README.md), a Canva-style editor shown in the page with a
+Full screen button. Save uploads it as a PNG and writes an ordinary picture
+line:
+
+```markdown
+![Robot overview](https://example.com/images/12/view#layers)
+```
+
+The PNG carries its own layers, and `#layers` marks it as a graphic, so it
+takes sizes, captions and galleries like any picture, and **Edit graphic**
+(or a double-click) opens it again in place. **Draw on it** in any
+picture's popover starts a graphic over that picture. Layers isn't bundled;
+the host loads it the first time it's needed:
+
+```js
+MarkdownEditor.mount(el, {
+  uploadImage,
+  layers: {
+    load: () => import("/js/layers/layers.js"),
+    fetchImage: url => fetch(url, { credentials: "include" }).then(r => r.blob()), // optional
+    onReplace: (oldUrl, newUrl) => {},  // optional: tidy up the old picture
+  },
+});
+```
+
 ### Videos
 
 A `::: videos` block shows the YouTube links inside it as a group of thumbnail

@@ -12,6 +12,7 @@ import type { LanguageRequest } from "../proofing/languageApi";
 import type { ProofLanguage } from "../proofing/speller";
 import type { InsertTexts, SlashCommand } from "../slashMenu";
 import type { HiddenComment } from "../hiddenComments";
+import type { LayersOptions } from "../layersBlock";
 import type { TableColumnAction, TableNote, TableRenderer, TableStepper } from "../tableWidget";
 import type { VideoRenderer } from "../videosWidget";
 
@@ -76,6 +77,7 @@ export type ToolbarItem = BuiltInTool | ToolbarButton;
 
 /** Status bar items, in the order given. */
 export type StatusItem = "words" | "chars" | "reading" | "lines" | "cursor" | "draft" | "language" | "lint" | "read-aloud";
+
 
 export type ImageInfo = {
   url: string;
@@ -148,6 +150,16 @@ export type MountOptions = {
    * One dropped image is always uploaded and linked between the lines it's dropped between.
    */
   addImages?: (files: File[]) => Promise<void>;
+  /**
+   * Layers graphics (needs `uploadImage`): "/Graphic" draws one where the
+   * cursor is, out of text, shapes and pictures, in a Canva-style editor in
+   * the page or full screen. It's saved as a picture, `![Title](url#layers)`,
+   * whose PNG carries its layers, so "Edit graphic" on it opens it again, and
+   * "Draw on it" in any picture's popover starts one over that picture.
+   * `load` supplies Layers (packages/layers), which isn't bundled:
+   * `{ load: () => import("/js/layers/layers.js") }`.
+   */
+  layers?: LayersOptions;
   /** Images to pick from in the image picker (the toolbar's image button and "/image"). */
   imageLibrary?: () => Promise<ImageInfo[]>;
   /**

@@ -57,6 +57,7 @@
   background: transparent;
   font-weight: 600 !important;
 }
+.lyr .lyr-title { background: transparent; box-shadow: none; margin: 0; height: 32px; }
 .lyr-title:hover { border-color: var(--lyr-line); }
 .lyr-title:focus { border-color: var(--lyr-accent); outline: none; background: #fff; }
 .lyr-btn {
@@ -342,7 +343,8 @@
 
 /* ---- modes */
 .lyr[data-mode="inline"] .lyr-rail { width: 64px; }
-.lyr[data-mode="inline"] .lyr-rail-btn { padding: 7px 2px; }
+.lyr[data-mode="inline"] .lyr-rail-btn { padding: 7px 2px; font-size: 10px !important; }
+.lyr-rail-btn span { white-space: nowrap; }
 .lyr[data-mode="inline"] .lyr-panel { left: 64px; }
 .lyr-overlay {
   position: fixed;
