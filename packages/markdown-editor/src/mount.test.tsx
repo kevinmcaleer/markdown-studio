@@ -167,3 +167,32 @@ describe("tableRenderer", () => {
     editor.destroy();
   });
 });
+
+describe("tableNote", () => {
+  const doc = "# BOM\n\n| Part | Qty |\n| --- | --- |\n| Cell | 2 |\n\n# Other\n\n| A |\n| --- |\n| b |\n";
+
+  it("shows the host's note above the tables it picks", async () => {
+    const el = host();
+    let clicked = 0;
+    const editor = mount(el, {
+      doc,
+      spellcheck: "off",
+      tableNote: ({ rows, heading }) => {
+        if (heading !== "BOM") return null;
+        const note = document.createElement("div");
+        note.className = "tip";
+        note.textContent = "Columns: " + rows[0].join(", ");
+        note.addEventListener("click", () => clicked++);
+        return note;
+      },
+    });
+    await new Promise((r) => setTimeout(r));
+    const notes = Array.from(el.querySelectorAll<HTMLElement>(".cm-md-table-note"));
+    expect(notes).toHaveLength(1);
+    expect(notes[0].textContent).toBe("Columns: Part, Qty");
+    expect(notes[0].nextElementSibling?.classList.contains("cm-md-table")).toBe(true);
+    notes[0].querySelector<HTMLElement>(".tip")!.click();
+    expect(clicked).toBe(1);
+    editor.destroy();
+  });
+});

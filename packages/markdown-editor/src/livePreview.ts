@@ -848,6 +848,8 @@ const liveTheme = EditorView.theme({
   ".cm-md-table.image-grid th:has(.cell-heading)": { fontSize: "1em", paddingBottom: "0.25rem" },
   ".cm-md-table mark": { backgroundColor: "var(--highlight)", color: "inherit", borderRadius: "2px" },
   ".cm-md-table a": { color: "var(--accent)" },
+  // A host's note above a table (tableNote).
+  ".cm-md-table-note": { padding: "0.5rem 0 0" },
   ".cm-md-table button": {
     position: "absolute",
     display: "grid",

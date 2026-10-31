@@ -60,6 +60,39 @@ export type TableRenderer = (table: TableRendererContext) => HTMLElement | null;
 /** The table renderers; the first to draw a table wins. */
 export const tableRenderers = Facet.define<TableRenderer>();
 
+/**
+ * A note to show above a table, or null for none: a tip on how the host
+ * fills in a Bill of Materials, say. It's given what a renderer is given.
+ */
+export type TableNote = (table: TableRendererContext) => HTMLElement | null;
+
+/** The table notes; each one's element shows above the table, in order. */
+export const tableNotes = Facet.define<TableNote>();
+
+/** A host's note, as a block above its table. */
+class TableNoteWidget extends WidgetType {
+  constructor(readonly element: HTMLElement) {
+    super();
+  }
+
+  // The same note again keeps the one on screen (and its listeners).
+  eq(other: TableNoteWidget) {
+    return other.element.outerHTML === this.element.outerHTML;
+  }
+
+  toDOM() {
+    const dom = el("div", "cm-md-table-note");
+    dom.contentEditable = "false";
+    dom.append(this.element);
+    return dom;
+  }
+
+  // Its buttons are the host's, not the editor's.
+  ignoreEvent() {
+    return true;
+  }
+}
+
 /** The table blocks in the note: each one's Markdown drawn as a table widget. */
 export const tableField = StateField.define<DecorationSet>({
   create: (state) => findTables(state),
@@ -89,13 +122,19 @@ function findTables(state: EditorState): DecorationSet {
         const prefix = quotes ? quotePrefix(quoted, quotes) : "";
         const source = quotes ? unquote(quoted, quotes) : quoted;
         const box = quotes ? quoteBox(state, node.node, to) : null;
-        if (parseTable(source))
+        const table = parseTable(source);
+        if (table) {
+          for (const note of state.facet(tableNotes)) {
+            const element = note({ rows: table.rows.map((row) => [...row]), heading });
+            if (element) tables.push(Decoration.widget({ widget: new TableNoteWidget(element), block: true, side: -1 }).range(from));
+          }
           tables.push(Decoration.replace({ widget: new TableWidget(source, !state.readOnly, heading, prefix, box), block: true }).range(from, to));
+        }
       }
       return false;
     },
   });
-  return Decoration.set(tables);
+  return Decoration.set(tables, true);
 }
 
 type SyntaxNode = ReturnType<typeof syntaxTree>["topNode"];
