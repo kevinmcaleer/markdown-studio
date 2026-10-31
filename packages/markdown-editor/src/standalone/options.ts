@@ -5,6 +5,7 @@ import type { CodeEditor, CodeRenderer } from "../codeRenderers";
 import type { DraftOptions, DraftState } from "../draft";
 import type { ShortcutName } from "../format/formatting";
 import type { EditorHint } from "../lint/useWritingLint";
+import type { LintRule } from "../lint/rules";
 import type { GuideSection } from "./Guide";
 import type { MarkdownItInstance } from "../markdown";
 import type { LanguageRequest } from "../proofing/languageApi";
@@ -255,6 +256,11 @@ export type MountOptions = {
   };
   /** Writing hints (passive voice, long sentences…) in the status bar. Defaults to on. */
   lint?: boolean;
+  /**
+   * Writing hint rules this host never wants, such as `["multiple-h1"]` where
+   * every section is a `#` heading. They're left out of the hints panel.
+   */
+  lintSkip?: LintRule[];
   /** The host's own hints, listed above the writing hints. Change them with `setHints`. */
   hints?: EditorHint[];
   /** Opens the outline (the headings) beside the text. */

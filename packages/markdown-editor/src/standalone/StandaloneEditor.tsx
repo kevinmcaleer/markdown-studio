@@ -168,7 +168,8 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
   const lintEnabled = options.lint !== false;
   const [spellingIssues, setSpellingIssues] = useState<number | null>(null);
   const [hints, setHints] = useState<EditorHint[]>(options.hints ?? []);
-  const lint = useWritingLint(hints);
+  const [lintSkip] = useState(() => options.lintSkip ?? []);
+  const lint = useWritingLint(hints, lintSkip);
 
   // ------------------------------------------------------------ images
   const canUpload = Boolean(options.uploadImage);

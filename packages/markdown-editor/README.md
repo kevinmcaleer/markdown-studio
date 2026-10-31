@@ -128,6 +128,7 @@ Every option is optional.
 | `proofing.dictionaryBase` | `dictionaries/` beside the script | Where `en-GB.dic` and `en-US.dic` are. |
 | `proofing.language` | `"en-GB"` | The proofing language until the writer picks one in the status bar. |
 | `lint` | `true` | Writing hints in the status bar. |
+| `lintSkip` | `[]` | Writing hint rules to leave out altogether, such as `["multiple-h1"]` for a site whose sections are all `#` headings. The rule names are in `RULES` (`lint/rules.ts`). |
 | `hints` | `[]` | The host's own hints, `{ id, title, detail?, actions?: [{ label, run }] }`, listed at the top of the hints panel and counted on its button even with writing hints off. |
 | `outline` | `false` | Opens the outline beside the text (the `outline` toolbar button toggles it). |
 | `speech` | `false` | Dictation (toolbar) and read aloud (status bar), where the browser can. |
