@@ -4,7 +4,17 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { describe, expect, it } from "vitest";
 import { selectionToolbar } from "./format/selectionToolbar";
-import { scrollWithin, tableColumnActions, tableField, tableSteppers, type TableColumnAction, type TableStepper } from "./tableWidget";
+import {
+  scrollWithin,
+  tableCellActions,
+  tableColumnActions,
+  tableField,
+  tableSteppers,
+  type TableCellAction,
+  type TableCellActionContext,
+  type TableColumnAction,
+  type TableStepper,
+} from "./tableWidget";
 
 function tableView(doc: string): EditorView {
   return new EditorView({
@@ -90,6 +100,55 @@ describe("table steppers", () => {
     const view = tableView(doc);
     hoverCell(view, 1, 1);
     expect(stepButtons(view).on).toBe(false);
+  });
+});
+
+describe("cell actions", () => {
+  const doc = "| Part | Qty |\n|---|---|\n| Servo | 2 |\n| [Pico](/parts/pico) | 1 |\n";
+  function actionView(action: TableCellAction, extra: TableStepper | null = null): EditorView {
+    return new EditorView({
+      state: EditorState.create({
+        doc,
+        extensions: [markdown({ base: markdownLanguage }), tableField, tableCellActions.of(action), extra ? tableSteppers.of(extra) : []],
+      }),
+      parent: document.body,
+    });
+  }
+  const actionButton = (view: EditorView) => view.dom.querySelector<HTMLButtonElement>(".cm-md-table-action")!;
+
+  it("shows the host's button on the cells it asks for, and runs it with the cell", () => {
+    const seen: TableCellActionContext[] = [];
+    const view = actionView(({ header, value }) =>
+      header === "Part" && !value.startsWith("[") ? { label: "New part", title: "Add it to the catalog", run: (cell) => seen.push(cell) } : null,
+    );
+    hoverCell(view, 1, 0);
+    const button = actionButton(view);
+    expect(button.classList.contains("on")).toBe(true);
+    expect(button.textContent).toBe("New part");
+    expect(button.title).toBe("Add it to the catalog");
+    button.click();
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({ header: "Part", rowIndex: 1, col: 0, value: "Servo", row: ["Servo", "2"], heading: null });
+    // A linked row, another column and the header have none.
+    hoverCell(view, 2, 0);
+    expect(actionButton(view).classList.contains("on")).toBe(false);
+    hoverCell(view, 1, 1);
+    expect(actionButton(view).classList.contains("on")).toBe(false);
+    hoverCell(view, 0, 0);
+    expect(actionButton(view).classList.contains("on")).toBe(false);
+  });
+
+  it("keeps the label as text", () => {
+    const view = actionView(() => ({ label: "<b>x</b>", run: () => {} }));
+    hoverCell(view, 1, 0);
+    expect(actionButton(view).querySelector("b")).toBeNull();
+    expect(actionButton(view).textContent).toBe("<b>x</b>");
+  });
+
+  it("has no button without a host action", () => {
+    const view = tableView(doc);
+    hoverCell(view, 1, 0);
+    expect(view.dom.querySelector(".cm-md-table-action.on")).toBeNull();
   });
 });
 

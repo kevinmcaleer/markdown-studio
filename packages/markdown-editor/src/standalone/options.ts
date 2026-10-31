@@ -13,7 +13,7 @@ import type { ProofLanguage } from "../proofing/speller";
 import type { InsertTexts, SlashCommand } from "../slashMenu";
 import type { HiddenComment } from "../hiddenComments";
 import type { LayersOptions } from "../layersBlock";
-import type { TableColumnAction, TableNote, TableRenderer, TableStepper } from "../tableWidget";
+import type { TableCellAction, TableColumnAction, TableNote, TableRenderer, TableStepper } from "../tableWidget";
 import type { VideoRenderer } from "../videosWidget";
 
 // The options `mount()` takes, and the editor it hands back. Every option has
@@ -256,6 +256,15 @@ export type MountOptions = {
    * edit to the Markdown, so the cell stays a plain number.
    */
   tableStepper?: TableStepper;
+  /**
+   * A small button at the right of a body cell in the live view, shown on
+   * hover or focus: "New part" on a Bill of Materials row that isn't linked to
+   * a catalog part yet, say. It's given each body cell ({ header, row,
+   * rowIndex, col, value, heading }, value being the cell's Markdown) and
+   * returns { label, title?, icon? (SVG markup), run(cell, button) } or null.
+   * What a click does is the host's.
+   */
+  tableCellAction?: TableCellAction;
   /**
    * An extra entry in a table column's menu (the handle above the column, in
    * the live view) that opens a list of choices: a Bill of Materials' Price

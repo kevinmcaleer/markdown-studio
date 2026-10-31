@@ -21,7 +21,7 @@ import { useProofing } from "../proofing/useProofing";
 import { slashCommands as defaultCommands, slashMenu, withInsertTexts, type SlashCommand } from "../slashMenu";
 import { imageSizeMarkdown, type ImageSize } from "../imageSize";
 import { insertImages, smartPaste, type SmartPasteOptions } from "../smartPaste";
-import { cellCaretRect, inTable, tableColumnActions, tableNotes, tableRenderers, tableSteppers } from "../tableWidget";
+import { cellCaretRect, inTable, tableCellActions, tableColumnActions, tableNotes, tableRenderers, tableSteppers } from "../tableWidget";
 import { hiddenComments } from "../hiddenComments";
 import { pageBreakCommand, pageBreaksOn } from "../pageBreaks";
 import { completeTodo, findTodos, todoMarks, type Todo } from "../todos";
@@ -307,6 +307,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
       options.pageBreaks ? pageBreaksOn.of(true) : [],
       todosOn ? todoMarks : [],
       options.tableStepper ? tableSteppers.of(options.tableStepper) : [],
+      options.tableCellAction ? tableCellActions.of(options.tableCellAction) : [],
       options.tableColumnAction ? tableColumnActions.of(options.tableColumnAction) : [],
       codeEditors.of(
         Object.fromEntries(Object.entries(options.codeEditors ?? {}).map(([language, mount]) => [language.toLowerCase(), mount])),

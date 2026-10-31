@@ -133,6 +133,41 @@ export type TableStepper = (cell: TableStepperContext) => TableStepperSpec | boo
 /** The table steppers; the first to answer for a cell wins. */
 export const tableSteppers = Facet.define<TableStepper>();
 
+/** What a cell action is asked about: one body cell, as for a stepper, with its Markdown. */
+export type TableCellActionContext = {
+  /** The column's header, as plain text. */
+  header: string;
+  /** The cell's row, as each cell's Markdown. */
+  row: string[];
+  /** The row's place in the table: 1 is the first body row (0 is the header). */
+  rowIndex: number;
+  col: number;
+  /** The cell's Markdown. */
+  value: string;
+  /** The text of the heading the table sits under, if there is one. */
+  heading: string | null;
+};
+
+/** A cell's button: its label, a tooltip, an SVG icon (markup), and what a click does. */
+export type TableCellActionSpec = {
+  label: string;
+  title?: string;
+  icon?: string;
+  /** Runs on a click, given the cell and the button (to open a dialog beside it, say). */
+  run: (cell: TableCellActionContext, button: HTMLElement) => void;
+};
+
+/**
+ * A small button at the right of a body cell, shown on hover or focus: "New
+ * part" on a Bill of Materials row not yet linked to a catalog part, say. It's
+ * given each body cell and returns the button, or null for none. What the
+ * click does is the host's (it can edit the document as it likes).
+ */
+export type TableCellAction = (cell: TableCellActionContext) => TableCellActionSpec | null;
+
+/** The table cell actions; the first to answer for a cell wins. */
+export const tableCellActions = Facet.define<TableCellAction>();
+
 /** What a column action is asked about: one column of a table. */
 export type TableColumnContext = {
   /** The column's header, as plain text. */
@@ -447,6 +482,9 @@ class TableView {
   private readonly stepUp = button("cm-md-table-step", "Increase (Alt+\u2191)");
   private readonly stepDown = button("cm-md-table-step", "Decrease (Alt+\u2193)");
   private stepperCell: { row: number; col: number } | null = null;
+  /** The host's button on a cell (see `tableCellAction`), and what it's for. */
+  private readonly action = button("cm-md-table-action", "");
+  private actionAt: { context: TableCellActionContext; spec: TableCellActionSpec } | null = null;
   private menu: HTMLElement | null = null;
   /** The edges between columns, dragged to set their widths. */
   private grips: HTMLElement[] = [];
@@ -499,7 +537,7 @@ class TableView {
     this.stepUp.innerHTML = '<svg viewBox="0 0 16 10" aria-hidden="true"><path d="M4 7l4-4 4 4"/></svg>';
     this.stepDown.innerHTML = '<svg viewBox="0 0 16 10" aria-hidden="true"><path d="M4 3l4 4 4-4"/></svg>';
     this.stepper.append(this.stepUp, this.stepDown);
-    dom.append(this.scroller, this.colHandle, this.rowHandle, this.addCol, this.addRow, this.more, this.stepper, this.preview);
+    dom.append(this.scroller, this.colHandle, this.rowHandle, this.addCol, this.addRow, this.more, this.stepper, this.action, this.preview);
     this.render();
 
     // Clicking the drawing edits the table (its links aren't followed while editing).
@@ -634,6 +672,14 @@ class TableView {
     this.more.addEventListener("click", () => this.tableMenu());
     this.stepUp.addEventListener("click", () => this.stepperCell && this.step(this.stepperCell.row, this.stepperCell.col, 1));
     this.stepDown.addEventListener("click", () => this.stepperCell && this.step(this.stepperCell.row, this.stepperCell.col, -1));
+    // Keeps the caret where it is: the host's dialog, say, takes the focus itself.
+    this.action.addEventListener("mousedown", (e) => e.preventDefault());
+    this.action.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const at = this.actionAt;
+      if (at) at.spec.run(at.context, this.action);
+    });
   }
 
   update(widget: TableWidget) {
@@ -824,6 +870,7 @@ class TableView {
     this.rowHandle.style.top = `${box.top - base.top + box.height / 2}px`;
     this.placeGrips();
     this.placeStepper(row, col, cell, base);
+    this.placeAction(row, col, cell, base);
     this.pinHandles();
   }
 
@@ -892,6 +939,48 @@ class TableView {
     const box = cell.getBoundingClientRect();
     this.stepper.style.left = `${box.right - base.left - 4}px`;
     this.stepper.style.top = `${box.top - base.top + box.height / 2}px`;
+  }
+
+  // ------------------------------------------------------------ cell actions
+
+  /** The host's button for a body cell, or null (see `tableCellAction`). */
+  cellActionAt(row: number, col: number): { context: TableCellActionContext; spec: TableCellActionSpec } | null {
+    if (!this.editable || row < 1) return null;
+    const actions = this.view.state.facet(tableCellActions);
+    const cells = this.table.rows[row];
+    if (!actions.length || !cells || col >= cells.length) return null;
+    const context: TableCellActionContext = {
+      header: cellText(this.table.rows[0][col] ?? "").trim(),
+      row: [...cells],
+      rowIndex: row,
+      col,
+      value: cells[col],
+      heading: this.heading,
+    };
+    for (const action of actions) {
+      const spec = action(context);
+      if (spec) return { context, spec };
+    }
+    return null;
+  }
+
+  /** Shows the host's button at the right of a cell (left of a stepper there), or hides it. */
+  private placeAction(row: number, col: number, cell: HTMLElement, base: DOMRect) {
+    const at = this.cellActionAt(row, col);
+    this.actionAt = at;
+    this.action.classList.toggle("on", !!at);
+    if (!at) return;
+    const { spec } = at;
+    this.action.innerHTML = spec.icon ?? "";
+    const label = document.createElement("span");
+    label.textContent = spec.label;
+    this.action.append(label);
+    this.action.title = spec.title ?? spec.label;
+    this.action.setAttribute("aria-label", spec.title ?? spec.label);
+    const box = cell.getBoundingClientRect();
+    const right = box.right - base.left - 4 - (this.stepperCell ? 22 : 0);
+    this.action.style.left = `${right}px`;
+    this.action.style.top = `${box.top - base.top + box.height / 2}px`;
   }
 
   /** Adds `step` to a number cell (or takes it away); false when the cell has no stepper. */
