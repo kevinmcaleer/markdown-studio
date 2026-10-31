@@ -36,7 +36,7 @@ class PageBreakWidget extends WidgetType {
     box.setAttribute("role", "separator");
     box.setAttribute("aria-label", `Page break: page ${this.page} starts here`);
     const label = document.createElement("span");
-    label.className = "cm-md-page-break-label";
+    label.className = "cm-md-page-break-label cm-md-select-box";
     label.textContent = `Page ${this.page}`;
     const remove = document.createElement("button");
     remove.type = "button";
@@ -109,7 +109,8 @@ export const pageBreaksTheme = EditorView.baseTheme({
     display: "flex",
     alignItems: "center",
     gap: "0.6rem",
-    margin: "0.4rem 0",
+    // Padding, not margin: CodeMirror doesn't count a block widget's margin (see spacedBlock).
+    padding: "0.4rem 0",
     color: "var(--muted)",
     fontSize: "0.8rem",
     fontFamily: "var(--font-sans, inherit)",

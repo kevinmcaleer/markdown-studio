@@ -402,12 +402,22 @@ export function toggleTask(view: EditorView, pos: number) {
 
 /** Lines the cursor or selection is on, which show their Markdown. None when the editor isn't focused. */
 function activeLines(view: EditorView): Set<number> {
+  if (!view.hasFocus || view.state.readOnly) return new Set();
+  return selectedLines(view.state);
+}
+
+/** Lines the selection picks text on (or holds the cursor), which show their Markdown when focused. */
+export function selectedLines(state: EditorState): Set<number> {
   const lines = new Set<number>();
-  const { state } = view;
-  if (!view.hasFocus || state.readOnly) return lines;
   for (const range of state.selection.ranges) {
-    const last = state.doc.lineAt(range.to).number;
-    for (let n = state.doc.lineAt(range.from).number; n <= last; n++) lines.add(n);
+    const first = state.doc.lineAt(range.from);
+    const end = state.doc.lineAt(range.to);
+    // A selection that only takes a line's break (it starts at the end of a
+    // line, or ends at the start of one) picks none of that line's text, so
+    // the line stays drawn: shift+arrow onto a rule doesn't flash its `---`.
+    const start = !range.empty && range.from === first.to && first.number < end.number ? first.number + 1 : first.number;
+    const last = !range.empty && range.to === end.from && end.number > first.number ? end.number - 1 : end.number;
+    for (let n = start; n <= last; n++) lines.add(n);
   }
   return lines;
 }

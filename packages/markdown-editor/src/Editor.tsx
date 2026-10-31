@@ -17,6 +17,7 @@ import { editorHighlighting, editorTheme } from "./editorTheme";
 import { Highlight } from "./highlightSyntax";
 import { livePreview } from "./livePreview";
 import { steadyScroll } from "./steadyScroll";
+import { textSelection } from "./textSelection";
 
 export type EditorProps = {
   /** The text to start with. Changing it later doesn't reset the editor; remount with a new `key`. */
@@ -78,6 +79,7 @@ export function Editor({
       extensions: [
         ownHistory ? history() : [],
         drawSelection(),
+        textSelection(),
         dropCursor(),
         rectangularSelection(),
         highlightActiveLine(),
