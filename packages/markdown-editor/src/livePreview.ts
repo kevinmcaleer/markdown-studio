@@ -7,7 +7,7 @@ import { copyText } from "./clipboard";
 import "./image-sizes.css";
 import { imageSizeClass, imageSizeMarkdown, imageSizes, parseImageSize, type ImageSize } from "./imageSize";
 import { renderedCodeField, renderedCodeTheme } from "./codeRenderers";
-import { cardsField, cardsTheme } from "./cardsWidget";
+import { cardsField, cardsTheme, openCardBlocks } from "./cardsWidget";
 import { galleryField, galleryTheme } from "./galleryWidget";
 import { videosField, videosTheme } from "./videosWidget";
 import { tableCursor, tableField } from "./tableWidget";
@@ -355,8 +355,27 @@ function activeLines(view: EditorView): Set<number> {
   return lines;
 }
 
-export function buildDecorations(state: EditorState, ranges: readonly { from: number; to: number }[], active: Set<number>): DecorationSet {
+/** `ranges` with the parts inside `cut` taken out. */
+function withoutRanges(ranges: readonly { from: number; to: number }[], cut: readonly { from: number; to: number }[]): { from: number; to: number }[] {
+  if (!cut.length) return ranges.slice();
+  let out = ranges.slice();
+  for (const c of cut) {
+    out = out.flatMap((r) => {
+      if (c.to < r.from || c.from > r.to) return [r];
+      const parts: { from: number; to: number }[] = [];
+      if (r.from < c.from) parts.push({ from: r.from, to: c.from - 1 < r.from ? r.from : c.from - 1 });
+      if (c.to < r.to) parts.push({ from: c.to + 1, to: r.to });
+      return parts;
+    });
+  }
+  return out;
+}
+
+export function buildDecorations(state: EditorState, visible: readonly { from: number; to: number }[], active: Set<number>): DecorationSet {
   const decorations: Range<Decoration>[] = [];
+  // A cards block shown as its Markdown (the cursor in it, or its "Markdown"
+  // button) is left as plain text, all of it, not drawn line by line.
+  const ranges = withoutRanges(visible, openCardBlocks(state));
   // A callout's `> [!type]` is drawn as one widget, so the nodes inside it are left alone.
   let skip = { from: -1, to: -1 };
   // A block that spans a fold is entered once for each visible range around it.
