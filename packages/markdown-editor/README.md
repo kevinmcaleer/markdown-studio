@@ -340,7 +340,10 @@ order they're written:
 
 The word after `gallery` is its layout: `filmstrip` (the first picture large, the
 rest as thumbnails that swap it), `bento` (tiles, the first one big) or
-`lightbox` (even thumbnails that open full size); none means filmstrip. Text that
+`lightbox` (even thumbnails that open full size) or `carousel` (one picture at a
+time that slides on to the next by itself; the active dot fills as its
+countdown, `--md-gallery-interval`, 5s by default, and a round button pauses
+it; it starts paused under `prefers-reduced-motion`); none means filmstrip. Text that
 isn't an image is left out, and an image's title (or else alt text that isn't a
 file name, see `imageCaption`) is its caption. In the live view the block shows
 as its gallery with a bar: Add pictures (the host's image picker, through

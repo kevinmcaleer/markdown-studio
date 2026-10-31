@@ -48,7 +48,7 @@ const PICTURES: GuideSection = {
     ["![alt](…){cover}", "A full-width banner, cropped to fit"],
     ["![alt](…){small}", "A quarter of the size"],
     ["| ![a](…) | ![b](…) |", "A table of pictures shows as a grid of cards; text beside a picture is its caption"],
-    ["::: gallery filmstrip", "A gallery of the picture lines under it, up to a line of :::, in their order (also bento or lightbox). Add pictures in its bar; hover a picture to move or remove it, or drag it into place"],
+    ["::: gallery filmstrip", "A gallery of the picture lines under it, up to a line of :::, in their order (also bento, lightbox, or carousel: one picture at a time, moving on by itself with a pause button). Add pictures in its bar; hover a picture to move or remove it, or drag it into place"],
     ["::: cards", "Cards side by side: each a picture line, a ## title and some words, with a line of --- between cards and ::: to end (::: cards 3 sets three across). Or type /cards and click to fill them in"],
   ],
   note: "Paste or drop pictures straight onto the text. Click a picture to change its title, address or size, choose another picture, or remove it; Edit markdown there shows its Markdown. Hover over a picture to change just its size. A gallery's or cards' Markdown button shows the lines they're written in, and Show gallery or Show cards goes back.",
