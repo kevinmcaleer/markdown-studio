@@ -10,7 +10,7 @@ import { hasLinkPopover, linkCard, linkForm, linkInText, type LinkAt } from "./f
 import { hasSelectionToolbar } from "./format/selectionToolbar";
 import { cellHasImage, isImageGrid } from "./imageGrid";
 import { renderCell } from "./markdown";
-import { columnWidths, widthsToDashes } from "./tableWidths";
+import { columnWidths, fitColumnDashes, widthsToDashes } from "./tableWidths";
 import { applyCommand, commandsOf, filterCommands, hasSlashMenu, type SlashCommand } from "./slashMenu";
 import { rememberedHeight, rememberHeight, sizePictures } from "./steadyScroll";
 import {
@@ -769,9 +769,13 @@ class TableView {
     while (this.grips.length < wanted) {
       const col = this.grips.length;
       const grip = el("div", "cm-md-table-grip");
-      grip.title = "Drag to change the column widths";
+      grip.title = "Drag to change the column widths; double-click to fit the column to its content";
       grip.addEventListener("mousedown", (e) => e.preventDefault());
       grip.addEventListener("pointerdown", (e) => this.startResize(e, col));
+      grip.addEventListener("dblclick", (e) => {
+        e.preventDefault();
+        this.fitColumn(col);
+      });
       this.grips.push(grip);
       this.dom.append(grip);
     }
@@ -838,6 +842,10 @@ class TableView {
       units = start.slice();
       units[col] = left;
       units[col + 1] = pair - left;
+      if (!label.isConnected) {
+        this.dom.classList.add("resizing");
+        this.dom.append(label);
+      }
       show();
     };
     const stop = () => {
@@ -858,14 +866,31 @@ class TableView {
       const dashes = units;
       this.change((source) => setWidths(source, columnWidths(dashes) ? dashes : null));
     };
+    // Nothing changes until the pointer moves, so a click (or a double-click) leaves the columns be.
     this.resizing = { label, stop };
     grip.classList.add("active");
-    this.dom.classList.add("resizing");
-    this.dom.append(label);
-    show();
     doc.addEventListener("pointermove", move);
     doc.addEventListener("pointerup", up);
     doc.addEventListener("pointercancel", up);
+  }
+
+  /**
+   * Double-clicking the edge after column `col` fits that column to its
+   * content: as wide as its longest line, so nothing in it wraps where
+   * there's room, rounded up to 5%. The other columns share the rest in
+   * proportion, each keeping at least 10%.
+   */
+  private fitColumn(col: number) {
+    if (!this.editable) return;
+    const table = this.scroller.querySelector("table");
+    const last = table?.rows[table.rows.length - 1];
+    if (!table || !last) return;
+    const measured = Array.from(last.cells).map((cell) => cell.getBoundingClientRect().width);
+    const px = measured.reduce((sum, w) => sum + w, 0);
+    if (!px || col >= measured.length - 1) return;
+    const current = columnWidths(this.table.dashes) ?? measured.map((w) => (w / px) * 100);
+    const dashes = fitColumnDashes(current, col, (contentWidth(table, col) / px) * 100);
+    this.change((source) => setWidths(source, columnWidths(dashes) ? dashes : null));
   }
 
   /** Clears the widths: every delimiter cell back to `---`. */
@@ -1691,6 +1716,30 @@ export const tableCursor = ViewPlugin.define(() => ({
 
 function isCell(node: HTMLElement): boolean {
   return node.nodeType === 1 && (node.tagName === "TD" || node.tagName === "TH");
+}
+
+/**
+ * The width column `col` needs for nothing in it to wrap: its cells copied
+ * into a hidden table beside it, unwrapped, and the widest measured
+ * (padding and borders included; a `<br>` still breaks a line).
+ */
+function contentWidth(table: HTMLTableElement, col: number): number {
+  const probe = document.createElement("table");
+  probe.className = "cm-md-table-measure";
+  probe.setAttribute("aria-hidden", "true");
+  const body = probe.createTBody();
+  for (const tr of Array.from(table.rows)) {
+    const cell = tr.cells[col];
+    if (!cell) continue;
+    const copy = cell.cloneNode(true) as HTMLElement;
+    copy.removeAttribute("contenteditable");
+    copy.classList.remove("selected");
+    body.insertRow().append(copy);
+  }
+  table.parentElement!.append(probe);
+  const width = Math.max(0, ...Array.from(probe.rows, (tr) => tr.cells[0].getBoundingClientRect().width));
+  probe.remove();
+  return Math.ceil(width);
 }
 
 /** Sets a table's column widths (in percent) as a <colgroup>, or takes it away for null. */

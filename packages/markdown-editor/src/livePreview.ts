@@ -975,6 +975,9 @@ const liveTheme = EditorView.theme({
   ".cm-md-table-grip:hover::after, .cm-md-table-grip.active::after": { opacity: "0.6" },
   ".cm-md-table:not(.editable) > .cm-md-table-grip, .cm-md-table.dragging > .cm-md-table-grip": { display: "none" },
   ".cm-md-table.resizing, .cm-md-table.resizing *": { cursor: "col-resize !important", userSelect: "none" },
+  // The hidden copy of a column that a double-click on its edge measures (fitColumn).
+  ".cm-md-table table.cm-md-table-measure": { position: "absolute", top: "0", left: "0", width: "auto", tableLayout: "auto", visibility: "hidden", pointerEvents: "none" },
+  ".cm-md-table table.cm-md-table-measure :is(th, td)": { whiteSpace: "nowrap", minWidth: "0" },
   ".cm-md-table-widthlabel": {
     position: "absolute",
     zIndex: "4",
