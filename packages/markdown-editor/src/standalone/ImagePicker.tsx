@@ -21,6 +21,7 @@ export function ImagePicker({
   accept,
   onPick,
   onUpload,
+  onDelete,
   doc = "",
 }: {
   anchor: Anchor;
@@ -30,6 +31,8 @@ export function ImagePicker({
   accept: string;
   onPick: (image: ImageInfo, size: ImageSize) => void;
   onUpload: (files: File[]) => void;
+  /** Deletes an image from the library; without it there's no delete button. */
+  onDelete?: (image: ImageInfo) => Promise<void>;
   /** The text, so images already in it can be marked. */
   doc?: string;
 }) {
@@ -99,7 +102,7 @@ export function ImagePicker({
             <div className="mde-image-grid">
               {images.map((image) => {
                 const used = isImageUsed(image, doc);
-                return (
+                const pick = (
                   <button
                     key={image.url}
                     type="button"
@@ -111,6 +114,32 @@ export function ImagePicker({
                     {used && <em className="mde-image-used">In text</em>}
                     <span>{name(image)}</span>
                   </button>
+                );
+                if (!onDelete) return pick;
+                return (
+                  <div key={image.url} className="mde-image-item">
+                    {pick}
+                    <button
+                      type="button"
+                      className="mde-image-delete"
+                      title={`Delete ${name(image)}`}
+                      aria-label={`Delete ${name(image)}`}
+                      onClick={() => {
+                        const ask = used
+                          ? `${name(image)} is in the text. Delete it anyway? The text will show a broken picture until you take it out.`
+                          : `Delete ${name(image)}? This can't be undone.`;
+                        if (!window.confirm(ask)) return;
+                        onDelete(image).then(
+                          () => setImages((list) => (list ?? []).filter((i) => i.url !== image.url)),
+                          (err: unknown) => setError(err instanceof Error ? err.message : "Couldn't delete the image."),
+                        );
+                      }}
+                    >
+                      <svg viewBox="0 0 16 16" aria-hidden="true">
+                        <path d="M3.5 4.5h9M6.5 4.5V3h3v1.5M5 4.5l.5 8.5h5l.5-8.5" />
+                      </svg>
+                    </button>
+                  </div>
                 );
               })}
             </div>

@@ -8,7 +8,7 @@ import "./image-sizes.css";
 import { imageSizeClass, imageSizeMarkdown, imageSizes, parseImageSize, type ImageSize } from "./imageSize";
 import { renderedCodeField, renderedCodeTheme } from "./codeRenderers";
 import { cardsField, cardsTheme, openCardBlocks } from "./cardsWidget";
-import { galleryField, galleryTheme } from "./galleryWidget";
+import { galleryField, galleryTheme, openGalleryBlocks } from "./galleryWidget";
 import { videosField, videosTheme } from "./videosWidget";
 import { tableCursor, tableField } from "./tableWidget";
 import { sizePicture } from "./steadyScroll";
@@ -396,9 +396,9 @@ function withoutRanges(ranges: readonly { from: number; to: number }[], cut: rea
 
 export function buildDecorations(state: EditorState, visible: readonly { from: number; to: number }[], active: Set<number>): DecorationSet {
   const decorations: Range<Decoration>[] = [];
-  // A cards block shown as its Markdown (the cursor in it, or its "Markdown"
-  // button) is left as plain text, all of it, not drawn line by line.
-  const ranges = withoutRanges(visible, openCardBlocks(state));
+  // A cards or gallery block shown as its Markdown (the cursor in it, or its
+  // "Markdown" button) is left as plain text, all of it, not drawn line by line.
+  const ranges = withoutRanges(visible, [...openCardBlocks(state), ...openGalleryBlocks(state)].sort((a, b) => a.from - b.from));
   // A callout's `> [!type]` is drawn as one widget, so the nodes inside it are left alone.
   let skip = { from: -1, to: -1 };
   // A block that spans a fold is entered once for each visible range around it.

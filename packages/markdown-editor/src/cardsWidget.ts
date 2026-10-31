@@ -12,8 +12,17 @@ import { rememberedHeight, rememberHeight, sizePictures } from "./steadyScroll";
 // the Markdown, and the bar's "Markdown" button shows those lines (moving the
 // cursor into the block does too, as with a gallery) until "Show cards".
 
-/** Picks a picture for a card: the host's image picker, beside `anchor`. Without one, a card takes a picture's address. */
-export type CardPicturePicker = (anchor: HTMLElement, done: (picture: { src: string; alt: string }) => void) => void;
+export type PickedPicture = { src: string; alt: string };
+/**
+ * Picks a picture for a card (or a gallery, or the image popover): the host's
+ * image picker, beside `anchor`. Without one, a card takes a picture's
+ * address. With `many`, several uploaded at once all go to `many`, in order.
+ */
+export type CardPicturePicker = (
+  anchor: HTMLElement,
+  done: (picture: PickedPicture) => void,
+  options?: { many?: (pictures: PickedPicture[]) => void },
+) => void;
 export const cardPicturePicker = Facet.define<CardPicturePicker, CardPicturePicker | null>({ combine: (all) => all[0] ?? null });
 
 const COLUMN_CHOICES: { columns: number; label: string; title: string }[] = [

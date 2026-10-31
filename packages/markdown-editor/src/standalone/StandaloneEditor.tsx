@@ -187,8 +187,10 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
   );
   // A card's picture (cardsWidget.ts) goes back to its card rather than into the text.
   const pickForCard = useRef<((picture: { src: string; alt: string }) => void) | null>(null);
+  const pickManyForCard = useRef<((pictures: { src: string; alt: string }[]) => void) | null>(null);
   const openPickerAt = useCallback((anchor: Anchor) => {
     pickForCard.current = null;
+    pickManyForCard.current = null;
     setPicker(anchor);
   }, []);
   const openPickerAtCursor = useCallback((v: EditorView) => {
@@ -238,8 +240,9 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
       ),
       options.tableRenderer ? tableRenderers.of(options.tableRenderer) : [],
       usePicker
-        ? cardPicturePicker.of((anchor, done) => {
+        ? cardPicturePicker.of((anchor, done, pick) => {
             pickForCard.current = done;
+            pickManyForCard.current = pick?.many ?? null;
             setPicker(anchorOf(anchor));
           })
         : [],
@@ -541,9 +544,11 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
           anchor={picker}
           onClose={() => {
             pickForCard.current = null;
+            pickManyForCard.current = null;
             setPicker(null);
           }}
           library={options.imageLibrary}
+          onDelete={options.deleteLibraryImage}
           doc={view.current?.state.doc.toString() ?? ""}
           canUpload={canUpload}
           accept={options.images?.accept ?? "image/*"}
@@ -551,6 +556,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
             setPicker(null);
             const card = pickForCard.current;
             pickForCard.current = null;
+            pickManyForCard.current = null;
             if (card) return card({ src: image.url, alt: (image.alt ?? "").replace(/\.\w+$/, "") });
             if (view.current && !live.current.readOnly) insertImageLink(view.current, image, size);
           }}
@@ -558,6 +564,27 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
             setPicker(null);
             const card = pickForCard.current;
             pickForCard.current = null;
+            const many = pickManyForCard.current;
+            pickManyForCard.current = null;
+            if (card && many && files.length > 1 && options.uploadImage) {
+              // A gallery: every file, in the order they were chosen.
+              const upload = options.uploadImage;
+              Promise.all(
+                files.map((file) =>
+                  upload(file).then(
+                    (url) => ({ src: url, alt: file.name.replace(/\.\w+$/, "") }),
+                    (err: unknown) => {
+                      options.images?.onError?.(err instanceof Error ? err.message : "Couldn't add the picture.", file);
+                      return null;
+                    },
+                  ),
+                ),
+              ).then((pictures) => {
+                const added = pictures.filter((p): p is { src: string; alt: string } => Boolean(p));
+                if (added.length) many(added);
+              });
+              return;
+            }
             if (card) {
               const file = files[0];
               if (file && options.uploadImage)

@@ -148,6 +148,11 @@ export type MountOptions = {
   addImages?: (files: File[]) => Promise<void>;
   /** Images to pick from in the image picker (the toolbar's image button and "/image"). */
   imageLibrary?: () => Promise<ImageInfo[]>;
+  /**
+   * Deletes an image from the library: the picker then shows a delete button
+   * on each one, and asks first (warning when the text still shows it).
+   */
+  deleteLibraryImage?: (image: ImageInfo) => Promise<void>;
   images?: {
     /** Defaults to 25 MB. */
     maxBytes?: number;

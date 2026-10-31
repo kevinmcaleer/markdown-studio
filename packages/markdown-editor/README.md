@@ -98,6 +98,7 @@ Every option is optional.
 | `uploadImage(file)` | | Stores an image and resolves to its URL. Without it, images can only be linked by URL. |
 | `addImages(files)` | | Keeps several images dropped at once without linking them (a gallery) and resolves when done. Without it, they're all linked where they're dropped. One dropped image is always linked between the lines it lands between, shown by a dotted line while dragging. |
 | `imageLibrary()` | | Resolves to `{ url, alt?, thumb? }[]`, the images the picker offers. |
+| `deleteLibraryImage(image)` | | Deletes one of them. The picker then shows a delete button on each, and asks first. |
 | `images.maxBytes` | 25 MB | Bigger images are turned away with a note under the cursor. |
 | `images.accept` | `"image/*"` | Which images are taken, as an `<input accept>` list. |
 | `images.onError(message, file)` | | Called when an image is turned away or its upload fails. |
@@ -281,8 +282,7 @@ stylesheet is `src/image-grid.css`, which also works on its own.
 ### Galleries
 
 A `::: gallery` block shows the image lines inside it as one gallery, in the
-order they're written, so choosing pictures is adding or deleting lines and
-reordering them is moving lines:
+order they're written:
 
 ```markdown
 ::: gallery filmstrip
@@ -294,9 +294,13 @@ reordering them is moving lines:
 The word after `gallery` is its layout: `filmstrip` (the first picture large, the
 rest as thumbnails that swap it), `bento` (tiles, the first one big) or
 `lightbox` (even thumbnails that open full size); none means filmstrip. Text that
-isn't an image is left out, and an image's title (or else its alt text) is its
-caption. In the live view the block shows as its gallery, with layout buttons on
-hover, until the cursor goes in. The preview renders `galleryHtml` (classes
+isn't an image is left out, and an image's title (or else alt text that isn't a
+file name, see `imageCaption`) is its caption. In the live view the block shows
+as its gallery with a bar: Add pictures (the host's image picker, through
+`cardPicturePicker`; several uploaded at once are all added), the layout, and
+Markdown, which shows its lines until Show gallery. Hover a picture to move it
+or remove it, or drag it into place. Every change rewrites the block's lines,
+one picture per line. The preview renders `galleryHtml` (classes
 `md-gallery`, `md-gallery-<layout>`, `md-gallery-hero`, `md-gallery-item`);
 `wireGallery(element, open?)` adds the filmstrip swap and a viewer hook, and
 `src/gallery.css` styles it on its own.

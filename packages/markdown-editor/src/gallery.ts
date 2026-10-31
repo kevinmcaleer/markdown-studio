@@ -1,8 +1,10 @@
+import { imageCaption } from "./imageCaption";
 import type { MarkdownItInstance } from "./markdown";
 
 // Galleries: a block of image lines shown as one gallery, in the order the
-// lines are written. Choosing the pictures is adding or deleting lines, and
-// reordering them is moving lines, so all of it lives in the Markdown.
+// lines are written. In the live view its buttons add, remove and reorder
+// pictures (galleryWidget.ts), and all they do is write those lines, so all
+// of it lives in the Markdown.
 //
 //   ::: gallery filmstrip
 //   ![Front](/front.jpg)
@@ -58,6 +60,27 @@ export function galleryImages(body: string): GalleryImage[] {
     if (src) images.push({ src, alt: unescapeMarkdown(match[1]).trim(), title: (match[3] ?? match[4] ?? "").trim() });
   }
   return images;
+}
+
+/**
+ * Each picture's own Markdown in a gallery's lines, in order, with its
+ * `{size}` if it has one: what the live view's buttons move and remove.
+ */
+export function galleryImageMarkdown(body: string): string[] {
+  const out: string[] = [];
+  for (const match of body.matchAll(IMAGE)) {
+    const src = match[2].replace(/^<|>$/g, "").trim();
+    if (!src) continue;
+    const end = (match.index ?? 0) + match[0].length;
+    const size = /^\{[\w-]+\}/.exec(body.slice(end));
+    out.push(match[0] + (size ? size[0] : ""));
+  }
+  return out;
+}
+
+/** A gallery block: its opening line, a picture per line, and `:::`. */
+export function galleryBlockMarkdown(layout: GalleryLayout, pictures: readonly string[]): string {
+  return [galleryOpenLine(layout), ...pictures, ":::"].join("\n");
 }
 
 export type GalleryBlock = {
@@ -134,7 +157,8 @@ export function galleryHtml(layout: GalleryLayout, images: readonly GalleryImage
     const src = safeImageUrl(image.src);
     return src ? [{ ...image, src }] : [];
   });
-  const caption = (image: GalleryImage) => image.title || image.alt;
+  // Its title, or alt text someone wrote (not one made from a file name, see imageCaption.ts).
+  const caption = (image: GalleryImage) => image.title || imageCaption(image.alt) || "";
   const items = safe
     .map((image, i) => {
       const title = caption(image);
