@@ -12,6 +12,7 @@ import { galleryField, galleryTheme } from "./galleryWidget";
 import { videosField, videosTheme } from "./videosWidget";
 import { tableCursor, tableField } from "./tableWidget";
 import { sizePicture } from "./steadyScroll";
+import { imagePopover, imagePopoverAt, openImagePopover } from "./imagePopover";
 
 // The live view: Markdown shown as it reads, and still edited as text, like
 // Obsidian's live preview. Headings, emphasis, links, list bullets, quotes
@@ -205,6 +206,7 @@ class FenceLabelWidget extends WidgetType {
 /**
  * An image, drawn as the picture at its `{size}` (see imageSize.ts). Hovering
  * it shows its sizes, and picking one rewrites the modifier after its Markdown.
+ * Clicking it opens its popover (imagePopover.ts) rather than its Markdown.
  */
 class ImageWidget extends WidgetType {
   constructor(
@@ -216,6 +218,8 @@ class ImageWidget extends WidgetType {
     readonly modifierLength: number,
     /** No size buttons when the text can't be changed. */
     readonly readOnly: boolean,
+    /** Its popover is open. */
+    readonly editing = false,
   ) {
     super();
   }
@@ -226,7 +230,8 @@ class ImageWidget extends WidgetType {
       other.size === this.size &&
       other.markdownLength === this.markdownLength &&
       other.modifierLength === this.modifierLength &&
-      other.readOnly === this.readOnly
+      other.readOnly === this.readOnly &&
+      other.editing === this.editing
     );
   }
   toDOM(view: EditorView) {
@@ -238,6 +243,7 @@ class ImageWidget extends WidgetType {
     }
     const wrap = document.createElement("span");
     wrap.className = this.size ? `cm-md-image-wrap cm-md-image-sized ${imageSizeClass(this.size)}` : "cm-md-image-wrap";
+    if (this.editing) wrap.classList.add("cm-md-image-editing");
     const img = document.createElement("img");
     img.className = "cm-md-image";
     img.src = this.src;
@@ -245,6 +251,14 @@ class ImageWidget extends WidgetType {
     sizePicture(img);
     wrap.append(img);
     if (this.readOnly) return wrap;
+    img.title = "Click to change the picture";
+    img.draggable = false;
+    // A click opens the picture's popover; the caret stays where it was.
+    img.addEventListener("mousedown", (e) => e.preventDefault());
+    img.addEventListener("click", (e) => {
+      e.preventDefault();
+      openImagePopover(view, view.posAtDOM(wrap));
+    });
 
     const bar = document.createElement("span");
     bar.className = "cm-md-image-sizes";
@@ -269,7 +283,8 @@ class ImageWidget extends WidgetType {
     return wrap;
   }
   ignoreEvent(event: Event) {
-    return event.target instanceof Element && !!event.target.closest(".cm-md-image-sizes");
+    if (!(event.target instanceof Element)) return false;
+    return !!event.target.closest(".cm-md-image-sizes") || (!this.readOnly && event.target.classList.contains("cm-md-image"));
   }
 }
 
@@ -462,7 +477,15 @@ export function buildDecorations(state: EditorState, ranges: readonly { from: nu
             if (url)
               decorations.push(
                 Decoration.replace({
-                  widget: new ImageWidget(state.sliceDoc(url.from, url.to), alt, modifier?.size ?? null, node.to - node.from, length, state.readOnly),
+                  widget: new ImageWidget(
+                    state.sliceDoc(url.from, url.to),
+                    alt,
+                    modifier?.size ?? null,
+                    node.to - node.from,
+                    length,
+                    state.readOnly,
+                    imagePopoverAt(state) === node.from,
+                  ),
                 }).range(node.from, node.to + length),
               );
             return false;
@@ -573,6 +596,7 @@ const inlinePreview = ViewPlugin.fromClass(
         update.focusChanged ||
         syntaxTree(update.state) !== syntaxTree(update.startState) ||
         foldedRanges(update.state) !== foldedRanges(update.startState) ||
+        imagePopoverAt(update.state) !== imagePopoverAt(update.startState) ||
         update.state.readOnly !== update.startState.readOnly
       )
         this.decorations = buildDecorations(update.state, update.view.visibleRanges, activeLines(update.view));
@@ -952,6 +976,7 @@ export function livePreview(): Extension {
     cardsField,
     videosField,
     linkClicks,
+    imagePopover(),
     liveTheme,
     renderedCodeTheme,
     galleryTheme,
