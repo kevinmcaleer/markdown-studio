@@ -50,8 +50,17 @@ export function gradeLabel(r: Readability): string {
   return g <= 5 ? "Easy to read" : g >= 13 ? `Grade ${g}: hard to read` : `Grade ${g}`;
 }
 
-export function useWritingLint(hostHints: EditorHint[] = []) {
-  const [settings, setSettings] = useState(readLintSettings);
+/**
+ * `skip` names rules the host never wants checked (a site whose sections are
+ * all `#` headings has no use for "More than one H1"). They're left out of the
+ * panel and never run, whatever the writer's saved choices say.
+ */
+export function useWritingLint(hostHints: EditorHint[] = [], skip: LintRule[] = []) {
+  const [saved, setSettings] = useState(readLintSettings);
+  const skipKey = skip.join(",");
+  const rules = useMemo(() => RULES.filter((r) => !skip.includes(r.rule)), [skipKey]);
+  // What the editor runs with: the saved choices plus the host's skipped rules.
+  const settings = useMemo(() => (skip.length ? { ...saved, off: [...new Set([...saved.off, ...skip])] } : saved), [saved, skipKey]);
   const [report, setReport] = useState<LintReport | null>(null);
   const view = useRef<EditorView | null>(null);
   const current = useRef(settings);
@@ -65,8 +74,9 @@ export function useWritingLint(hostHints: EditorHint[] = []) {
     v.dispatch({ effects: setLint.of(current.current) });
   }, []);
 
+  useEffect(() => writeLintSettings(saved), [saved]);
+
   useEffect(() => {
-    writeLintSettings(settings);
     const v = view.current;
     if (v?.dom.isConnected) v.dispatch({ effects: setLint.of(settings) });
   }, [settings]);
@@ -89,11 +99,12 @@ export function useWritingLint(hostHints: EditorHint[] = []) {
     if (view.current) applyFix(view.current, f);
   }, []);
 
-  const status = <LintStatus settings={settings} report={settings.on ? report : null} hostHints={hostHints} onToggle={toggle} onToggleRule={toggleRule} onJump={jump} onFix={fix} />;
+  const status = <LintStatus rules={rules} settings={settings} report={settings.on ? report : null} hostHints={hostHints} onToggle={toggle} onToggleRule={toggleRule} onJump={jump} onFix={fix} />;
   return { extensions, onReady, status };
 }
 
 function LintStatus({
+  rules,
   settings,
   report,
   hostHints,
@@ -102,6 +113,7 @@ function LintStatus({
   onJump,
   onFix,
 }: {
+  rules: typeof RULES;
   settings: LintSettings;
   report: LintReport | null;
   hostHints: EditorHint[];
@@ -193,13 +205,13 @@ function LintStatus({
           </label>
           <p className="muted small">Hints only show for you, and never change the text unless you pick a fix.</p>
           <ul className="lint-rules">
-            {RULES.map((r, i) => {
+            {rules.map((r, i) => {
               const off = settings.off.includes(r.rule);
               const n = counts.get(r.rule) ?? 0;
               const hints = expanded === r.rule ? (report?.hints ?? []).filter((h) => h.rule === r.rule) : [];
               return (
                 <li key={r.rule}>
-                  {RULES[i - 1]?.group !== r.group && <div className="menu-heading">{r.group}</div>}
+                  {rules[i - 1]?.group !== r.group && <div className="menu-heading">{r.group}</div>}
                   <div className="lint-rule">
                     <input type="checkbox" checked={!off} disabled={!settings.on} onChange={() => onToggleRule(r.rule)} aria-label={`Check for: ${r.title}`} />
                     <button
