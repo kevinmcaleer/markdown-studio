@@ -8,6 +8,8 @@ import { brTagPlugin, cellHeadingPlugin, cellLines, type TokenClass } from "./ce
 import "./callouts.css";
 import { galleryPlugin } from "./gallery";
 import "./gallery.css";
+import { videosPlugin } from "./videos";
+import "./videos.css";
 import { imageGridPlugin } from "./imageGrid";
 import "./image-grid.css";
 import { imageSizePlugin } from "./imageSize";
@@ -30,7 +32,7 @@ function escapeHtml(text: string): string {
 
 /**
  * A markdown-it set up the way notes render: GFM, footnotes, ==highlight==,
- * task lists, callouts, galleries, image sizes (`{small}`), image grids, headings in table cells and highlighted code. `configure` can add plugins or change
+ * task lists, callouts, galleries, videos, image sizes (`{small}`), image grids, headings in table cells and highlighted code. `configure` can add plugins or change
  * options (a host's `preview.markdownIt`); it can't turn raw HTML back on
  * without the host meaning to, since that's its own option.
  */
@@ -43,6 +45,7 @@ export function createMarkdownIt(configure?: (md: MarkdownItInstance) => Markdow
     .use(taskLists, { enabled: false, label: true })
     .use(calloutPlugin)
     .use(galleryPlugin)
+    .use(videosPlugin)
     .use(imageSizePlugin)
     .use(imageGridPlugin)
     .use(brTagPlugin)

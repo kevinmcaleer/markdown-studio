@@ -8,6 +8,7 @@ import "./image-sizes.css";
 import { imageSizeClass, imageSizeMarkdown, imageSizes, parseImageSize, type ImageSize } from "./imageSize";
 import { renderedCodeField, renderedCodeTheme } from "./codeRenderers";
 import { galleryField, galleryTheme } from "./galleryWidget";
+import { videosField, videosTheme } from "./videosWidget";
 import { tableCursor, tableField } from "./tableWidget";
 import { sizePicture } from "./steadyScroll";
 
@@ -947,9 +948,11 @@ export function livePreview(): Extension {
     tableCursor,
     renderedCodeField,
     galleryField,
+    videosField,
     linkClicks,
     liveTheme,
     renderedCodeTheme,
     galleryTheme,
+    videosTheme,
   ];
 }
