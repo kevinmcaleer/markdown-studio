@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderMarkdown } from "./markdown";
-import { columnWidths, delimiterDashes, widthsToDashes } from "./tableWidths";
+import { columnWidths, delimiterDashes, fitColumnDashes, widthsToDashes } from "./tableWidths";
 
 describe("delimiterDashes", () => {
   it("counts each cell's dashes, leaving out the colons", () => {
@@ -50,5 +50,22 @@ describe("tableWidthsPlugin", () => {
   it("works for a table in a quote", () => {
     const html = renderMarkdown("> | a | b |\n> | -- | ------ |\n> | 1 | 2 |");
     expect(html).toContain('<col style="width: 25%">');
+  });
+});
+
+describe("fitColumnDashes", () => {
+  it("gives the column its content's width, rounded up to 5%, and shares the rest", () => {
+    expect(fitColumnDashes([50, 25, 25], 0, 31)).toEqual([7, 7, 6]);
+  });
+  it("shrinks a column whose content is narrow", () => {
+    expect(fitColumnDashes([50, 50], 0, 12)).toEqual([3, 17]);
+  });
+  it("leaves every other column at least 10%", () => {
+    expect(fitColumnDashes([34, 33, 33], 1, 99)).toEqual([2, 16, 2]);
+  });
+  it("adds up to 20 dashes", () => {
+    const dashes = fitColumnDashes([10, 20, 30, 40], 2, 47);
+    expect(dashes.reduce((a, b) => a + b, 0)).toBe(20);
+    expect(dashes[2]).toBe(10);
   });
 });

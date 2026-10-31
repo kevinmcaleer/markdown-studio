@@ -54,6 +54,39 @@ export function widthsToDashes(widths: number[]): number[] {
   return dashes;
 }
 
+/**
+ * The dash counts that give column `col` `target` percent of the width (rounded
+ * up to the next 5%, so its content still fits) and share what's left among
+ * the other columns in proportion to `widths`, their current widths. Every
+ * other column keeps at least 10% where there's room, so `col` can't take
+ * the whole table.
+ */
+export function fitColumnDashes(widths: number[], col: number, target: number): number[] {
+  const n = widths.length;
+  const steps = Math.max(Math.round(100 / WIDTH_STEP), n * 2);
+  const least = steps >= n * 2 ? 2 : 1;
+  // A twentieth of a step over (about 1.5px across a 600px table) still rounds down.
+  const want = Math.ceil(target / (100 / steps) - 0.05);
+  const mine = Math.max(least, Math.min(steps - least * (n - 1), want));
+  const rest = steps - mine;
+  const others = widths.map((w, i) => (i === col ? 0 : Math.max(w, 0.0001)));
+  const total = others.reduce((sum, w) => sum + w, 0);
+  const exact = others.map((w, i) => (i === col ? 0 : (w / total) * rest));
+  const dashes = exact.map((x, i) => (i === col ? mine : Math.max(least, Math.floor(x))));
+  let sum = dashes.reduce((a, b) => a + b, 0);
+  // Too many (the 10% floors): take from the widest others first.
+  while (sum > steps) {
+    const i = dashes.reduce((best, d, j) => (j !== col && d > least && (best < 0 || d > dashes[best]) ? j : best), -1);
+    if (i < 0) break;
+    dashes[i]--;
+    sum--;
+  }
+  // Too few: the biggest remainders get one more.
+  const order = exact.map((x, i) => [x - Math.floor(x), i]).filter(([, i]) => i !== col).sort((a, b) => b[0] - a[0]);
+  for (let k = 0; sum < steps && order.length; k = (k + 1) % order.length, sum++) dashes[order[k][1]]++;
+  return dashes;
+}
+
 /** markdown-it: a table whose delimiter row sets widths gets a `<colgroup>` and the `has-widths` class. */
 export function tableWidthsPlugin(md: MarkdownItInstance): void {
   md.core.ruler.push("table_widths", (state) => {
