@@ -438,7 +438,8 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       W = clampSide(data.width * scale);
       H = clampSide(data.height * scale);
       const img = await FabricImage.fromURL(data.url);
-      img.set({ left: 0, top: 0, scaleX: W / data.width, scaleY: H / data.height, name: "Picture" } as Partial<FabricImage>);
+      // Locked, so drawing over it doesn't move it; the Layers panel unlocks it.
+      img.set({ left: 0, top: 0, scaleX: W / data.width, scaleY: H / data.height, name: "Picture", layerLocked: true } as Partial<FabricImage>);
       prepare(img);
       restoring = true;
       canvas.add(img);

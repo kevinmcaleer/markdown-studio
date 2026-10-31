@@ -101,6 +101,8 @@ Written in a plain *HTML form*.</textarea>
         addImages: (files) => Promise.all(files.map(uploadImage)).then(() => {}),
         images: { libraryName: "the gallery" },
         imageLibrary: async () => uploaded,
+        // "/Graphic": Layers, loaded the first time it's opened (npm run build -w packages/layers).
+        layers: { load: () => import("../../layers/dist/layers.js") },
         draft: { key: "demo-project" },
         maxHeight: "28rem",
         toolbar: [

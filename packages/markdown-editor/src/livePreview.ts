@@ -14,6 +14,7 @@ import { galleryField, galleryTheme, openGalleryBlocks } from "./galleryWidget";
 import { videosField, videosTheme } from "./videosWidget";
 import { tableCursor, tableField } from "./tableWidget";
 import { sizePicture } from "./steadyScroll";
+import { isLayersUrl, layersOpener } from "./layersFacet";
 import { imagePopover, imagePopoverAt, openImagePopover } from "./imagePopover";
 import { imageCaption } from "./imageCaption";
 
@@ -270,6 +271,27 @@ class ImageWidget extends WidgetType {
       openImagePopover(view, view.posAtDOM(wrap));
     });
 
+    // A Layers graphic opens again in Layers (layersBlock.ts): from its button, or a double-click.
+    const layers = view.state.facet(layersOpener);
+    if (layers && isLayersUrl(this.src)) {
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "cm-md-image-layers";
+      edit.textContent = "Edit graphic";
+      edit.title = "Change this graphic in Layers";
+      edit.addEventListener("mousedown", (e) => e.preventDefault());
+      edit.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        layers.open(view, view.posAtDOM(wrap));
+      });
+      img.addEventListener("dblclick", (e) => {
+        e.preventDefault();
+        layers.open(view, view.posAtDOM(wrap));
+      });
+      wrap.append(edit);
+    }
+
     const bar = document.createElement("span");
     bar.className = "cm-md-image-sizes";
     bar.setAttribute("role", "group");
@@ -294,7 +316,7 @@ class ImageWidget extends WidgetType {
   }
   ignoreEvent(event: Event) {
     if (!(event.target instanceof Element)) return false;
-    return !!event.target.closest(".cm-md-image-sizes") || (!this.readOnly && event.target.classList.contains("cm-md-image"));
+    return !!event.target.closest(".cm-md-image-sizes, .cm-md-image-layers") || (!this.readOnly && event.target.classList.contains("cm-md-image"));
   }
 }
 

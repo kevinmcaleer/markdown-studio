@@ -147,5 +147,7 @@ export {
   type Change,
 } from "./outline";
 export { htmlToMarkdown } from "./htmlToMarkdown";
+export { layersBlocks, layersCommand, openLayers, layersOpen, graphicFileName, newGraphicInsert, type LayersApi, type LayersEditor, type LayersHost, type LayersOptions, type LayersResult } from "./layersBlock";
+export { isLayersUrl, layersUrl, layersOpener, LAYERS_MARK, type LayersOpener } from "./layersFacet";
 export { parseDelimited } from "./delimited";
 export { copyText } from "./clipboard";
