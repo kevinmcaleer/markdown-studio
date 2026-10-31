@@ -34,13 +34,13 @@ import { countChars, countWords, readingMinutes, writingStats, type SelectionSta
 import { DraftBar } from "./DraftBar";
 import { Guide, type GuideShortcut } from "./Guide";
 import { ImagePicker } from "./ImagePicker";
-import { DEFAULT_STATUS, DEFAULT_TOOLBAR, VIEW_SHORTCUTS, type EditorHint, type ImageInfo, type MarkdownEditor, type MountOptions, type Pane, type Stats, type ToolbarButton } from "./options";
+import { DEFAULT_STATUS, DEFAULT_TOOLBAR, VIEW_SHORTCUTS, type EditorHint, type ImageInfo, type MarkdownEditor, type MountOptions, type Pane, type SaveState, type Stats, type ToolbarButton } from "./options";
 import { Outline } from "./Outline";
 import { anchorOf, type Anchor } from "./Popover";
 import { PreviewPane, syncScroll, type Renderer } from "./PreviewPane";
 import { StatusBar } from "./StatusBar";
 import { TodoList } from "./TodoList";
-import { Toolbar, VIEW_TOOLS } from "./Toolbar";
+import { Toolbar, VIEW_TOOLS, type SaveStatus } from "./Toolbar";
 import "../format/format.css";
 import "./standalone.css";
 
@@ -63,6 +63,7 @@ export type Bridge = {
     openImagePicker(anchor?: HTMLElement): void;
     refreshPreview(): void;
     setHints(hints: EditorHint[]): void;
+    setSaveStatus(state: SaveState | null, message?: string): void;
     checkSpelling(): void;
   } | null;
 };
@@ -173,6 +174,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
   const lintEnabled = options.lint !== false;
   const [spellingIssues, setSpellingIssues] = useState<number | null>(null);
   const [hints, setHints] = useState<EditorHint[]>(options.hints ?? []);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus | null>(options.saveStatus ? { state: options.saveStatus } : null);
   const [lintSkip] = useState(() => options.lintSkip ?? []);
   const lint = useWritingLint(hints, lintSkip);
 
@@ -459,6 +461,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
       },
       refreshPreview: () => setPreviewVersion((n) => n + 1),
       setHints: (next) => setHints([...next]),
+      setSaveStatus: (state, message) => setSaveStatus(state ? { state, message } : null),
       checkSpelling: () => runSpelling(),
     };
   }, [keeper]);
@@ -537,6 +540,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
           onCustom={onCustom}
           customActive={customActive}
           dictation={options.speech ? dictation.button : undefined}
+          saveStatus={saveStatus}
         />
       )}
       {todosOn && <TodoList todos={todos} readOnly={readOnly} onDone={doneTodo} onJump={jumpToTodo} />}

@@ -133,6 +133,7 @@ Every option is optional.
 | `proofing.language` | `"en-GB"` | The proofing language until the writer picks one in the status bar. |
 | `lint` | `true` | Writing hints in the status bar. |
 | `lintSkip` | `[]` | Writing hint rules to leave out altogether, such as `["multiple-h1"]` for a site whose sections are all `#` headings. The rule names are in `RULES` (`lint/rules.ts`). |
+| `saveStatus` | `null` | The host's save state shown from the start: `"saved"`, `"saving"` or `"error"`. See `setSaveStatus`. |
 | `hints` | `[]` | The host's own hints, `{ id, title, detail?, actions?: [{ label, run }] }`, listed at the top of the hints panel and counted on its button even with writing hints off. |
 | `outline` | `false` | Opens the outline beside the text (the `outline` toolbar button toggles it). |
 | `speech` | `false` | Dictation (toolbar) and read aloud (status bar), where the browser can. |
@@ -483,6 +484,7 @@ Undo, redo and find and replace keep CodeMirror's usual keys.
 | `openLinkPopover()`, `openImagePicker(anchorElement?)` | The same as the Link and image buttons. |
 | `refreshPreview()` | Renders the preview again (after the host's renderer has changed). |
 | `checkSpelling()` | Opens the spelling check at the cursor, as F7 and the `spelling` button do. |
+| `setSaveStatus(state, message?)` | Shows a cloud at the toolbar's right end, which stays on screen while scrolling: `"saved"` a plain cloud, `"saving"` a cloud with turning arrows, `"error"` a cloud with a cross ("Not saved"). `message` is its tooltip; `null` hides it. On a phone only the cloud shows. |
 | `setHints(hints)` | Replaces the host's hints in the hints panel (see the `hints` option); `[]` clears them. |
 | `clearDraft()` | Forget the stored draft: call it once the host has saved. |
 | `on(event, listener)` | Returns a function that removes the listener; `off(event, listener)` does too. |

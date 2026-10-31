@@ -90,6 +90,13 @@ export type ImageInfo = {
 
 export type Pane = "edit" | "preview" | "split";
 
+/**
+ * The host's save state, shown as a cloud at the right end of the toolbar
+ * (which stays on screen while scrolling): "saved" a plain cloud, "saving" a
+ * cloud with turning arrows, "error" a cloud with a cross. `null` hides it.
+ */
+export type SaveState = "saved" | "saving" | "error";
+
 
 export type Stats = { words: number; chars: number; readingMinutes: number; lines: number };
 
@@ -304,6 +311,11 @@ export type MountOptions = {
    * every section is a `#` heading. They're left out of the hints panel.
    */
   lintSkip?: LintRule[];
+  /**
+   * The save state to show at the toolbar's right end from the start, for a
+   * host that saves the text itself. Change it with `setSaveStatus`. Needs the toolbar.
+   */
+  saveStatus?: SaveState | null;
   /** The host's own hints, listed above the writing hints. Change them with `setHints`. */
   hints?: EditorHint[];
   /** Opens the outline (the headings) beside the text. */
@@ -345,6 +357,12 @@ export interface MarkdownEditor {
   checkSpelling(): void;
   /** Replaces the host's hints in the hints panel; `[]` clears them. Needs `lint` on. */
   setHints(hints: EditorHint[]): void;
+  /**
+   * Shows the host's save state at the toolbar's right end; `null` hides it.
+   * `message` is the tooltip ("Couldn't save: you're offline", say); each
+   * state has its own when it's left out.
+   */
+  setSaveStatus(state: SaveState | null, message?: string): void;
   on<K extends keyof EditorEvents>(event: K, listener: (value: EditorEvents[K]) => void): () => void;
   off<K extends keyof EditorEvents>(event: K, listener: (value: EditorEvents[K]) => void): void;
   /** Takes the editor out of the page; a `<textarea>` it was mounted on comes back. */
