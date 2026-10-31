@@ -205,7 +205,7 @@ function LintStatus({
                     <button
                       type="button"
                       className="lint-rule-name"
-                      title={r.looksFor}
+                      title={r.example ? `${r.looksFor}\nFor example: “${r.example.before}” → “${r.example.after}”` : r.looksFor}
                       disabled={!settings.on || off || n === 0}
                       aria-expanded={expanded === r.rule}
                       onClick={() => setExpanded((e) => (e === r.rule ? null : r.rule))}
@@ -222,11 +222,11 @@ function LintStatus({
                           <button type="button" title={h.message} onClick={() => onJump(h.from, h.to)}>
                             {h.snippet || "(empty)"}
                           </button>
-                          {h.fix && (
-                            <button type="button" className="lint-fix" onClick={() => onFix(h.fix!)}>
-                              {h.fix.label}
+                          {h.fixes?.map((f) => (
+                            <button key={f.label} type="button" className="lint-fix" onClick={() => onFix(f)}>
+                              {f.label}
                             </button>
-                          )}
+                          ))}
                         </li>
                       ))}
                       {hints.length > 50 && <li className="muted small">and {hints.length - 50} more</li>}

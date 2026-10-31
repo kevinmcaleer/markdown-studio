@@ -23,6 +23,8 @@ export type Diagnostic = {
   title: string;
   message: string;
   fixes?: DiagnosticFix[];
+  /** A before-and-after line that shows what the rule means. */
+  example?: { before: string; after: string };
 };
 
 /** Replaces every diagnostic from one source. Send an empty list to clear it. */
@@ -102,6 +104,14 @@ function card(view: EditorView, found: Diagnostic[]): HTMLElement {
     title.textContent = d.title;
     const message = item.appendChild(document.createElement("p"));
     message.textContent = d.message;
+    if (d.example) {
+      const ex = item.appendChild(document.createElement("p"));
+      ex.className = "cm-diag-example";
+      ex.appendChild(document.createElement("span")).textContent = "For example ";
+      ex.appendChild(document.createElement("del")).textContent = d.example.before;
+      ex.appendChild(document.createTextNode(" → "));
+      ex.appendChild(document.createElement("ins")).textContent = d.example.after;
+    }
     if (d.fixes?.length && !view.state.readOnly) {
       const row = item.appendChild(document.createElement("div"));
       row.className = "cm-diag-fixes";
@@ -147,6 +157,10 @@ const diagnosticsTheme = EditorView.theme({
   },
   ".cm-diag-item + .cm-diag-item": { marginTop: "0.5rem", paddingTop: "0.5rem", borderTop: "1px solid var(--border, #ddd)" },
   ".cm-diag-item p": { margin: "0.15rem 0 0", color: "var(--muted, #666)" },
+  ".cm-diag-item .cm-diag-example": { fontSize: "12px", marginTop: "0.3rem" },
+  ".cm-diag-example span": { fontWeight: "600" },
+  ".cm-diag-example del": { textDecorationColor: "var(--danger, #b4322a)" },
+  ".cm-diag-example ins": { textDecoration: "none", color: "var(--text, inherit)", background: "color-mix(in srgb, var(--accent, #c96442) 14%, transparent)", borderRadius: "3px", padding: "0 2px" },
   ".cm-diag-fixes": { display: "flex", flexWrap: "wrap", gap: "0.3rem", marginTop: "0.4rem" },
   ".cm-diag-fixes button": {
     font: "inherit",
@@ -157,6 +171,8 @@ const diagnosticsTheme = EditorView.theme({
     color: "inherit",
     cursor: "pointer",
   },
+  ".cm-diag-fixes button:first-child": { borderColor: "color-mix(in srgb, var(--accent, #c96442) 55%, transparent)" },
+  ".cm-diag-fixes button:hover": { background: "color-mix(in srgb, var(--accent, #c96442) 14%, var(--surface-2, #f4f4f4))" },
 });
 
 const layer: Extension = [diagnosticsField, hoverCard, diagnosticsTheme];
