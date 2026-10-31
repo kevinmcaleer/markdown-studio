@@ -168,6 +168,7 @@ class CardsWidget extends WidgetType {
     if (!this.readOnly) {
       const add = el("button", "cm-md-card-add");
       add.type = "button";
+      add.title = "Add a card at the end";
       add.innerHTML = `${svg(ICONS.plus)}<span>Add card</span>`;
       add.addEventListener("click", () =>
         change(
@@ -175,7 +176,6 @@ class CardsWidget extends WidgetType {
           (b) => pendingEdit.set(view, { open: b.openLine, index: b.cards.length }),
         ),
       );
-      grid.append(add);
 
       const bar = el("div", "cm-md-cards-bar");
       bar.append(el("span", "cm-md-cards-label", "Cards"));
@@ -196,7 +196,8 @@ class CardsWidget extends WidgetType {
         view.focus();
         view.dispatch({ selection: { anchor: first.from }, scrollIntoView: true });
       });
-      bar.append(across, markdown);
+      // In the bar rather than the grid, so the cards sit just as they will on the page.
+      bar.append(add, across, markdown);
       wrap.append(bar);
       // Buttons act without taking the caret out of wherever it was.
       wrap.addEventListener("mousedown", (e) => {
@@ -425,6 +426,20 @@ class ShowCardsWidget extends WidgetType {
   }
 }
 
+/** The cards blocks the cursor is in, shown as their Markdown: the live view leaves their lines as plain text. */
+export function openCardBlocks(state: EditorState): { from: number; to: number }[] {
+  const { doc, selection } = state;
+  const text = doc.toString();
+  if (!/:::[ \t]*cards/i.test(text)) return [];
+  const open: { from: number; to: number }[] = [];
+  for (const block of findCardBlocks(text.split("\n"))) {
+    const from = doc.line(block.open + 1).from;
+    const to = doc.line(block.close + 1).to;
+    if (selection.ranges.some((r) => r.from <= to && r.to >= from)) open.push({ from, to });
+  }
+  return open;
+}
+
 /** The cards blocks: drawn as cards, or as their lines while the cursor is in one. */
 export function findCardWidgets(state: EditorState): DecorationSet {
   const { doc, selection } = state;
@@ -532,23 +547,8 @@ export const cardsTheme = EditorView.theme({
   ".cm-md-card-tools button:hover:not(:disabled)": { background: "var(--hover, rgb(0 0 0 / 0.06))" },
   ".cm-md-card-tools button:disabled": { opacity: "0.35", cursor: "default" },
   ".cm-md-card-tools svg, .cm-md-card-add svg, .cm-md-card-pic-empty svg": { width: "1rem", height: "1rem", fill: "none", stroke: "currentColor", strokeWidth: "1.4", strokeLinecap: "round", strokeLinejoin: "round" },
-  ".cm-md-card-add": {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "0.35rem",
-    minHeight: "9rem",
-    border: "1.5px dashed var(--border)",
-    borderRadius: "var(--md-cards-radius, 12px)",
-    background: "none",
-    color: "var(--muted)",
-    fontFamily: "var(--font-ui, inherit)",
-    fontSize: "0.88rem",
-    cursor: "pointer",
-  },
-  ".cm-md-card-add:hover": { color: "var(--accent)", borderColor: "var(--accent)" },
-  ".cm-md-card-add svg": { width: "1.4rem", height: "1.4rem" },
+  ".cm-md-cards-bar .cm-md-card-add": { display: "inline-flex", alignItems: "center", gap: "0.25rem", border: "1px solid var(--border)", background: "var(--surface, #fff)" },
+  ".cm-md-cards-bar .cm-md-card-add:hover": { color: "var(--accent)", borderColor: "var(--accent)" },
   ".cm-md-card-form": { display: "flex", flexDirection: "column", gap: "0.45rem", padding: "0.5rem", fontFamily: "var(--font-ui, inherit)", cursor: "default" },
   ".cm-md-card-pic": { display: "flex", flexDirection: "column", gap: "0.35rem" },
   ".cm-md-card-pic img": { display: "block", width: "100%", height: "auto", aspectRatio: "4 / 3", objectFit: "contain", borderRadius: "8px", background: "var(--surface-2, rgb(0 0 0 / 0.03))" },
@@ -576,7 +576,9 @@ export const cardsTheme = EditorView.theme({
   ".cm-md-card-form .cm-md-card-done": { background: "var(--accent)", color: "var(--accent-text)" },
   ".cm-md-card-form .cm-md-card-done:hover": { background: "var(--accent)", filter: "brightness(1.08)" },
   // Its lines, while the cursor is in the block.
-  ".cm-line.cm-md-cards-line": { backgroundColor: "rgb(120 120 120 / 0.07)", paddingLeft: "0.75rem", paddingRight: "0.75rem" },
+  // Plain Markdown, in the code font, so it reads as what's written rather than a draft of the cards.
+  ".cm-line.cm-md-cards-line": { backgroundColor: "rgb(120 120 120 / 0.07)", paddingLeft: "0.75rem", paddingRight: "0.75rem", fontFamily: "var(--font-mono)", fontSize: "0.88em", lineHeight: "1.6" },
+  ".cm-line.cm-md-cards-line *": { fontFamily: "inherit", fontSize: "inherit !important", lineHeight: "inherit" },
   ".cm-line.cm-md-cards-first": { borderTopLeftRadius: "8px", borderTopRightRadius: "8px", paddingTop: "0.3em", color: "var(--muted)" },
   ".cm-line.cm-md-cards-last": { borderBottomLeftRadius: "8px", borderBottomRightRadius: "8px", paddingBottom: "0.3em", color: "var(--muted)" },
   ".cm-md-cards-show": { marginLeft: "0.75rem", border: "1px solid var(--border) !important", background: "var(--surface, #fff) !important", verticalAlign: "middle" },
