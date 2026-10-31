@@ -521,7 +521,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
           readAloud={options.speech && readAloud.supported ? { reading: readAloud.reading, toggle: readAloud.toggle } : undefined}
         />
       )}
-      {guide && <Guide anchor={guide} onClose={() => setGuide(null)} shortcuts={guideShortcuts} commands={commands} />}
+      {guide && <Guide anchor={guide} onClose={() => setGuide(null)} shortcuts={guideShortcuts} commands={commands} spelling={spellcheck !== "off"} hints={lintEnabled} sections={options.guide} />}
       {picker && view.current && (
         <ImagePicker
           anchor={picker}

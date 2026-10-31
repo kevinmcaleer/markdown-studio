@@ -8,7 +8,7 @@ What you get with no configuration:
 
 - **Live preview**: Markdown shows as it reads while you type, with its syntax only on the line you're on. A Raw view shows all of it, with line numbers, and line numbers can be turned on in the live view too.
 - **`/` menu** for headings, lists, tables, code, images, links, dates, and the host's own commands.
-- **Toolbar** (undo/redo, text style, marks, lists, inserts, preview, side by side, full screen, Markdown guide) and a **selection toolbar** over selected text, with Clear formatting.
+- **Toolbar** (undo/redo, text style, marks, lists, inserts, preview, side by side, full screen, Markdown guide: a "?" cheat sheet of text, pictures and sizes, callouts, tables, checking your writing, shortcuts and `/` commands, with room for the host's own topics) and a **selection toolbar** over selected text, with Clear formatting.
 - **Tables** you edit as a grid, **smart paste** (rich text, spreadsheet cells, code from an IDE and URLs arrive as Markdown) and **image upload** by paste, drop or picker.
 - **Proofing**: Hunspell spelling (offline, en-GB and en-US), basic grammar, and a right-click menu with suggestions, a Word-style spelling check (F7) that steps through each misspelt word with Change, Change all, Ignore, Ignore all and Add to dictionary, and a book in the status bar that shows a tick when the whole document is spelt right (or how many words aren't); Look Up, Synonyms, LanguageTool grammar and translation when pointed at a Markdown Studio server (or anything serving the same `/api/language` endpoints).
 - **Writing hints** (passive voice, long sentences, adverbs, wordy phrases, readability), with an example for each and one-click rewording where there is one, **outline**, **find and replace**, counts, cursor position.
@@ -92,6 +92,7 @@ Every option is optional.
 | `selectionToolbar` | `true` | The floating toolbar over selected text. |
 | `status` | `DEFAULT_STATUS` | Status bar items in order, or `false`. See [Status bar](#status-bar). |
 | `slashCommands` | | Commands added to the `/` menu, or `(defaults) => commands` to replace the list. See [`/` commands](#-commands). |
+| `guide` | | The host's own topics in the `?` Markdown guide, after the built-in ones: `[{ title, rows: [["what to type", "what it does"], …], note? }]`. |
 | `insertTexts` | | EasyMDE-style templates: `{ link, image, table, horizontalRule, code }`, each `[before, after]` the cursor. |
 | `shortcuts` | | Keys by action, e.g. `{ bold: "Mod-b", link: null }`. `null` turns one off. See [Shortcuts](#shortcuts). |
 | `uploadImage(file)` | | Stores an image and resolves to its URL. Without it, images can only be linked by URL. |

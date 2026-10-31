@@ -20,6 +20,7 @@ export {
   type BuiltInTool,
   type StatusItem,
   type ImageInfo,
+  type GuideSection,
   type Pane,
   type Stats,
 } from "./mount";

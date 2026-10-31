@@ -89,6 +89,22 @@ describe("mount", () => {
     numbered.destroy();
   });
 
+  it("shows every Markdown topic in the guide, with the host's own after them", () => {
+    const el = host();
+    const editor = mount(el, {
+      toolbar: ["guide"],
+      guide: [{ title: "Bill of Materials", rows: [["| Qty | Price |", "Totals added up for you"]], note: "Under a ## Bill of Materials heading." }],
+    });
+    flushSync(() => el.querySelector<HTMLButtonElement>(".mde-tool-guide")!.click());
+    const guide = document.querySelector(".mde-guide")!;
+    const titles = [...guide.querySelectorAll("summary")].map((s) => s.textContent);
+    expect(titles).toEqual(["Text", "Pictures", "Callouts", "Tables", "Checking your writing", "Bill of Materials", "Shortcuts", "Type / for"]);
+    expect(guide.querySelector("details")!.open).toBe(true);
+    const text = guide.textContent!;
+    for (const bit of ["{cover}", "> [!warning]-", "| :--- | :---: | ---: |", "| ## Title |", "<br>", "Split table here", "F7", "Totals added up for you"]) expect(text).toContain(bit);
+    editor.destroy();
+  });
+
   it("offers a stored draft back, and restores it", () => {
     writeDraft("post", "Unsaved words");
     const el = host();

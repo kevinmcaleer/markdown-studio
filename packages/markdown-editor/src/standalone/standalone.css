@@ -405,7 +405,38 @@
 
 .mde-guide td:first-child {
   color: var(--muted);
-  white-space: nowrap;
+}
+
+.mde-guide details + details {
+  border-top: 1px solid var(--border);
+}
+
+.mde-guide summary {
+  padding: 0.4rem 0;
+  cursor: pointer;
+  font: 600 11px/1.4 var(--font-sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.mde-guide summary:hover {
+  color: var(--text);
+}
+
+.mde-guide details[open] > summary {
+  color: var(--text);
+}
+
+.mde-guide details > table,
+.mde-guide details > .mde-guide-note {
+  margin-bottom: 0.5rem;
+}
+
+.mde-guide-note {
+  margin: 0.3rem 0 0;
+  font-size: 12px;
+  color: var(--muted);
 }
 
 .mde-guide code,
@@ -415,7 +446,8 @@
   color: var(--code-text);
   border-radius: 4px;
   padding: 0.05rem 0.3rem;
-  white-space: pre;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .mde-images {
