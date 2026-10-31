@@ -2,6 +2,7 @@ import { syntaxTree } from "@codemirror/language";
 import { Facet, Prec, StateEffect, StateField, type EditorState, type Extension, type TransactionSpec } from "@codemirror/state";
 import { EditorView, keymap, showTooltip, type Tooltip } from "@codemirror/view";
 import { calloutKinds } from "./callouts";
+import { insertCards } from "./cardsWidget";
 
 // Typing "/" at the start of a line (or after a space) opens a menu of
 // Markdown blocks, like Claude docs. Typing more filters it; arrows move,
@@ -74,6 +75,16 @@ export const slashCommands: SlashCommand[] = [
     block: true,
     blankBefore: true,
     insert: () => ({ before: "| ", placeholder: "Column 1", after: " | Column 2 | Column 3 |\n| --- | --- | --- |\n|  |  |  |\n" }),
+  },
+  {
+    id: "cards",
+    label: "Cards",
+    keywords: ["layout", "columns", "grid", "card", "pictures", "side by side"],
+    group: "blocks",
+    icon: "M2 3.5h5v9H2zM9 3.5h5v9H9zM3 6h3M10 6h3",
+    block: true,
+    // Pointed and clicked rather than typed: the block goes in, with its first card open.
+    run: (view) => insertCards(view),
   },
   {
     id: "quote",

@@ -7,6 +7,7 @@ import { copyText } from "./clipboard";
 import "./image-sizes.css";
 import { imageSizeClass, imageSizeMarkdown, imageSizes, parseImageSize, type ImageSize } from "./imageSize";
 import { renderedCodeField, renderedCodeTheme } from "./codeRenderers";
+import { cardsField, cardsTheme } from "./cardsWidget";
 import { galleryField, galleryTheme } from "./galleryWidget";
 import { videosField, videosTheme } from "./videosWidget";
 import { tableCursor, tableField } from "./tableWidget";
@@ -948,11 +949,13 @@ export function livePreview(): Extension {
     tableCursor,
     renderedCodeField,
     galleryField,
+    cardsField,
     videosField,
     linkClicks,
     liveTheme,
     renderedCodeTheme,
     galleryTheme,
+    cardsTheme,
     videosTheme,
   ];
 }

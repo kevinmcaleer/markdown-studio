@@ -21,6 +21,7 @@ import { slashCommands as defaultCommands, slashMenu, withInsertTexts, type Slas
 import { imageSizeMarkdown, type ImageSize } from "../imageSize";
 import { insertImages, smartPaste, type SmartPasteOptions } from "../smartPaste";
 import { cellCaretRect, inTable, tableNotes, tableRenderers } from "../tableWidget";
+import { cardPicturePicker } from "../cardsWidget";
 import { videoRenderers } from "../videosWidget";
 import { speechEditor } from "../speech/speechEditor";
 import { useDictation } from "../speech/useDictation";
@@ -184,7 +185,12 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
     }),
     [],
   );
-  const openPickerAt = useCallback((anchor: Anchor) => setPicker(anchor), []);
+  // A card's picture (cardsWidget.ts) goes back to its card rather than into the text.
+  const pickForCard = useRef<((picture: { src: string; alt: string }) => void) | null>(null);
+  const openPickerAt = useCallback((anchor: Anchor) => {
+    pickForCard.current = null;
+    setPicker(anchor);
+  }, []);
   const openPickerAtCursor = useCallback((v: EditorView) => {
     const at = cellCaretRect(v) ?? v.coordsAtPos(v.state.selection.main.head);
     const box = v.dom.getBoundingClientRect();
@@ -231,6 +237,12 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
         Object.fromEntries(Object.entries(options.codeRenderers ?? {}).map(([language, render]) => [language.toLowerCase(), render])),
       ),
       options.tableRenderer ? tableRenderers.of(options.tableRenderer) : [],
+      usePicker
+        ? cardPicturePicker.of((anchor, done) => {
+            pickForCard.current = done;
+            setPicker(anchorOf(anchor));
+          })
+        : [],
       options.videoRenderer ? videoRenderers.of(options.videoRenderer) : [],
       options.tableNote ? tableNotes.of(options.tableNote) : [],
       codeEditors.of(
@@ -527,17 +539,34 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
       {picker && view.current && (
         <ImagePicker
           anchor={picker}
-          onClose={() => setPicker(null)}
+          onClose={() => {
+            pickForCard.current = null;
+            setPicker(null);
+          }}
           library={options.imageLibrary}
           doc={view.current?.state.doc.toString() ?? ""}
           canUpload={canUpload}
           accept={options.images?.accept ?? "image/*"}
           onPick={(image, size) => {
             setPicker(null);
+            const card = pickForCard.current;
+            pickForCard.current = null;
+            if (card) return card({ src: image.url, alt: (image.alt ?? "").replace(/\.\w+$/, "") });
             if (view.current && !live.current.readOnly) insertImageLink(view.current, image, size);
           }}
           onUpload={(files) => {
             setPicker(null);
+            const card = pickForCard.current;
+            pickForCard.current = null;
+            if (card) {
+              const file = files[0];
+              if (file && options.uploadImage)
+                options.uploadImage(file).then(
+                  (url) => card({ src: url, alt: file.name.replace(/\.\w+$/, "") }),
+                  (err: unknown) => options.images?.onError?.(err instanceof Error ? err.message : "Couldn't add the picture.", file),
+                );
+              return;
+            }
             const v = view.current;
             if (!v || live.current.readOnly) return;
             const { head } = v.state.selection.main;

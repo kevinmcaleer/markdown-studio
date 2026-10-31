@@ -47,6 +47,7 @@ const PICTURES: GuideSection = {
     ["![alt](…){small}", "A quarter of the size"],
     ["| ![a](…) | ![b](…) |", "A table of pictures shows as a grid of cards; text beside a picture is its caption"],
     ["::: gallery filmstrip", "A gallery of the picture lines under it, up to a line of :::, in their order (also bento or lightbox)"],
+    ["::: cards", "Cards side by side: each a picture line, a ## title and some words, with a line of --- between cards and ::: to end (::: cards 3 sets three across). Or type /cards and click to fill them in"],
   ],
   note: "Paste or drop pictures straight onto the text. Hover over a picture to change its size.",
 };

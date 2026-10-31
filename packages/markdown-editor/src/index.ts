@@ -82,6 +82,22 @@ export {
   type GalleryBlock,
 } from "./gallery";
 export {
+  cardsPlugin,
+  cardsHtml,
+  cardHtml,
+  cardMarkdown,
+  cardsMarkdown,
+  cardsBlockMarkdown,
+  cardsOpenLine,
+  parseCardsOpen,
+  parseCard,
+  splitCards,
+  findCardBlocks,
+  type Card,
+  type CardPicture,
+  type CardsBlock,
+} from "./cards";
+export {
   videosPlugin,
   videosHtml,
   videoItems,
