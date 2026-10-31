@@ -14,16 +14,16 @@ export type DiagnosticSource = "lint" | "spelling" | "grammar";
 export type DiagnosticFix = { label: string; from: number; to: number; insert: string };
 
 /**
- * A fix that has to be worked out when it's clicked, like asking a server to
- * reword the sentence. The card shows the answer beside the original and only
+ * A fix that's worked out when it's clicked, like rewording the whole
+ * sentence. The card shows the answer beside the original and only
  * changes the text when "Use this" is clicked.
  */
 export type DiagnosticSuggest = {
   label: string;
-  /** Shown on the button while waiting. */
-  busy: string;
-  /** Whether to offer it at all right now (a server that's set up, say). */
-  available?: () => boolean;
+  /** Shown on the button while waiting, when working it out takes a moment. */
+  busy?: string;
+  /** Whether to offer it here at all. */
+  available?: (state: EditorState, d: Diagnostic) => boolean;
   /** The change to offer, or a sentence saying why there isn't one. */
   run: (state: EditorState, d: Diagnostic) => Promise<DiagnosticFix | string>;
 };
@@ -129,7 +129,7 @@ export function card(view: EditorView, found: Diagnostic[]): HTMLElement {
       ex.appendChild(document.createTextNode(" → "));
       ex.appendChild(document.createElement("ins")).textContent = d.example.after;
     }
-    const suggest = d.suggest && !view.state.readOnly && (d.suggest.available?.() ?? true) ? d.suggest : null;
+    const suggest = d.suggest && !view.state.readOnly && (d.suggest.available?.(view.state, d) ?? true) ? d.suggest : null;
     if ((d.fixes?.length || suggest) && !view.state.readOnly) {
       const row = item.appendChild(document.createElement("div"));
       row.className = "cm-diag-fixes";
@@ -154,7 +154,7 @@ function suggestButton(view: EditorView, d: Diagnostic, suggest: DiagnosticSugge
   button.addEventListener("mousedown", (e) => e.preventDefault());
   button.addEventListener("click", async () => {
     button.disabled = true;
-    button.textContent = suggest.busy;
+    button.textContent = suggest.busy ?? suggest.label;
     item.querySelector(".cm-diag-preview")?.remove();
     let answer: DiagnosticFix | string;
     try {
