@@ -68,6 +68,19 @@ export { useReadAloud } from "./speech/useReadAloud";
 // ---------------------------------------------------------------- Markdown
 export { renderMarkdown, renderInline, titleOf, createMarkdownIt, type MarkdownItInstance } from "./markdown";
 export { calloutPlugin, calloutKinds, parseCalloutHeader, type CalloutKind, type CalloutHeader } from "./callouts";
+export {
+  galleryPlugin,
+  galleryLayouts,
+  galleryHtml,
+  galleryImages,
+  galleryOpenLine,
+  parseGalleryOpen,
+  findGalleries,
+  wireGallery,
+  type GalleryLayout,
+  type GalleryImage,
+  type GalleryBlock,
+} from "./gallery";
 export { imageSizePlugin, imageSizes, parseImageSize, imageSizeMarkdown, imageSizeClass, type ImageSize } from "./imageSize";
 export {
   parseOutline,

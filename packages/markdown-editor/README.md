@@ -262,6 +262,29 @@ outside its header stays an ordinary table. The preview marks the table
 `image-grid` (and `image-grid-nohead`) and each image cell `image-card`; the
 stylesheet is `src/image-grid.css`, which also works on its own.
 
+### Galleries
+
+A `::: gallery` block shows the image lines inside it as one gallery, in the
+order they're written, so choosing pictures is adding or deleting lines and
+reordering them is moving lines:
+
+```markdown
+::: gallery filmstrip
+![Front](/img/front.jpg)
+![Wiring](/img/wiring.jpg "Before the lid went on")
+:::
+```
+
+The word after `gallery` is its layout: `filmstrip` (the first picture large, the
+rest as thumbnails that swap it), `bento` (tiles, the first one big) or
+`lightbox` (even thumbnails that open full size); none means filmstrip. Text that
+isn't an image is left out, and an image's title (or else its alt text) is its
+caption. In the live view the block shows as its gallery, with layout buttons on
+hover, until the cursor goes in. The preview renders `galleryHtml` (classes
+`md-gallery`, `md-gallery-<layout>`, `md-gallery-hero`, `md-gallery-item`);
+`wireGallery(element, open?)` adds the filmstrip swap and a viewer hook, and
+`src/gallery.css` styles it on its own.
+
 ### Headings in table cells
 
 A table cell holds only inline Markdown, so a cell that starts with `#`'s is drawn
