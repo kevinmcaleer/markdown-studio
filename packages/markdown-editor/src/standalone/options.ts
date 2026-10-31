@@ -10,7 +10,7 @@ import type { MarkdownItInstance } from "../markdown";
 import type { LanguageRequest } from "../proofing/languageApi";
 import type { ProofLanguage } from "../proofing/speller";
 import type { InsertTexts, SlashCommand } from "../slashMenu";
-import type { TableNote, TableRenderer } from "../tableWidget";
+import type { TableNote, TableRenderer, TableStepper } from "../tableWidget";
 import type { VideoRenderer } from "../videosWidget";
 
 // The options `mount()` takes, and the editor it hands back. Every option has
@@ -201,6 +201,15 @@ export type MountOptions = {
    * are the host's to handle.
    */
   tableNote?: TableNote;
+  /**
+   * Up and down buttons on whole-number table cells in the live view, shown
+   * on hover or focus (Alt+Up and Alt+Down step a focused cell too): a Bill
+   * of Materials' Qty column, say. It's given each body cell that is empty or
+   * a whole number, with its column's header, row and heading, and returns
+   * true or { min, max, step } for buttons, or null for none. A step is an
+   * edit to the Markdown, so the cell stays a plain number.
+   */
+  tableStepper?: TableStepper;
   /**
    * Editors for fenced blocks, by language: while the cursor is in a ```mermaid
    * block, say, it shows as this editor (code beside its live diagram) in place

@@ -81,6 +81,34 @@ export type TableNote = (table: TableRendererContext) => HTMLElement | null;
 /** The table notes; each one's element shows above the table, in order. */
 export const tableNotes = Facet.define<TableNote>();
 
+/** What a stepper is asked about: one body cell, with its column's header. */
+export type TableStepperContext = {
+  /** The column's header, as plain text. */
+  header: string;
+  /** The cell's row, as each cell's Markdown. */
+  row: string[];
+  /** The row's place in the table: 1 is the first body row (0 is the header). */
+  rowIndex: number;
+  col: number;
+  /** The cell's number as written, or "" when it's empty. */
+  value: string;
+  /** The text of the heading the table sits under, if there is one. */
+  heading: string | null;
+};
+
+/** The bounds of a cell's stepper; each defaults (0, no limit, 1). */
+export type TableStepperSpec = { min?: number; max?: number; step?: number };
+
+/**
+ * Up and down buttons on a whole-number cell (a Bill of Materials' Qty, say):
+ * true or the bounds to show them, null or false for none. Only asked about
+ * body cells that are empty or a whole number.
+ */
+export type TableStepper = (cell: TableStepperContext) => TableStepperSpec | boolean | null;
+
+/** The table steppers; the first to answer for a cell wins. */
+export const tableSteppers = Facet.define<TableStepper>();
+
 /** A host's note, as a block above its table. */
 class TableNoteWidget extends WidgetType {
   constructor(readonly element: HTMLElement) {
@@ -353,6 +381,11 @@ class TableView {
   private readonly addCol = button("cm-md-table-add cm-md-table-addcol", "Add column");
   private readonly addRow = button("cm-md-table-add cm-md-table-addrow", "Add row");
   private readonly more = button("cm-md-table-more", "Table options");
+  /** Up and down buttons on a number cell (see `tableStepper`), and the cell they're on. */
+  private readonly stepper = el("div", "cm-md-table-stepper");
+  private readonly stepUp = button("cm-md-table-step", "Increase (Alt+\u2191)");
+  private readonly stepDown = button("cm-md-table-step", "Decrease (Alt+\u2193)");
+  private stepperCell: { row: number; col: number } | null = null;
   private menu: HTMLElement | null = null;
   /** The edges between columns, dragged to set their widths. */
   private grips: HTMLElement[] = [];
@@ -391,7 +424,10 @@ class TableView {
     this.more.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 8h.01M8 8h.01M12 8h.01"/></svg>';
     this.colHandle.innerHTML = '<svg viewBox="0 0 16 8" aria-hidden="true"><path d="M4 4h.01M8 4h.01M12 4h.01"/></svg>';
     this.rowHandle.innerHTML = '<svg viewBox="0 0 8 16" aria-hidden="true"><path d="M4 4h.01M4 8h.01M4 12h.01"/></svg>';
-    dom.append(this.scroller, this.colHandle, this.rowHandle, this.addCol, this.addRow, this.more, this.preview);
+    this.stepUp.innerHTML = '<svg viewBox="0 0 16 10" aria-hidden="true"><path d="M4 7l4-4 4 4"/></svg>';
+    this.stepDown.innerHTML = '<svg viewBox="0 0 16 10" aria-hidden="true"><path d="M4 3l4 4 4-4"/></svg>';
+    this.stepper.append(this.stepUp, this.stepDown);
+    dom.append(this.scroller, this.colHandle, this.rowHandle, this.addCol, this.addRow, this.more, this.stepper, this.preview);
     this.render();
 
     // Clicking the drawing edits the table (its links aren't followed while editing).
@@ -483,6 +519,8 @@ class TableView {
     this.colHandle.addEventListener("pointerdown", (e) => this.startDrag(e, "col"));
     this.rowHandle.addEventListener("pointerdown", (e) => this.startDrag(e, "row"));
     this.more.addEventListener("click", () => this.tableMenu());
+    this.stepUp.addEventListener("click", () => this.stepperCell && this.step(this.stepperCell.row, this.stepperCell.col, 1));
+    this.stepDown.addEventListener("click", () => this.stepperCell && this.step(this.stepperCell.row, this.stepperCell.col, -1));
   }
 
   update(widget: TableWidget) {
@@ -661,6 +699,67 @@ class TableView {
     this.rowHandle.style.left = `${table.left - base.left}px`;
     this.rowHandle.style.top = `${box.top - base.top + box.height / 2}px`;
     this.placeGrips();
+    this.placeStepper(row, col, cell, base);
+  }
+
+  // ------------------------------------------------------------ number steppers
+
+  /** The bounds of a cell's stepper, or null when it hasn't one (see `tableStepper`). */
+  private stepperAt(row: number, col: number): Required<TableStepperSpec> | null {
+    if (!this.editable || row < 1) return null;
+    const steppers = this.view.state.facet(tableSteppers);
+    const cells = this.table.rows[row];
+    if (!steppers.length || !cells || col >= cells.length) return null;
+    const value = cellText(cells[col]).trim();
+    if (value && !/^-?\d+$/.test(value)) return null;
+    const context: TableStepperContext = {
+      header: cellText(this.table.rows[0][col] ?? "").trim(),
+      row: [...cells],
+      rowIndex: row,
+      col,
+      value,
+      heading: this.heading,
+    };
+    for (const stepper of steppers) {
+      const answer = stepper(context);
+      if (!answer) continue;
+      const spec = answer === true ? {} : answer;
+      return { min: spec.min ?? 0, max: spec.max ?? Infinity, step: spec.step && spec.step > 0 ? spec.step : 1 };
+    }
+    return null;
+  }
+
+  /** The cell's number, an empty cell counting as nothing yet. */
+  private stepValue(row: number, col: number): number | null {
+    const value = cellText(this.table.rows[row]?.[col] ?? "").trim();
+    return value ? Number(value) : null;
+  }
+
+  /** Shows the stepper at the right of a number cell, or hides it. */
+  private placeStepper(row: number, col: number, cell: HTMLElement, base: DOMRect) {
+    const spec = this.stepperAt(row, col);
+    this.stepperCell = spec ? { row, col } : null;
+    this.stepper.classList.toggle("on", !!spec);
+    if (!spec) return;
+    const value = this.stepValue(row, col);
+    this.stepUp.disabled = (value ?? spec.min - spec.step) + spec.step > spec.max;
+    this.stepDown.disabled = value === null || value - spec.step < spec.min;
+    const box = cell.getBoundingClientRect();
+    this.stepper.style.left = `${box.right - base.left - 4}px`;
+    this.stepper.style.top = `${box.top - base.top + box.height / 2}px`;
+  }
+
+  /** Adds `step` to a number cell (or takes it away); false when the cell has no stepper. */
+  private step(row: number, col: number, direction: 1 | -1): boolean {
+    const spec = this.stepperAt(row, col);
+    if (!spec) return false;
+    const value = this.stepValue(row, col);
+    // An empty cell goes up to the first number it can hold, and no lower.
+    let next = value === null ? (direction > 0 ? Math.max(spec.min, spec.step) : null) : value + direction * spec.step;
+    if (next === null || next < spec.min || next > spec.max) return true;
+    next = Math.round(next);
+    this.change((source) => setCell(source, row, col, String(next)));
+    return true;
   }
 
   /** One grip on each edge between two columns. */
@@ -866,6 +965,10 @@ class TableView {
       } else if (col < lastCol) this.focusCell(row, col + 1);
       else if (row < lastRow) this.focusCell(row + 1, 0);
       else this.structure((t) => insertRow(t, t.rows.length), row + 1, 0);
+    } else if (e.altKey && !mod && (e.key === "ArrowUp" || e.key === "ArrowDown") && this.stepperAt(row, col)) {
+      // Alt+Up and Alt+Down step a number cell, as its stepper's buttons do.
+      e.preventDefault();
+      this.step(row, col, e.key === "ArrowUp" ? 1 : -1);
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       if (row > 0) this.focusCell(row - 1, col);

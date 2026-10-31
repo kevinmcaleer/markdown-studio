@@ -4,7 +4,7 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { describe, expect, it } from "vitest";
 import { selectionToolbar } from "./format/selectionToolbar";
-import { tableField } from "./tableWidget";
+import { tableField, tableSteppers, type TableStepper } from "./tableWidget";
 
 function tableView(doc: string): EditorView {
   return new EditorView({
@@ -16,6 +16,82 @@ function tableView(doc: string): EditorView {
 function tableDom(doc: string): HTMLElement {
   return tableView(doc).dom.querySelector<HTMLElement>(".cm-md-table")!;
 }
+
+function stepperView(doc: string, stepper: TableStepper): EditorView {
+  return new EditorView({
+    state: EditorState.create({ doc, extensions: [markdown({ base: markdownLanguage }), tableField, tableSteppers.of(stepper)] }),
+    parent: document.body,
+  });
+}
+
+const qty: TableStepper = ({ header, row }) => /^qty$/i.test(header) && !/total/i.test(row[0]);
+
+function hoverCell(view: EditorView, row: number, col: number) {
+  view.dom.querySelector<HTMLElement>(`.cm-md-table [data-row="${row}"][data-col="${col}"]`)!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+}
+
+function stepButtons(view: EditorView) {
+  const stepper = view.dom.querySelector<HTMLElement>(".cm-md-table-stepper")!;
+  const [up, down] = Array.from(stepper.querySelectorAll<HTMLButtonElement>("button"));
+  return { on: stepper.classList.contains("on"), up, down };
+}
+
+describe("table steppers", () => {
+  const doc = "| Part | Qty | Notes |\n|---|---|---|\n| Servo | 2 | ears |\n| Pico |  | |\n| **Total** |  | |\n";
+
+  it("steps a number cell up and down, writing a plain number", () => {
+    const view = stepperView(doc, qty);
+    hoverCell(view, 1, 1);
+    expect(stepButtons(view).on).toBe(true);
+    stepButtons(view).up.click();
+    expect(view.state.doc.toString()).toContain("| Servo | 3 | ears |");
+    stepButtons(view).down.click();
+    stepButtons(view).down.click();
+    expect(view.state.doc.toString()).toContain("| Servo | 1 | ears |");
+  });
+
+  it("stops at the minimum, and an empty cell steps up to 1", () => {
+    const view = stepperView(doc, qty);
+    hoverCell(view, 2, 1);
+    expect(stepButtons(view).down.disabled).toBe(true);
+    stepButtons(view).up.click();
+    expect(view.state.doc.toString()).toMatch(/\| Pico \| 1 \|/);
+    stepButtons(view).down.click();
+    expect(view.state.doc.toString()).toMatch(/\| Pico \| 0 \|/);
+    expect(stepButtons(view).down.disabled).toBe(true);
+  });
+
+  it("shows only where the host asks, and not on text or the header", () => {
+    const view = stepperView(doc, qty);
+    hoverCell(view, 1, 2);
+    expect(stepButtons(view).on).toBe(false);
+    hoverCell(view, 0, 1);
+    expect(stepButtons(view).on).toBe(false);
+    hoverCell(view, 3, 1);
+    expect(stepButtons(view).on).toBe(false);
+    const words = stepperView("| Part | Qty |\n|---|---|\n| Servo | a few |\n", qty);
+    hoverCell(words, 1, 1);
+    expect(stepButtons(words).on).toBe(false);
+  });
+
+  it("steps a focused cell with Alt+Up and Alt+Down, and honours the host's step", () => {
+    const view = stepperView(doc, () => ({ step: 5, max: 10 }));
+    const cell = view.dom.querySelector<HTMLElement>('.cm-md-table td[data-row="1"][data-col="1"]')!;
+    const key = (key: string, altKey: boolean) => cell.dispatchEvent(new KeyboardEvent("keydown", { key, altKey, bubbles: true }));
+    key("ArrowUp", true);
+    expect(view.state.doc.toString()).toContain("| Servo | 7 | ears |");
+    key("ArrowUp", true);
+    expect(view.state.doc.toString()).toContain("| Servo | 7 | ears |");
+    key("ArrowDown", true);
+    expect(view.state.doc.toString()).toContain("| Servo | 2 | ears |");
+  });
+
+  it("has no stepper without a host stepper", () => {
+    const view = tableView(doc);
+    hoverCell(view, 1, 1);
+    expect(stepButtons(view).on).toBe(false);
+  });
+});
 
 describe("table widget", () => {
   it("draws a table of images as a grid of cards", () => {
