@@ -11,6 +11,7 @@ import type { LanguageRequest } from "../proofing/languageApi";
 import type { ProofLanguage } from "../proofing/speller";
 import type { InsertTexts, SlashCommand } from "../slashMenu";
 import type { TableNote, TableRenderer } from "../tableWidget";
+import type { VideoRenderer } from "../videosWidget";
 
 // The options `mount()` takes, and the editor it hands back. Every option has
 // a default, so `mount(el)` alone gives the full editor.
@@ -186,6 +187,13 @@ export type MountOptions = {
    * until the table is clicked or the caret moves in, then the grid to edit.
    */
   tableRenderer?: TableRenderer;
+  /**
+   * Draws a `::: videos` block's cards some other way in the live view (the
+   * site's own video cards, say). It's given the block's videos, { id, title }
+   * in order, and returns an element, or null for the editor's cards. The
+   * drawing shows until it's clicked or the caret moves in, then the lines.
+   */
+  videoRenderer?: VideoRenderer;
   /**
    * A note shown above a table in the live view: a tip on how to fill in a
    * Bill of Materials, say. It's given the table's cells and the heading it

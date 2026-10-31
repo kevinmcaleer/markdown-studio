@@ -97,6 +97,23 @@ export {
   type CardPicture,
   type CardsBlock,
 } from "./cards";
+export {
+  videosPlugin,
+  videosHtml,
+  videoItems,
+  videoFromLine,
+  videoLine,
+  videoUrl,
+  videoThumbnail,
+  videosOpenLine,
+  findVideoBlocks,
+  youTubeId,
+  lookUpVideoTitle,
+  fillVideoTitles,
+  type Video,
+  type VideosBlock,
+} from "./videos";
+export { videoRenderers, type VideoRenderer } from "./videosWidget";
 export { imageSizePlugin, imageSizes, parseImageSize, imageSizeMarkdown, imageSizeClass, type ImageSize } from "./imageSize";
 export {
   parseOutline,

@@ -9,6 +9,7 @@ import { imageSizeClass, imageSizeMarkdown, imageSizes, parseImageSize, type Ima
 import { renderedCodeField, renderedCodeTheme } from "./codeRenderers";
 import { cardsField, cardsTheme } from "./cardsWidget";
 import { galleryField, galleryTheme } from "./galleryWidget";
+import { videosField, videosTheme } from "./videosWidget";
 import { tableCursor, tableField } from "./tableWidget";
 import { sizePicture } from "./steadyScroll";
 
@@ -949,10 +950,12 @@ export function livePreview(): Extension {
     renderedCodeField,
     galleryField,
     cardsField,
+    videosField,
     linkClicks,
     liveTheme,
     renderedCodeTheme,
     galleryTheme,
     cardsTheme,
+    videosTheme,
   ];
 }

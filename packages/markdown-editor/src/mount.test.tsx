@@ -98,10 +98,10 @@ describe("mount", () => {
     flushSync(() => el.querySelector<HTMLButtonElement>(".mde-tool-guide")!.click());
     const guide = document.querySelector(".mde-guide")!;
     const titles = [...guide.querySelectorAll("summary")].map((s) => s.textContent);
-    expect(titles).toEqual(["Text", "Pictures", "Callouts", "Tables", "Checking your writing", "Bill of Materials", "Shortcuts", "Type / for"]);
+    expect(titles).toEqual(["Text", "Pictures", "Videos", "Callouts", "Tables", "Checking your writing", "Bill of Materials", "Shortcuts", "Type / for"]);
     expect(guide.querySelector("details")!.open).toBe(true);
     const text = guide.textContent!;
-    for (const bit of ["{cover}", "> [!warning]-", "| :--- | :---: | ---: |", "| ## Title |", "<br>", "Split table here", "F7", "Totals added up for you"]) expect(text).toContain(bit);
+    for (const bit of ["{cover}", "> [!warning]-", "| :--- | :---: | ---: |", "| ## Title |", "<br>", "Split table here", "::: videos", "F7", "Totals added up for you"]) expect(text).toContain(bit);
     editor.destroy();
   });
 
