@@ -86,8 +86,12 @@ const TABLES: GuideSection = {
     ["Drag a handle", "Moves its row or column (or use Move in its menu)"],
     ["Split table here", "In a row's menu: starts a new table at that row"],
     ["Delete header row", "In the header's menu: the first row moves up"],
+    ["Drag across cells", "Picks a block of cells (or Shift+click a cell, or Shift+arrow out of one)"],
+    ["Shift+click a handle", "Picks every row or column from the one you picked before; their menu then acts on them all"],
+    ["Picked cells", "The bar over them applies bold, italic, strikethrough, highlight, code or clear formatting to every cell, aligns their columns, copies them, clears them, or deletes whole rows or columns"],
+    ["⌘B, ⌘I, Delete", "Work on picked cells too; ⌘C, ⌘X and ⌘V copy, cut and paste them as a block; Esc goes back to typing"],
   ],
-  note: "Click a table to edit its cells; the handles and menus appear round it.",
+  note: "Click a table to edit its cells; the handles and menus appear round it. Alignment belongs to a whole column in Markdown, so aligning picked cells aligns their columns.",
 };
 
 const CHECKING: GuideSection = {

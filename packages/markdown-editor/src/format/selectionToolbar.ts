@@ -212,6 +212,8 @@ const theme = EditorView.theme({
   ".cm-md-table .cm-format-mini .cm-format-mini-btn:hover": { background: "#3a3a3a", borderColor: "#555", color: "#ffffff" },
   ".cm-md-table .cm-format-mini .cm-format-mini-btn[aria-pressed=true]": { background: "#3a3a3a", color: "#ffffff" },
   ".cm-md-table .cm-format-mini .cm-format-mini-btn svg": { width: "16px", height: "16px", strokeWidth: "1.4" },
+  ".cm-md-table .cm-format-mini .cm-format-mini-btn[hidden]": { display: "none" },
+  ".cm-md-table .cm-format-mini .cm-format-mini-btn:disabled": { opacity: "0.4", cursor: "default", background: "transparent", borderColor: "transparent" },
 });
 
 /** Whether the editor has the selection toolbar (so table cells show one too). */

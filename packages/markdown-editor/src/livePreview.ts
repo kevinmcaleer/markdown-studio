@@ -878,6 +878,11 @@ const liveTheme = EditorView.theme({
   // A cell's line breaks (<br> in the Markdown) are "\n"s while it's typed in.
   ".cm-md-table td:focus, .cm-md-table th:focus": { whiteSpace: "pre-wrap", boxShadow: "inset 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent)" },
   ".cm-md-table .selected": { backgroundColor: "color-mix(in srgb, var(--syntax-function) 10%, transparent)" },
+  // A picked block of cells (tableSelection.ts): shaded more, and the table holds the keys without a ring.
+  ".cm-md-table.has-range .selected": { backgroundColor: "color-mix(in srgb, var(--accent) 16%, transparent)" },
+  ".cm-md-table.has-range :is(th, td)": { caretColor: "transparent" },
+  ".cm-md-table:focus": { outline: "none" },
+  ".cm-md-table.range-selecting, .cm-md-table.range-selecting *": { userSelect: "none" },
   ".cm-md-table code": {
     fontFamily: "var(--font-mono)",
     fontSize: "0.88em",
