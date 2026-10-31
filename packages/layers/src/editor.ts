@@ -8,7 +8,7 @@
 // with the document stored inside it.
 
 import { ActiveSelection, Canvas, FabricImage, FabricObject, Group, Textbox, type TPointerEventInfo, type TPointerEvent } from "fabric";
-import { blankDoc, clampSide, embedDoc, defaultFetch, normalizeDoc, SIZES, type LayersDoc } from "./doc";
+import { blankDoc, clampSide, embedDoc, defaultFetch, MAX_SIDE, MIN_SIDE, normalizeDoc, SIZES, type LayersDoc } from "./doc";
 import {
   ACCENT, badge, FONTS, INK, isLine, isText, kindOf, LINES, makeShape, makeText, newId, PALETTE, SHAPES, TEMPLATES, TEXT_STYLES, type Point,
 } from "./elements";
@@ -79,6 +79,9 @@ export interface LayersHandle {
 
 const MAX_PICTURE = 2000;
 const HISTORY = 80;
+/** The corner slider runs to here; the number box beside it goes further. */
+const MAX_SLIDER_RADIUS = 200;
+const MAX_RADIUS = 2000;
 const NONE = "";
 
 function esc(s: unknown): string {
@@ -220,6 +223,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
 
   let zoom = 1;
   let userZoom = 0; // 0: fit
+  let fitMargin = 20; // space left around the contents by "Fit to contents"
   let busy = false;
   let destroyed = false;
 
@@ -345,6 +349,8 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     fit();
     renderLayersList();
     renderContext();
+    // Undo can change the page size, so the Page panel's numbers follow.
+    if (openPanel === "page") renderPanel();
   }
 
   async function undo(): Promise<void> {
@@ -692,6 +698,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       contextBar.innerHTML = `
         ${swatch("page", background, "Page colour", "paint")}
         <button type="button" class="lyr-btn" data-act="open-page">${icon("resize")}<span>Resize</span></button>
+        ${objects().length ? `<button type="button" class="lyr-btn" data-act="fit-contents" title="Shrink or grow the page to just fit what's on it">${icon("crop")}<span>Fit to contents</span></button>` : ""}
         <span class="lyr-hint">${objects().length ? "Click something on the page to change it." : "Add text, shapes or pictures from the left, or drop a picture on the page."}</span>`;
       return;
     }
@@ -744,12 +751,25 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
         ${swatch("stroke", String(o.stroke || ""), "Border colour", "border")}
         ${borderWidth(o)}
         <button type="button" class="lyr-btn${o.strokeDashArray?.length ? " lyr-on" : ""}" data-toggle="dash" title="Dashed border" aria-label="Dashed border">${icon("dash")}</button>
-        ${o.type === "rect" ? `<label class="lyr-inline" title="Rounded corners">${icon("rounded")}<input type="range" min="0" max="200" step="1" data-prop="radius" value="${Number((o as FabricObject & { rx?: number }).rx) || 0}" aria-label="Rounded corners"></label>` : ""}`;
+        ${o.type === "rect" ? cornerControl(o) : ""}`;
     } else {
       html += `<span class="lyr-label">${selected().length} selected</span>`;
     }
     contextBar.innerHTML = html + commonTools(o);
   }
+
+  /** The rounded-corners slider with a number box beside it; the two stay in step. */
+  function cornerControl(o: FabricObject): string {
+    const r = Math.round(Number((o as FabricObject & { rx?: number }).rx) || 0);
+    return `<label class="lyr-inline" title="Rounded corners">${icon("rounded")}<input type="range" min="0" max="${MAX_SLIDER_RADIUS}" step="1" data-prop="radius" value="${Math.min(r, MAX_SLIDER_RADIUS)}" aria-label="Rounded corners"></label><input class="lyr-num" type="number" min="0" max="${MAX_RADIUS}" step="1" data-prop="radius" value="${r}" title="Corner size" aria-label="Corner size">`;
+  }
+  /** Shows corner size `r` in both the slider and the number box, except the one being typed in. */
+  function syncRadius(r: number, from: HTMLInputElement): void {
+    contextBar.querySelectorAll<HTMLInputElement>("[data-prop=radius]").forEach(x => {
+      if (x !== from) x.value = String(x.type === "range" ? Math.min(r, MAX_SLIDER_RADIUS) : r);
+    });
+  }
+  const radiusValue = (el: HTMLInputElement) => Math.max(0, Math.min(MAX_RADIUS, Math.round(Number(el.value)) || 0));
 
   function borderWidth(o: FabricObject, label = "Border width"): string {
     return `<label class="lyr-inline" title="${label}"><input class="lyr-num" type="number" min="0" max="80" data-prop="strokeWidth" value="${Math.round(Number(o.strokeWidth) || 0)}" aria-label="${label}"></label>`;
@@ -824,12 +844,20 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       apply({ strokeWidth: w, ...(o.strokeWidth === 0 && !o.stroke && w ? { stroke: INK } : {}) });
     }
     if (prop === "badge") setBadge(o, Number(el.value));
-    if (prop === "radius") apply({ rx: Number(el.value), ry: Number(el.value) });
+    if (prop === "radius") {
+      const r = radiusValue(el as HTMLInputElement);
+      if (el.type === "number") el.value = String(r);
+      syncRadius(r, el as HTMLInputElement);
+      apply({ rx: r, ry: r });
+    }
   });
   contextBar.addEventListener("input", e => {
     const el = e.target as HTMLInputElement;
     if (el.dataset.prop === "radius" && active()) {
-      active()!.set({ rx: Number(el.value), ry: Number(el.value) });
+      if (el.value === "") return;
+      const r = radiusValue(el);
+      syncRadius(r, el);
+      active()!.set({ rx: r, ry: r });
       canvas.requestRenderAll();
     }
   });
@@ -1053,8 +1081,12 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
             ${SIZES.map(s => `<button type="button" class="lyr-size${s.width === W && s.height === H ? " lyr-on" : ""}" data-size="${s.id}"><span class="lyr-size-shape" style="aspect-ratio:${s.width}/${s.height}"></span><span>${esc(s.label)}</span></button>`).join("")}
           </div>
           <div class="lyr-custom-size">
-            <label>Width <input class="lyr-num" type="number" min="100" max="4000" data-page="width" value="${W}"></label>
-            <label>Height <input class="lyr-num" type="number" min="100" max="4000" data-page="height" value="${H}"></label>
+            <label>Width <input class="lyr-num" type="number" min="${MIN_SIDE}" max="${MAX_SIDE}" data-page="width" value="${W}"></label>
+            <label>Height <input class="lyr-num" type="number" min="${MIN_SIDE}" max="${MAX_SIDE}" data-page="height" value="${H}"></label>
+          </div>
+          <div class="lyr-fit">
+            <button type="button" class="lyr-btn lyr-fit-btn" data-act="fit-contents"${shown().length ? "" : " disabled"} title="Shrink or grow the page to just fit what's on it">${icon("crop")}<span>Fit to contents</span></button>
+            <label title="Space left around the contents">Margin <input class="lyr-num" type="number" min="0" max="400" data-fit-margin value="${fitMargin}"></label>
           </div>
           <div class="lyr-panel-title">Colour</div>
           <div class="lyr-chips">
@@ -1064,6 +1096,39 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
           <label class="lyr-custom">Pick any colour <input type="color" data-bg-custom value="${/^#[0-9a-f]{6}$/i.test(background) ? background : "#ffffff"}"></label>`;
         break;
     }
+  }
+
+  /** The page's visible objects. */
+  const shown = () => objects().filter(o => o.visible !== false);
+
+  /**
+   * Fits the page to what's on it: everything moves up and left so the
+   * contents start `fitMargin` in from the corner, and the page takes their
+   * size plus the margin on every side. A page can't go below its smallest
+   * size, so small contents are centred on it.
+   */
+  function fitToContents(): void {
+    const list = shown();
+    if (!list.length) return status("There's nothing on the page to fit to.");
+    canvas.discardActiveObject();
+    let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+    for (const o of list) {
+      o.setCoords();
+      const box = o.getBoundingRect();
+      l = Math.min(l, box.left);
+      t = Math.min(t, box.top);
+      r = Math.max(r, box.left + box.width);
+      b = Math.max(b, box.top + box.height);
+    }
+    const w = clampSide(r - l + fitMargin * 2);
+    const h = clampSide(b - t + fitMargin * 2);
+    const dx = (w - (r - l)) / 2 - l;
+    const dy = (h - (b - t)) / 2 - t;
+    for (const o of objects()) {
+      o.set({ left: (o.left || 0) + dx, top: (o.top || 0) + dy });
+      o.setCoords();
+    }
+    resizePage(w, h);
   }
 
   function resizePage(w: number, h: number): void {
@@ -1096,6 +1161,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     }
     if (added && mode === "inline") showPanel(null);
     if (el.dataset.act === "upload") fileInput.click();
+    if (el.dataset.act === "fit-contents") fitToContents();
     if (el.dataset.size) {
       const s = SIZES.find(x => x.id === el.dataset.size);
       if (s) resizePage(s.width, s.height);
@@ -1119,6 +1185,10 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     const el = e.target as HTMLInputElement;
     if (el.dataset.page) resizePage(el.dataset.page === "width" ? Number(el.value) : W, el.dataset.page === "height" ? Number(el.value) : H);
     if (el.matches("[data-bg-custom]")) setColor("page", el.value);
+    if (el.matches("[data-fit-margin]")) {
+      fitMargin = Math.max(0, Math.min(400, Math.round(Number(el.value)) || 0));
+      el.value = String(fitMargin);
+    }
   });
   panelEl.addEventListener("dragstart", e => {
     const el = (e.target as HTMLElement).closest<HTMLElement>("[data-add],[data-text]");
@@ -1455,6 +1525,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       case "zoom-in": setZoom(zoom * 1.25); break;
       case "zoom-out": setZoom(zoom / 1.25); break;
       case "zoom-fit": userZoom = 0; fit(); break;
+      case "fit-contents": fitToContents(); break;
       case "mode": setMode(mode === "full" ? "inline" : "full"); break;
       case "cancel":
         if (isDirty() && !window.confirm("Throw away your changes to this graphic?")) return;
