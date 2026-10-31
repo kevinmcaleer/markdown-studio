@@ -42,6 +42,10 @@ const editor = mount(el, {
 - **Text in shapes**: double-click a shape (or select it and press Enter) to
   type in it. The shape's bar has the font, size, colour, bold/italic/
   underline and alignment for its text, which moves and turns with it.
+- **Align and distribute**: with several things selected, the bar lines
+  them up by their left edges, centres, right edges, tops, middles or
+  bottoms, and spaces three or more evenly across or up and down. Lines
+  fastened to the shapes follow them.
 - Shapes have **W** and **H** fields for exact sizes. Stretching a box keeps
   its corner size.
 - Smart guides snap to the page's and other layers' edges and middles
