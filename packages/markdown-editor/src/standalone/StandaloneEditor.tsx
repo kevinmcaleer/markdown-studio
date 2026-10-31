@@ -22,6 +22,7 @@ import { imageSizeMarkdown, type ImageSize } from "../imageSize";
 import { insertImages, smartPaste, type SmartPasteOptions } from "../smartPaste";
 import { cellCaretRect, inTable, tableNotes, tableRenderers, tableSteppers } from "../tableWidget";
 import { hiddenComments } from "../hiddenComments";
+import { pageBreakCommand, pageBreaksOn } from "../pageBreaks";
 import { completeTodo, findTodos, todoMarks, type Todo } from "../todos";
 import { cardPicturePicker } from "../cardsWidget";
 import { videoRenderers } from "../videosWidget";
@@ -226,6 +227,11 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
   const commands = useMemo<SlashCommand[]>(() => {
     let list = withInsertTexts(defaultCommands, options.insertTexts);
     if (!todosOn) list = list.filter((c) => c.id !== "todo");
+    // Page break goes after Divider, its nearest relative.
+    if (options.pageBreaks) {
+      const at = list.findIndex((c) => c.id === "divider");
+      list = at < 0 ? [...list, pageBreakCommand] : [...list.slice(0, at + 1), pageBreakCommand, ...list.slice(at + 1)];
+    }
     // With somewhere to get images from, "/image" opens the picker.
     if (usePicker) list = list.map((c) => (c.id === "image" ? { ...c, insert: undefined, run: openPickerAtCursor } : c));
     const extra = options.slashCommands;
@@ -273,6 +279,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
       options.videoRenderer ? videoRenderers.of(options.videoRenderer) : [],
       options.tableNote ? tableNotes.of(options.tableNote) : [],
       options.hiddenComments ? hiddenComments.of(options.hiddenComments) : [],
+      options.pageBreaks ? pageBreaksOn.of(true) : [],
       todosOn ? todoMarks : [],
       options.tableStepper ? tableSteppers.of(options.tableStepper) : [],
       codeEditors.of(

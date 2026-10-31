@@ -3,6 +3,7 @@ import type { EditorState, Extension, Range, StateEffect } from "@codemirror/sta
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { parseCalloutHeader } from "./callouts";
 import { hiddenCommentsField } from "./hiddenComments";
+import { pageBreaksField, pageBreaksTheme } from "./pageBreaks";
 import "./callouts.css";
 import { copyText } from "./clipboard";
 import "./image-sizes.css";
@@ -1079,6 +1080,7 @@ export function livePreview(): Extension {
     tableField,
     tableCursor,
     hiddenCommentsField,
+    pageBreaksField,
     renderedCodeField,
     galleryField,
     cardsField,
@@ -1090,5 +1092,6 @@ export function livePreview(): Extension {
     galleryTheme,
     cardsTheme,
     videosTheme,
+    pageBreaksTheme,
   ];
 }
