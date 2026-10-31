@@ -134,6 +134,15 @@ export function proseBlocks(masked: string): Prose[] {
     let line = raw;
     // Quote markers and list bullets become spaces; a new item is a new paragraph.
     line = line.replace(/^(\s*>)+\s?/, blank);
+    // A callout's `[!type] Title` line is a title, not the start of its body's
+    // paragraph, so it's checked on its own (no "Microduck Microduck" across it).
+    const callout = /^\s*\[![\w-]+\][+-]?/.exec(line);
+    if (callout && /^\s*>/.test(raw)) {
+      flush();
+      line = blank(callout[0]) + line.slice(callout[0].length);
+      if (line.trim()) blocks.push({ from: lineFrom, to: lineFrom + raw.length, text: line });
+      continue;
+    }
     const item = LIST_ITEM.exec(line);
     if (item) {
       flush();

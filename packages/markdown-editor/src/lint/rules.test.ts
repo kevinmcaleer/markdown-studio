@@ -103,6 +103,14 @@ describe("lint", () => {
     expect(rules("Every one of us, inorder to.")).not.toContain("wordy");
   });
 
+  it("checks a callout's title apart from its body", () => {
+    const text = "> [!note] Open Duck Mini vs Microduck\n> Microduck is a small robot.";
+    expect(rules(text)).not.toContain("repeated-word");
+    expect(rules("> [!tip]\n> Use the the pin.")).toContain("repeated-word");
+    const long = Array.from({ length: 20 }, (_, i) => `w${i}`).join(" ");
+    expect(rules(`> [!note] ${long}\n> ${long}.`)).not.toContain("long-sentence");
+  });
+
   it("finds repeated words with a fix that removes the second", () => {
     const text = "Go to the the shop.";
     const [hint] = lint(text).filter((h) => h.rule === "repeated-word");
