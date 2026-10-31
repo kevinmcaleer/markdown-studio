@@ -9,8 +9,10 @@ WORKDIR /build
 COPY package.json package-lock.json ./
 COPY web/package.json web/
 COPY packages/markdown-editor/package.json packages/markdown-editor/
+COPY packages/layers/package.json packages/layers/
 RUN npm ci --no-audit --no-fund
 COPY packages/markdown-editor/ packages/markdown-editor/
+COPY packages/layers/ packages/layers/
 COPY web/ web/
 # The app builds the editor package from its source, so only the app is built here.
 RUN npm run build -w web
