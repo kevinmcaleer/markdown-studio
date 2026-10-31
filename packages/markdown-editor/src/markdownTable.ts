@@ -11,6 +11,12 @@ export type Table = {
   /** The header row first, then the body rows; every row has `align.length` cells. */
   rows: string[][];
   align: Align[];
+  /**
+   * How many dashes each column's delimiter cell has. Uneven counts are the
+   * columns' relative widths (as in Pandoc); equal counts, or none, leave the
+   * widths to the browser. See tableWidths.ts.
+   */
+  dashes?: number[];
 };
 
 /** Splits a table row on its unescaped pipes, without the outer ones. */
@@ -47,27 +53,33 @@ export function parseTable(source: string): Table | null {
   const delimiter = splitRow(lines[1]);
   if (!delimiter.every((cell) => /^:?-+:?$/.test(cell))) return null;
   const align = delimiter.map(parseAlign);
+  const dashes = delimiter.map((cell) => cell.replace(/:/g, "").length);
   const width = align.length;
   const rows = [lines[0], ...lines.slice(2)].map((line) => {
     const cells = splitRow(line).slice(0, width);
     while (cells.length < width) cells.push("");
     return cells;
   });
-  return { rows, align };
+  return { rows, align, dashes };
 }
 
 function formatRow(cells: string[]): string {
   return `|${cells.map((cell) => ` ${cell} `).join("|")}|`;
 }
 
-function formatDelimiter(align: Align[]): string {
-  const cell = (a: Align) => (a === "center" ? ":---:" : a === "right" ? "---:" : a === "left" ? ":---" : "---");
-  return `| ${align.map(cell).join(" | ")} |`;
+/** A delimiter cell: its dashes, with colons for the alignment. */
+function delimiterCell(align: Align, dashes = 3): string {
+  const line = "-".repeat(Math.max(1, dashes));
+  return align === "center" ? `:${line}:` : align === "right" ? `${line}:` : align === "left" ? `:${line}` : line;
+}
+
+function formatDelimiter(align: Align[], dashes?: number[]): string {
+  return `| ${align.map((a, i) => delimiterCell(a, dashes?.[i])).join(" | ")} |`;
 }
 
 export function formatTable(table: Table): string {
   const [header, ...body] = table.rows;
-  return [formatRow(header), formatDelimiter(table.align), ...body.map(formatRow)].join("\n");
+  return [formatRow(header), formatDelimiter(table.align, table.dashes), ...body.map(formatRow)].join("\n");
 }
 
 /** A cell's text as it goes in the Markdown: one line, with its pipes escaped. */
@@ -115,16 +127,23 @@ export function clearRow(table: Table, index: number): Table {
   return { ...table, rows: table.rows.map((cells, i) => (i === index ? cells.map(() => "") : cells)) };
 }
 
+/** A new column takes an average share of the width, so the others keep their proportions. */
 export function insertColumn(table: Table, index: number): Table {
-  const at = (cells: string[]) => [...cells.slice(0, index), "", ...cells.slice(index)];
-  const align = [...table.align.slice(0, index), null, ...table.align.slice(index)];
-  return { rows: table.rows.map(at), align };
+  const at = <T,>(cells: T[], value: T) => [...cells.slice(0, index), value, ...cells.slice(index)];
+  const align = at<Align>(table.align, null);
+  const { dashes } = table;
+  if (!dashes) return { rows: table.rows.map((cells) => at(cells, "")), align };
+  const average = Math.max(1, Math.round(dashes.reduce((sum, n) => sum + n, 0) / dashes.length));
+  return { rows: table.rows.map((cells) => at(cells, "")), align, dashes: at(dashes, average) };
 }
 
+/** Removing a column shares its width out among the rest, in proportion. */
 export function deleteColumn(table: Table, index: number): Table {
   if (table.align.length < 2) return table;
   const without = <T,>(cells: T[]) => cells.filter((_, i) => i !== index);
-  return { rows: table.rows.map(without), align: without(table.align) };
+  const next: Table = { rows: table.rows.map(without), align: without(table.align) };
+  if (table.dashes) next.dashes = without(table.dashes);
+  return next;
 }
 
 /** An array with the item at `from` taken out and put back at `to`. */
@@ -146,24 +165,25 @@ export function moveRow(table: Table, from: number, to: number): Table {
 
 /**
  * Splits a table in two at a body row: that row and the ones below it become a
- * second table under a copy of the header, and both keep the column alignment.
+ * second table under a copy of the header, and both keep the column alignment and widths.
  * Returns null for the header or the first body row, which would leave the
  * first table with no body.
  */
 export function splitTable(table: Table, index: number): [Table, Table] | null {
   if (index < 2 || index >= table.rows.length) return null;
   const [header] = table.rows;
-  return [
-    { rows: table.rows.slice(0, index), align: table.align.slice() },
-    { rows: [header.slice(), ...table.rows.slice(index)], align: table.align.slice() },
-  ];
+  const part = (rows: string[][]): Table =>
+    table.dashes ? { rows, align: table.align.slice(), dashes: table.dashes.slice() } : { rows, align: table.align.slice() };
+  return [part(table.rows.slice(0, index)), part([header.slice(), ...table.rows.slice(index)])];
 }
 
-/** Moves a column so it ends up at `to`, its alignment going with it. */
+/** Moves a column so it ends up at `to`, its alignment and width going with it. */
 export function moveColumn(table: Table, from: number, to: number): Table {
   const last = table.align.length - 1;
   if (from === to || from < 0 || from > last || to < 0 || to > last) return table;
-  return { rows: table.rows.map((cells) => moved(cells, from, to)), align: moved(table.align, from, to) };
+  const next: Table = { rows: table.rows.map((cells) => moved(cells, from, to)), align: moved(table.align, from, to) };
+  if (table.dashes) next.dashes = moved(table.dashes, from, to);
+  return next;
 }
 
 /**
@@ -182,6 +202,23 @@ export function setAlign(source: string, col: number, align: Align): string {
   const dashes = cells[col].replace(/:/g, "") || "---";
   cells[col] = align === "center" ? `:${dashes}:` : align === "right" ? `${dashes}:` : align === "left" ? `:${dashes}` : dashes;
   lines[delimiter] = `| ${cells.join(" | ")} |`;
+  return lines.join("\n");
+}
+
+/**
+ * The table's Markdown with its column widths set, as dash counts on the
+ * delimiter row (one dash per share; null puts every column back to `---`,
+ * which leaves the widths to the browser). Only the delimiter line changes,
+ * and each column keeps its alignment colons.
+ */
+export function setWidths(source: string, dashes: number[] | null): string {
+  const lines = source.split("\n");
+  const index = lines.findIndex((line) => line.trim());
+  const delimiter = lines.findIndex((line, i) => i > index && line.trim());
+  if (index < 0 || delimiter < 0) return source;
+  const cells = splitRow(lines[delimiter]);
+  if (!cells.every((cell) => /^:?-+:?$/.test(cell))) return source;
+  lines[delimiter] = formatDelimiter(cells.map(parseAlign), dashes ?? undefined);
   return lines.join("\n");
 }
 

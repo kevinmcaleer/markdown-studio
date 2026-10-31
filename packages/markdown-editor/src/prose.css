@@ -106,6 +106,18 @@
   overflow-x: auto;
 }
 
+/* Column widths from the delimiter row's dashes (tableWidths.ts): the table
+   fills the width and each column takes its share. */
+.prose table.has-widths {
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+}
+
+.prose table.has-widths :is(th, td) {
+  overflow-wrap: break-word;
+}
+
 .prose th,
 .prose td {
   border: 1px solid var(--border);

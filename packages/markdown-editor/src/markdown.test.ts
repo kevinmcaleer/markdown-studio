@@ -7,7 +7,7 @@ describe("renderMarkdown", () => {
   });
 
   it("renders GFM tables", () => {
-    const html = renderMarkdown("| a | b |\n| --- | :-: |\n| 1 | 2 |");
+    const html = renderMarkdown("| a | b |\n| --- | :---: |\n| 1 | 2 |");
     expect(html).toContain("<table>");
     expect(html).toContain('<td style="text-align:center">2</td>');
   });

@@ -14,6 +14,7 @@ import {
   pasteCells,
   setAlign,
   setCell,
+  setWidths,
   splitRow,
   splitTable,
   spreadsheetCells,
@@ -31,6 +32,7 @@ describe("parseTable", () => {
         ["Pear", "5"],
       ],
       align: ["left", "right"],
+      dashes: [3, 3],
     });
   });
 
@@ -205,5 +207,46 @@ describe("pasting cells", () => {
     expect(splitTable(table, 0)).toBeNull();
     expect(splitTable(table, 1)).toBeNull();
     expect(splitTable(table, 4)).toBeNull();
+  });
+});
+
+describe("column widths", () => {
+  const source = "| a | b | c |\n| -- | :----: | ----: |\n| 1 | 2 | 3 |";
+
+  it("reads the dash counts", () => {
+    expect(parseTable(source)?.dashes).toEqual([2, 4, 4]);
+  });
+
+  it("keeps them through a structural edit", () => {
+    const table = parseTable(source)!;
+    expect(formatTable(moveRow(table, 1, 0)).split("\n")[1]).toBe("| -- | :----: | ----: |");
+  });
+
+  it("moves a column's width with it", () => {
+    expect(formatTable(moveColumn(parseTable(source)!, 0, 2)).split("\n")[1]).toBe("| :----: | ----: | -- |");
+  });
+
+  it("gives an inserted column an average share", () => {
+    expect(formatTable(insertColumn(parseTable(source)!, 1)).split("\n")[1]).toBe("| -- | --- | :----: | ----: |");
+  });
+
+  it("drops a deleted column's dashes", () => {
+    expect(formatTable(deleteColumn(parseTable(source)!, 1)).split("\n")[1]).toBe("| -- | ----: |");
+  });
+
+  it("copies them to both halves of a split", () => {
+    const parts = splitTable(parseTable(`${source}\n| 4 | 5 | 6 |`)!, 2)!;
+    expect(parts.map((part) => formatTable(part).split("\n")[1])).toEqual(["| -- | :----: | ----: |", "| -- | :----: | ----: |"]);
+  });
+
+  it("setWidths rewrites only the delimiter row, keeping the alignment", () => {
+    const next = setWidths(source, [5, 10, 5]).split("\n");
+    expect(next[1]).toBe("| ----- | :----------: | -----: |");
+    expect(next[0]).toBe("| a | b | c |");
+    expect(next[2]).toBe("| 1 | 2 | 3 |");
+  });
+
+  it("setWidths(null) puts every column back to three dashes", () => {
+    expect(setWidths(source, null).split("\n")[1]).toBe("| --- | :---: | ---: |");
   });
 });

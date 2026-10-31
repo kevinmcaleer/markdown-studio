@@ -78,6 +78,8 @@ const TABLES: GuideSection = {
   rows: [
     ["| a | b |", "Table: a header row, then | --- | --- |, then a row per line"],
     ["| :--- | :---: | ---: |", "Left, centred and right columns (or Align column in the column menu)"],
+    ["| ----- | --------------- |", "Column widths: each column gets its share of the dashes, so 5 and 15 make 25% and 75%. Equal dashes leave the widths automatic"],
+    ["Drag a column edge", "Sets the widths in 5% steps, one dash each; Reset column widths in the column menu clears them"],
     ["| ## Title |", "A heading in a cell"],
     ["Shift+Enter", "A new line in a cell, saved as <br>"],
     ["Drag a handle", "Moves its row or column (or use Move in its menu)"],

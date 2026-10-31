@@ -10,6 +10,7 @@ import { hasLinkPopover, linkCard, linkForm, linkInText, type LinkAt } from "./f
 import { hasSelectionToolbar } from "./format/selectionToolbar";
 import { cellHasImage, isImageGrid } from "./imageGrid";
 import { renderCell } from "./markdown";
+import { columnWidths, widthsToDashes } from "./tableWidths";
 import { applyCommand, commandsOf, filterCommands, hasSlashMenu, type SlashCommand } from "./slashMenu";
 import { rememberedHeight, rememberHeight, sizePictures } from "./steadyScroll";
 import {
@@ -30,6 +31,7 @@ import {
   rawOffset,
   setAlign,
   setCell,
+  setWidths,
   spreadsheetCells,
   textOffset,
   type Align,
@@ -41,6 +43,8 @@ import {
 // or delete rows and columns from the handle on each one, and drag a handle
 // to move its row or column (or use the menu's Move items). Every change is an
 // edit to the Markdown underneath, so co-editing and undo work as for text.
+// Dragging the edge between two columns sets their widths, as the dashes on
+// the delimiter row (tableWidths.ts); "Reset column widths" clears them.
 
 //
 // A host can draw a table some other way (`tableRenderer`): a Videos table as
@@ -317,6 +321,7 @@ const ICONS = {
   alignLeft: "M2.5 3.5h11M2.5 6.5h7M2.5 9.5h11M2.5 12.5h7",
   alignCenter: "M2.5 3.5h11M4.5 6.5h7M2.5 9.5h11M4.5 12.5h7",
   alignRight: "M2.5 3.5h11M6.5 6.5h7M2.5 9.5h11M6.5 12.5h7",
+  resetWidths: "M2.5 3v10M13.5 3v10M5 8h6M6.5 6 4.5 8l2 2M9.5 6l2 2-2 2",
 };
 
 type MenuItem = { label: string; icon: string; run: () => void; disabled?: boolean };
@@ -349,6 +354,10 @@ class TableView {
   private readonly addRow = button("cm-md-table-add cm-md-table-addrow", "Add row");
   private readonly more = button("cm-md-table-more", "Table options");
   private menu: HTMLElement | null = null;
+  /** The edges between columns, dragged to set their widths. */
+  private grips: HTMLElement[] = [];
+  /** A column edge being dragged, and the label showing the two widths. */
+  private resizing: { label: HTMLElement; stop: () => void } | null = null;
   private slash: CellSlash | null = null;
   private link: { cell: HTMLElement; at: LinkAt; dom: HTMLElement; form: boolean } | null = null;
   /** The formatting toolbar over a selection in a cell, and the selection it's for. */
@@ -498,6 +507,7 @@ class TableView {
 
   destroy() {
     this.endDrag();
+    this.resizing?.stop();
     this.closeMenu();
     this.closeSlash();
     this.closeLink();
@@ -579,6 +589,8 @@ class TableView {
         }
       }
     }
+    if (!this.resizing) setColumnWidths(table, columnWidths(this.table.dashes));
+    this.makeGrips(align.length);
     if (focused && !sameShape) this.focusCell(Math.min(focused.row, rows.length - 1), Math.min(focused.col, align.length - 1));
     this.setHover(Math.min(this.hover.row, rows.length - 1), Math.min(this.hover.col, align.length - 1));
   }
@@ -648,6 +660,119 @@ class TableView {
     this.colHandle.style.top = `${table.top - base.top}px`;
     this.rowHandle.style.left = `${table.left - base.left}px`;
     this.rowHandle.style.top = `${box.top - base.top + box.height / 2}px`;
+    this.placeGrips();
+  }
+
+  /** One grip on each edge between two columns. */
+  private makeGrips(columns: number) {
+    const wanted = this.editable ? Math.max(0, columns - 1) : 0;
+    while (this.grips.length > wanted) this.grips.pop()!.remove();
+    while (this.grips.length < wanted) {
+      const col = this.grips.length;
+      const grip = el("div", "cm-md-table-grip");
+      grip.title = "Drag to change the column widths";
+      grip.addEventListener("mousedown", (e) => e.preventDefault());
+      grip.addEventListener("pointerdown", (e) => this.startResize(e, col));
+      this.grips.push(grip);
+      this.dom.append(grip);
+    }
+  }
+
+  /** Puts each grip on its column edge, the height of the table. */
+  private placeGrips() {
+    const table = this.scroller.querySelector("table");
+    const last = table?.rows[table.rows.length - 1];
+    if (!table || !last) return;
+    const base = this.dom.getBoundingClientRect();
+    const bounds = table.getBoundingClientRect();
+    this.grips.forEach((grip, col) => {
+      const cell = last.cells[col];
+      if (!cell) return;
+      const { style } = grip;
+      style.left = `${cell.getBoundingClientRect().right - base.left}px`;
+      style.top = `${bounds.top - base.top}px`;
+      style.height = `${bounds.height}px`;
+    });
+  }
+
+  /**
+   * Dragging the edge after column `col` moves width between it and the next
+   * column, in steps of 5% (each keeps at least 10%); letting go writes every column's width as dashes
+   * on the delimiter row. Ending with all the columns the same width clears
+   * them, which leaves the widths to the browser again.
+   */
+  private startResize(e: PointerEvent, col: number) {
+    if (!this.editable || e.button !== 0 || this.resizing || this.drag) return;
+    const table = this.scroller.querySelector("table");
+    const last = table?.rows[table.rows.length - 1];
+    if (!table || !last) return;
+    e.preventDefault();
+    e.stopPropagation();
+    this.closeMenu();
+    const measured = Array.from(last.cells).map((cell) => cell.getBoundingClientRect().width);
+    const px = measured.reduce((sum, w) => sum + w, 0);
+    if (!px || measured.length < col + 2) return;
+    const start = widthsToDashes(columnWidths(this.table.dashes) ?? measured.map((w) => (w / px) * 100));
+    const total = start.reduce((sum, n) => sum + n, 0);
+    const pair = start[col] + start[col + 1];
+    if (pair < 2) return;
+    // A column keeps at least 10% (two dashes) while dragging, where there's room.
+    const least = pair >= 4 ? 2 : 1;
+    let units = start;
+    const startX = e.clientX;
+    const grip = this.grips[col];
+    const label = el("div", "cm-md-table-widthlabel");
+    const percent = (n: number) => `${Math.round((n / total) * 100)}%`;
+    const show = () => {
+      setColumnWidths(table, units.map((n) => (n / total) * 100));
+      label.textContent = `${percent(units[col])} · ${percent(units[col + 1])}`;
+      this.placeGrips();
+      const base = this.dom.getBoundingClientRect();
+      label.style.left = `${grip.getBoundingClientRect().left - base.left + grip.offsetWidth / 2}px`;
+      label.style.top = grip.style.top;
+    };
+    const doc = this.dom.ownerDocument;
+    const move = (ev: PointerEvent) => {
+      ev.preventDefault();
+      const left = Math.max(least, Math.min(pair - least, start[col] + Math.round(((ev.clientX - startX) / px) * total)));
+      if (left === units[col]) return;
+      units = start.slice();
+      units[col] = left;
+      units[col + 1] = pair - left;
+      show();
+    };
+    const stop = () => {
+      doc.removeEventListener("pointermove", move);
+      doc.removeEventListener("pointerup", up);
+      doc.removeEventListener("pointercancel", up);
+      label.remove();
+      grip.classList.remove("active");
+      this.dom.classList.remove("resizing");
+      this.resizing = null;
+    };
+    const up = () => {
+      stop();
+      if (units.every((n, i) => n === start[i])) {
+        setColumnWidths(table, columnWidths(this.table.dashes));
+        return;
+      }
+      const dashes = units;
+      this.change((source) => setWidths(source, columnWidths(dashes) ? dashes : null));
+    };
+    this.resizing = { label, stop };
+    grip.classList.add("active");
+    this.dom.classList.add("resizing");
+    this.dom.append(label);
+    show();
+    doc.addEventListener("pointermove", move);
+    doc.addEventListener("pointerup", up);
+    doc.addEventListener("pointercancel", up);
+  }
+
+  /** Clears the widths: every delimiter cell back to `---`. */
+  private resetWidths() {
+    this.closeMenu();
+    this.change((source) => setWidths(source, null));
   }
 
   /** Applies an edit to the table's Markdown as the smallest change to the note. */
@@ -1153,6 +1278,12 @@ class TableView {
         disabled: this.table.align.length < 2,
         run: () => this.structure((t) => deleteColumn(t, col), this.hover.row, col),
       },
+      {
+        label: "Reset column widths",
+        icon: ICONS.resetWidths,
+        disabled: !columnWidths(this.table.dashes),
+        run: () => this.resetWidths(),
+      },
     ], {
       label: "Align column",
       // Choosing the column's current alignment again sets it back to the default.
@@ -1457,6 +1588,20 @@ export const tableCursor = ViewPlugin.define(() => ({
 
 function isCell(node: HTMLElement): boolean {
   return node.nodeType === 1 && (node.tagName === "TD" || node.tagName === "TH");
+}
+
+/** Sets a table's column widths (in percent) as a <colgroup>, or takes it away for null. */
+function setColumnWidths(table: HTMLTableElement, widths: number[] | null) {
+  table.querySelector(":scope > colgroup")?.remove();
+  table.classList.toggle("has-widths", !!widths);
+  if (!widths) return;
+  const colgroup = document.createElement("colgroup");
+  for (const width of widths) {
+    const col = document.createElement("col");
+    col.style.width = `${+width.toFixed(2)}%`;
+    colgroup.append(col);
+  }
+  table.prepend(colgroup);
 }
 
 function el(tag: string, className: string): HTMLElement {
