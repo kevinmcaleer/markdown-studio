@@ -48,6 +48,14 @@ const P: Record<string, string> = {
   rounded: "M4 20V10a6 6 0 0 1 6-6h10",
   crop: "M6 2v14a2 2 0 0 0 2 2h14M18 22V8a2 2 0 0 0-2-2H2",
   highlight: "m9 11-6 6v3h9l3-3M22 12l-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4",
+  alignObjLeft: "M4 2v20M8 6h12v4H8zM8 14h7v4H8z",
+  alignObjCenter: "M12 2v20M6 6h12v4H6zM8.5 14h7v4h-7z",
+  alignObjRight: "M20 2v20M4 6h12v4H4zM9 14h7v4H9z",
+  alignObjTop: "M2 4h20M6 8h4v12H6zM14 8h4v7h-4z",
+  alignObjMiddle: "M2 12h20M6 6h4v12H6zM14 8.5h4v7h-4z",
+  alignObjBottom: "M2 20h20M6 4h4v12H6zM14 9h4v7h-4z",
+  distributeH: "M3 3v18M21 3v18M9.5 7h5v10h-5z",
+  distributeV: "M3 3h18M3 21h18M7 9.5h10v5H7z",
   spinner: "M21 12a9 9 0 1 1-6.2-8.6",
 };
 

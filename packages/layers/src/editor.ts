@@ -10,6 +10,7 @@
 import {
   ActiveSelection, Canvas, Control, FabricImage, FabricObject, Group, Point, Polygon, Rect, Textbox, util, type TPointerEventInfo, type TPointerEvent,
 } from "fabric";
+import { alignBoxes, distributeBoxes, type AlignHow, type DistributeHow } from "./align";
 import { Connector, type ConnectorEnd } from "./connector";
 import { blankDoc, clampSide, embedDoc, defaultFetch, MAX_SIDE, MIN_SIDE, normalizeDoc, SIZES, type LayersDoc } from "./doc";
 import {
@@ -941,6 +942,36 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     canvas.fire("object:modified", { target: o });
   }
 
+  /**
+   * The selected things that line up with each other. A line fastened to a
+   * shape isn't one of them (it follows its shapes), nor is a shape's text
+   * or anything locked.
+   */
+  function lineUpTargets(): FabricObject[] {
+    return selected().filter(o => !locked(o) && !boundTo(o) && !(o instanceof Connector && (o.connFrom || o.connTo)));
+  }
+  /** Lines the selected things up with each other, or spaces them out evenly; fastened lines follow. */
+  function lineUp(how: AlignHow | DistributeHow): void {
+    const list = lineUpTargets();
+    const spread = how === "horizontal" || how === "vertical";
+    if (list.length < (spread ? 3 : 2)) return;
+    const all = [...selected()];
+    // Out of the selection box, so each one's position is its own place on the page.
+    canvas.discardActiveObject();
+    const boxes = list.map(o => o.getBoundingRect());
+    const moves = spread ? distributeBoxes(boxes, how) : alignBoxes(boxes, how);
+    list.forEach((o, i) => {
+      const { dx, dy } = moves[i];
+      if (!dx && !dy) return;
+      o.set({ left: (o.left || 0) + dx, top: (o.top || 0) + dy });
+      o.setCoords();
+    });
+    follow();
+    selectAll(all);
+    const now = active();
+    if (now) canvas.fire("object:modified", { target: now });
+  }
+
   function group(): void {
     const list = [...selected()];
     if (list.length < 2) return;
@@ -1224,7 +1255,16 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
           : `<button type="button" class="lyr-btn" data-act="shape-text" title="Add text to the shape (Enter, or double-click it)">${icon("textInShape")}<span>Add text</span></button>`;
       }
     } else {
-      html += `<span class="lyr-label">${selected().length} selected</span>`;
+      const n = lineUpTargets().length;
+      const al = (how: string, ic: string, label: string) => `<button type="button" class="lyr-btn" data-align="${how}" title="${label}" aria-label="${label}"${n < 2 ? " disabled" : ""}>${icon(ic)}</button>`;
+      const di = (how: string, ic: string, label: string) => `<button type="button" class="lyr-btn" data-distribute="${how}" title="${label}" aria-label="${label}"${n < 3 ? " disabled" : ""}>${icon(ic)}</button>`;
+      html += `<span class="lyr-label">${selected().length} selected</span>
+        <span class="lyr-sep"></span>
+        ${al("left", "alignObjLeft", "Align left")}${al("center", "alignObjCenter", "Align centre")}${al("right", "alignObjRight", "Align right")}
+        <span class="lyr-sep"></span>
+        ${al("top", "alignObjTop", "Align top")}${al("middle", "alignObjMiddle", "Align middle")}${al("bottom", "alignObjBottom", "Align bottom")}
+        <span class="lyr-sep"></span>
+        ${di("horizontal", "distributeH", "Space evenly across (needs 3 or more)")}${di("vertical", "distributeV", "Space evenly up and down (needs 3 or more)")}`;
     }
     contextBar.innerHTML = html + commonTools(o);
   }
@@ -1338,6 +1378,8 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     const o = active();
     if (el.dataset.color) return openColor(el, el.dataset.color);
     if (el.dataset.pop) return openPop(el, el.dataset.pop);
+    if (el.dataset.align) return lineUp(el.dataset.align as AlignHow);
+    if (el.dataset.distribute) return lineUp(el.dataset.distribute as DistributeHow);
     if (el.dataset.step && o) {
       const [prop, by] = el.dataset.step.split(":");
       const t = textOf(o);
