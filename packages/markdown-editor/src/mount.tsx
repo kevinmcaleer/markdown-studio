@@ -1,6 +1,7 @@
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { openLinkPopover } from "./format/linkPopover";
+import { openHostBlock } from "./hostBlock";
 import { configureLanguageApi, fetchLanguageApi } from "./proofing/languageApi";
 import { setDictionaryBase } from "./proofing/dictionaryUrls";
 import type { EditorEvents, MarkdownEditor, MountOptions } from "./standalone/options";
@@ -94,6 +95,7 @@ export function mount(target: HTMLElement | string, options: MountOptions = {}):
     checkSpelling: () => bridge.actions?.checkSpelling(),
     setHints: (hints) => bridge.actions?.setHints(hints),
     setSaveStatus: (state, message) => bridge.actions?.setSaveStatus(state, message),
+    openBlock: (pos, opts) => openHostBlock(view, pos, opts),
     on<K extends keyof EditorEvents>(event: K, listener: (value: EditorEvents[K]) => void) {
       let set = listeners.get(event);
       if (!set) listeners.set(event, (set = new Set()));
