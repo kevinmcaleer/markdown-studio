@@ -2,10 +2,9 @@
 import { EditorState, Text } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { history, undo } from "@codemirror/commands";
-import { afterEach, describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import { card, diagnostics, type Diagnostic } from "../diagnostics";
-import { configureLanguageApi, type LanguageRequest } from "../proofing/languageApi";
-import { activeRewrite, rewriteAsActive, sentenceAround, watchRewrite } from "./rewrite";
+import { rewriteAsActive, sentenceAround } from "./rewrite";
 import { toDiagnostic } from "./writingLint";
 
 const around = (doc: string, phrase: string) => {
@@ -40,19 +39,6 @@ describe("sentenceAround", () => {
 });
 
 describe("Rewrite as active", () => {
-  const server = (answer: (path: string, body: unknown) => unknown): { sent: unknown[] } => {
-    const sent: unknown[] = [];
-    const request: LanguageRequest = async <T,>(path: string, options: { body?: unknown } = {}) => {
-      sent.push(options.body);
-      const value = answer(path, options.body);
-      if (value instanceof Error) throw value;
-      return value as T;
-    };
-    configureLanguageApi(request);
-    return { sent };
-  };
-  afterEach(() => configureLanguageApi(null));
-
   const passive = (doc: string, phrase: string): [EditorState, Diagnostic] => {
     const state = EditorState.create({ doc });
     const from = doc.indexOf(phrase);
@@ -64,32 +50,15 @@ describe("Rewrite as active", () => {
     expect(toDiagnostic({ rule: "adverb", from: 0, to: 1, message: "m" }).suggest).toBeUndefined();
   });
 
-  it("asks the server for the sentence and offers to replace just that sentence", async () => {
-    const { sent } = server(() => ({ text: "Kev wrote the code." }));
+  it("replaces just the sentence, in the browser", async () => {
     const [state, d] = passive("Hello. The code was written by Kev. Bye.", "was written");
-    expect(await activeRewrite(state, d)).toEqual({ label: "Use this", from: 7, to: 35, insert: "Kev wrote the code." });
-    expect(sent[0]).toEqual({ text: "The code was written by Kev.", phrase: "was written", style: "active", language: "en-GB" });
+    expect(rewriteAsActive.available!(state, d)).toBe(true);
+    expect(await rewriteAsActive.run(state, d)).toEqual({ label: "Use this", from: 7, to: 35, insert: "Kev wrote the code." });
   });
 
-  it("says so when there's nothing better, or the server says no", async () => {
-    const [state, d] = passive("It was written.", "was written");
-    server(() => ({ text: "It was written." }));
-    expect(await activeRewrite(state, d)).toMatch(/no clear active version/);
-    server(() => Object.assign(new Error("429"), { status: 429 }));
-    expect(await activeRewrite(state, d)).toMatch(/Try again shortly/);
-    server(() => Object.assign(new Error("401"), { status: 401 }));
-    expect(await activeRewrite(state, d)).toMatch(/Sign in/);
-  });
-
-  it("is only offered when the server can rewrite", async () => {
-    server(() => ({ lookup: false, grammar: false, translate: false, rewrite: true }));
-    watchRewrite();
-    await new Promise((r) => setTimeout(r, 0));
-    expect(rewriteAsActive.available!()).toBe(true);
-    server(() => ({ lookup: false, grammar: false, translate: false }));
-    watchRewrite();
-    await new Promise((r) => setTimeout(r, 0));
-    expect(rewriteAsActive.available!()).toBe(false);
+  it("isn't offered when the sentence doesn't say who did it", () => {
+    const [state, d] = passive("> The way it is presented bugs me.", "is presented");
+    expect(rewriteAsActive.available!(state, d)).toBe(false);
   });
 });
 

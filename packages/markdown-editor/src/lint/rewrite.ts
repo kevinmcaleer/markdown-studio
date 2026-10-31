@@ -1,20 +1,11 @@
 import type { EditorState, Text } from "@codemirror/state";
 import type { Diagnostic, DiagnosticFix, DiagnosticSuggest } from "../diagnostics";
-import { languageFeatures, rewriteSentence } from "../proofing/languageApi";
+import { toActive } from "./activeVoice";
 
-// "Rewrite as active" on the passive-voice hint. The server (the host's
-// language API) asks an AI for the sentence in the active voice; the hover
-// card shows it beside the original, and nothing changes until "Use this".
-
-let available = false;
-
-/** Asks the server once whether it can rewrite, so the card knows whether to offer it. */
-export function watchRewrite(): void {
-  languageFeatures().then(
-    (f) => (available = !!f.rewrite),
-    () => (available = false),
-  );
-}
+// "Rewrite as active" on the passive-voice hint. Worked out in the browser
+// (activeVoice.ts), so it's free and works offline. It's offered when the
+// sentence says who did it ("… by Kev"); the hover card shows the new
+// sentence beside the old one, and nothing changes until "Use this".
 
 // Block markers at the start of a line that aren't part of the sentence:
 // quotes and callouts, list bullets and numbers, task boxes, headings.
@@ -56,26 +47,17 @@ export function sentenceAround(doc: Text, from: number, to: number): { from: num
   return { from: start, to: start + trimmed.length, text: trimmed };
 }
 
-export async function activeRewrite(state: EditorState, d: Diagnostic): Promise<DiagnosticFix | string> {
+/** The active-voice rewrite of the hint's sentence, or null when there isn't a clear one. */
+export function activeRewrite(state: EditorState, d: Diagnostic): DiagnosticFix | null {
   const sentence = sentenceAround(state.doc, d.from, d.to);
-  if (!sentence) return "Couldn't find the whole sentence to rewrite.";
-  const phrase = state.sliceDoc(d.from, d.to);
-  let insert: string;
-  try {
-    insert = await rewriteSentence(sentence.text, phrase);
-  } catch (err) {
-    const status = (err as { status?: number } | null)?.status;
-    if (status === 429) return "That's a lot of rewrites in a minute. Try again shortly.";
-    if (status === 401 || status === 403) return "Sign in to get rewrites.";
-    return "Couldn't get a suggestion just now. Try again in a moment.";
-  }
-  if (!insert.trim() || insert.trim() === sentence.text.trim()) return "There's no clear active version of this one. It may read best as it is.";
-  return { label: "Use this", from: sentence.from, to: sentence.to, insert: insert.trim() };
+  if (!sentence) return null;
+  const insert = toActive(sentence.text, d.from - sentence.from, d.to - sentence.from);
+  if (!insert || insert === sentence.text) return null;
+  return { label: "Use this", from: sentence.from, to: sentence.to, insert };
 }
 
 export const rewriteAsActive: DiagnosticSuggest = {
   label: "Rewrite as active",
-  busy: "Rewriting…",
-  available: () => available,
-  run: activeRewrite,
+  available: (state, d) => activeRewrite(state, d) !== null,
+  run: async (state, d) => activeRewrite(state, d) ?? "There's no clear active version of this one.",
 };
