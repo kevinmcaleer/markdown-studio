@@ -280,7 +280,9 @@ Here the columns are 5 and 15 dashes: 25% and 75%. When every column has the sam
 number of dashes (`| --- | --- |`), nothing is set and the columns size as usual.
 In the live view, drag the edge between two columns to change their widths in 5%
 steps (one dash each, 20 a table); **Reset column widths** in a column's menu puts
-every column back to `---`. The preview draws widths as a `<colgroup>` on a
+every column back to `---`. Double-clicking a column edge fits the column on its left to
+its content (its longest line, rounded up to 5%), and the other columns share the
+rest in proportion, each keeping at least 10%. The preview draws widths as a `<colgroup>` on a
 `table.has-widths` (`tableWidthsPlugin` in `src/tableWidths.ts`). A page that renders
 the Markdown itself can do the same with `delimiterDashes()` and `columnWidths()`.
 Table formatters such as Prettier re-pad the dashes, which would reset the widths.
