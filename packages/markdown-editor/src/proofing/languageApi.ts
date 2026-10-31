@@ -53,14 +53,29 @@ export type GrammarMatch = { offset: number; length: number; message: string; sh
 const NONE: LanguageFeatures = { lookup: false, grammar: false, translate: false };
 let features: Promise<LanguageFeatures> | null = null;
 
-/** What this server offers. Asked once while it answers; a failure is asked again next time. */
+/** How long to wait before asking a second time when the server didn't answer. */
+export const FEATURES_RETRY_MS = 1500;
+
+const offline = (err: unknown) => {
+  const status = (err as { status?: number } | null)?.status;
+  return status !== 401 && status !== 403;
+};
+
+/**
+ * What this server offers. Asked once while it answers; a failure is asked again next time.
+ * One dropped request (a tunnel blip, a slow wake-up) isn't enough to call it offline:
+ * it's asked a second time, a moment later, first.
+ */
 export function languageFeatures(): Promise<LanguageFeatures> {
   if (!features) {
-    features = request<LanguageFeatures>("/api/language").catch((err) => {
-      features = null;
-      const unavailable = !api ? "none" : err?.status === 401 || err?.status === 403 ? "signin" : "offline";
-      return { ...NONE, unavailable };
-    });
+    const ask = () => request<LanguageFeatures>("/api/language");
+    features = ask()
+      .catch((err) => (api && offline(err) ? new Promise((r) => setTimeout(r, FEATURES_RETRY_MS)).then(ask) : Promise.reject(err)))
+      .catch((err) => {
+        features = null;
+        const unavailable = !api ? "none" : offline(err) ? "offline" : "signin";
+        return { ...NONE, unavailable };
+      });
   }
   return features;
 }
