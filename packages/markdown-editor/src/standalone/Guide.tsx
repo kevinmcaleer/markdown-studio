@@ -101,7 +101,7 @@ const CHECKING: GuideSection = {
   rows: [
     ["F7", "Step through each misspelt word, from the cursor on"],
     ["Spelling count", "The book in the status bar: click it to check spelling"],
-    ["Hints", "The hints button in the status bar lists passive voice, long sentences, adverbs and wordy phrases, with an example and a one-click fix where there is one"],
+    ["Hints", "The hints button in the status bar lists passive voice, long sentences, adverbs and wordy phrases, with an example and a one-click fix where there is one. Where the site has it, a passive-voice hint offers “Rewrite as active”: you see the new sentence first, then Use this or Dismiss (Ctrl+Z undoes it)"],
   ],
 };
 

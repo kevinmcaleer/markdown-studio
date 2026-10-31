@@ -1,6 +1,7 @@
 import { StateEffect, StateField, type Extension } from "@codemirror/state";
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { diagnostics, setDiagnostics, type Diagnostic } from "../diagnostics";
+import { rewriteAsActive, watchRewrite } from "./rewrite";
 import { lint, readability, RULE_INFO, type LintHint, type LintRule, type Readability } from "./rules";
 
 // Puts the writing lint in the editor. It runs a moment after you stop typing,
@@ -53,6 +54,8 @@ export function toDiagnostic(hint: LintHint): Diagnostic {
     fixes: hint.fixes,
     // A ready-made rewording already shows the idea; the example is for when there isn't one.
     example: hint.fixes?.[0]?.label.startsWith("Change to") ? undefined : RULE_INFO[hint.rule].example,
+    // Passive voice is easy to spot and hard to fix by hand, so the server's AI can suggest a rewrite.
+    suggest: hint.rule === "passive" ? rewriteAsActive : undefined,
   };
 }
 
@@ -92,6 +95,7 @@ export function writingLint(onReport: (report: LintReport | null) => void, initi
         this.cancelIdle = null;
         const { on, off } = this.view.state.field(lintSettings);
         if (!on) return;
+        watchRewrite();
         const text = this.view.state.doc.toString();
         const hints = lint(text).filter((h) => !off.includes(h.rule));
         this.hints = hints.map((h) => ({ ...h, snippet: snippet(text, h) }));

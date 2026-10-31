@@ -13,6 +13,21 @@ export type DiagnosticSource = "lint" | "spelling" | "grammar";
 
 export type DiagnosticFix = { label: string; from: number; to: number; insert: string };
 
+/**
+ * A fix that has to be worked out when it's clicked, like asking a server to
+ * reword the sentence. The card shows the answer beside the original and only
+ * changes the text when "Use this" is clicked.
+ */
+export type DiagnosticSuggest = {
+  label: string;
+  /** Shown on the button while waiting. */
+  busy: string;
+  /** Whether to offer it at all right now (a server that's set up, say). */
+  available?: () => boolean;
+  /** The change to offer, or a sentence saying why there isn't one. */
+  run: (state: EditorState, d: Diagnostic) => Promise<DiagnosticFix | string>;
+};
+
 export type Diagnostic = {
   from: number;
   to: number;
@@ -25,6 +40,7 @@ export type Diagnostic = {
   fixes?: DiagnosticFix[];
   /** A before-and-after line that shows what the rule means. */
   example?: { before: string; after: string };
+  suggest?: DiagnosticSuggest;
 };
 
 /** Replaces every diagnostic from one source. Send an empty list to clear it. */
@@ -94,7 +110,8 @@ export function applyFix(view: EditorView, fix: DiagnosticFix) {
   view.focus();
 }
 
-function card(view: EditorView, found: Diagnostic[]): HTMLElement {
+/** The hover card for the diagnostics at one spot (exported for tests). */
+export function card(view: EditorView, found: Diagnostic[]): HTMLElement {
   const dom = document.createElement("div");
   dom.className = "cm-diag-card";
   for (const d of found) {
@@ -112,10 +129,12 @@ function card(view: EditorView, found: Diagnostic[]): HTMLElement {
       ex.appendChild(document.createTextNode(" → "));
       ex.appendChild(document.createElement("ins")).textContent = d.example.after;
     }
-    if (d.fixes?.length && !view.state.readOnly) {
+    const suggest = d.suggest && !view.state.readOnly && (d.suggest.available?.() ?? true) ? d.suggest : null;
+    if ((d.fixes?.length || suggest) && !view.state.readOnly) {
       const row = item.appendChild(document.createElement("div"));
       row.className = "cm-diag-fixes";
-      for (const fix of d.fixes) {
+      if (suggest) suggestButton(view, d, suggest, item, row);
+      for (const fix of d.fixes ?? []) {
         const button = row.appendChild(document.createElement("button"));
         button.type = "button";
         button.textContent = fix.label;
@@ -125,6 +144,60 @@ function card(view: EditorView, found: Diagnostic[]): HTMLElement {
     }
   }
   return dom;
+}
+
+function suggestButton(view: EditorView, d: Diagnostic, suggest: DiagnosticSuggest, item: HTMLElement, row: HTMLElement) {
+  const button = row.appendChild(document.createElement("button"));
+  button.type = "button";
+  button.className = "cm-diag-suggest";
+  button.textContent = suggest.label;
+  button.addEventListener("mousedown", (e) => e.preventDefault());
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    button.textContent = suggest.busy;
+    item.querySelector(".cm-diag-preview")?.remove();
+    let answer: DiagnosticFix | string;
+    try {
+      answer = await suggest.run(view.state, d);
+    } catch {
+      answer = "Couldn't get a suggestion just now. Try again in a moment.";
+    }
+    button.disabled = false;
+    button.textContent = suggest.label;
+    const preview = item.appendChild(document.createElement("div"));
+    preview.className = "cm-diag-preview";
+    if (typeof answer === "string") {
+      preview.appendChild(document.createElement("p")).textContent = answer;
+      return;
+    }
+    const fix = answer;
+    // What it replaces, so a click after the text has changed underneath doesn't land in the wrong place.
+    const before = view.state.sliceDoc(fix.from, fix.to);
+    const text = preview.appendChild(document.createElement("p"));
+    text.className = "cm-diag-example";
+    text.appendChild(document.createElement("del")).textContent = before;
+    text.appendChild(document.createTextNode(" → "));
+    text.appendChild(document.createElement("ins")).textContent = fix.insert;
+    const actions = preview.appendChild(document.createElement("div"));
+    actions.className = "cm-diag-fixes";
+    const use = actions.appendChild(document.createElement("button"));
+    use.type = "button";
+    use.className = "cm-diag-use";
+    use.textContent = "Use this";
+    const dismiss = actions.appendChild(document.createElement("button"));
+    dismiss.type = "button";
+    dismiss.textContent = "Dismiss";
+    for (const b of [use, dismiss]) b.addEventListener("mousedown", (e) => e.preventDefault());
+    use.addEventListener("click", () => {
+      if (view.state.sliceDoc(fix.from, fix.to) !== before) {
+        preview.replaceChildren(Object.assign(document.createElement("p"), { textContent: "The sentence changed. Ask again for a fresh suggestion." }));
+        return;
+      }
+      // An ordinary edit, so Ctrl+Z puts the old sentence back.
+      applyFix(view, fix);
+    });
+    dismiss.addEventListener("click", () => preview.remove());
+  });
 }
 
 const hoverCard = hoverTooltip((view, pos) => {
@@ -171,6 +244,9 @@ const diagnosticsTheme = EditorView.theme({
     color: "inherit",
     cursor: "pointer",
   },
+  ".cm-diag-preview": { marginTop: "0.45rem", paddingTop: "0.4rem", borderTop: "1px dashed var(--border, #ddd)" },
+  ".cm-diag-preview .cm-diag-example": { fontSize: "13px", color: "var(--text, inherit)" },
+  ".cm-diag-fixes button:disabled": { opacity: "0.6", cursor: "progress" },
   ".cm-diag-fixes button:first-child": { borderColor: "color-mix(in srgb, var(--accent, #c96442) 55%, transparent)" },
   ".cm-diag-fixes button:hover": { background: "color-mix(in srgb, var(--accent, #c96442) 14%, var(--surface-2, #f4f4f4))" },
 });

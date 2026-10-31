@@ -40,6 +40,8 @@ export type LanguageFeatures = {
   lookup: boolean;
   grammar: boolean;
   translate: boolean;
+  /** Rewrite a sentence (the passive-voice hint's "Rewrite as active"). Older servers don't say. */
+  rewrite?: boolean;
   /** Why there's nothing: no server configured, the server can't be reached, or it wants you signed in. */
   unavailable?: "none" | "offline" | "signin";
 };
@@ -118,4 +120,9 @@ export function translationLanguages() {
 
 export function translate(text: string, target: string) {
   return request<{ text: string; detected: string | null }>("/api/language/translate", { body: { text, target } });
+}
+
+/** One sentence rewritten in the active voice by the server's AI. `phrase` is the passive part the hint found. */
+export function rewriteSentence(text: string, phrase: string, language = "en-GB") {
+  return request<{ text: string }>("/api/language/rewrite", { body: { text, phrase, style: "active", language } }).then((r) => r.text);
 }
