@@ -12,6 +12,7 @@ import type { LanguageRequest } from "../proofing/languageApi";
 import type { ProofLanguage } from "../proofing/speller";
 import type { InsertTexts, SlashCommand } from "../slashMenu";
 import type { HiddenComment } from "../hiddenComments";
+import type { HostBlock, HostBlockOptions } from "../hostBlock";
 import type { LayersOptions } from "../layersBlock";
 import type { TableCellAction, TableColumnAction, TableNote, TableRenderer, TableStepper } from "../tableWidget";
 import type { VideoRenderer } from "../videosWidget";
@@ -372,6 +373,13 @@ export interface MarkdownEditor {
    * state has its own when it's left out.
    */
   setSaveStatus(state: SaveState | null, message?: string): void;
+  /**
+   * Puts a box the host fills (`block.element`) in the live view: in place of
+   * the picture whose Markdown starts at `pos`, or after the line at `pos`.
+   * It keeps its contents while the text changes, until `block.close()`.
+   * One at a time. kevsrobots edits its wiring diagram in one.
+   */
+  openBlock(pos: number, options?: HostBlockOptions): HostBlock;
   on<K extends keyof EditorEvents>(event: K, listener: (value: EditorEvents[K]) => void): () => void;
   off<K extends keyof EditorEvents>(event: K, listener: (value: EditorEvents[K]) => void): void;
   /** Takes the editor out of the page; a `<textarea>` it was mounted on comes back. */

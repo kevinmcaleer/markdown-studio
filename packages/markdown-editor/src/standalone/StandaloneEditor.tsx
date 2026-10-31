@@ -26,6 +26,7 @@ import { hiddenComments } from "../hiddenComments";
 import { pageBreakCommand, pageBreaksOn } from "../pageBreaks";
 import { completeTodo, findTodos, todoMarks, type Todo } from "../todos";
 import { cardPicturePicker } from "../cardsWidget";
+import { hostBlocks } from "../hostBlock";
 import { layersBlocks, layersCommand, type LayersHost } from "../layersBlock";
 import { videoRenderers } from "../videosWidget";
 import { speechEditor } from "../speech/speechEditor";
@@ -301,6 +302,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
           })
         : [],
       layersHost ? Prec.high(layersBlocks(layersHost)) : [],
+      Prec.high(hostBlocks()),
       options.videoRenderer ? videoRenderers.of(options.videoRenderer) : [],
       options.tableNote ? tableNotes.of(options.tableNote) : [],
       options.hiddenComments ? hiddenComments.of(options.hiddenComments) : [],

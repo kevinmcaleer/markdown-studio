@@ -486,6 +486,7 @@ Undo, redo and find and replace keep CodeMirror's usual keys.
 | `refreshPreview()` | Renders the preview again (after the host's renderer has changed). |
 | `checkSpelling()` | Opens the spelling check at the cursor, as F7 and the `spelling` button do. |
 | `setSaveStatus(state, message?)` | Shows a cloud at the toolbar's right end, which stays on screen while scrolling: `"saved"` a plain cloud, `"saving"` a cloud with turning arrows, `"error"` a cloud with a cross ("Not saved"). `message` is its tooltip; `null` hides it. On a phone only the cloud shows. |
+| `openBlock(pos, { onClose?, estimatedHeight? })` | Puts a box the host fills (`block.element`) in the live view: in place of the picture whose Markdown starts at `pos`, or after the line at `pos`. It keeps its contents while the text changes (even the picture's link) until `block.close()`; `block.pos()` and `block.moveTo(pos)` read and move it. One at a time: opening another closes the first, and `onClose` runs once however it closes. kevsrobots edits its wiring diagram in one. |
 | `setHints(hints)` | Replaces the host's hints in the hints panel (see the `hints` option); `[]` clears them. |
 | `clearDraft()` | Forget the stored draft: call it once the host has saved. |
 | `on(event, listener)` | Returns a function that removes the listener; `off(event, listener)` does too. |
