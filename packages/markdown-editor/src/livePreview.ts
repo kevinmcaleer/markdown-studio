@@ -849,7 +849,7 @@ const liveTheme = EditorView.theme({
   ".cm-md-table mark": { backgroundColor: "var(--highlight)", color: "inherit", borderRadius: "2px" },
   ".cm-md-table a": { color: "var(--accent)" },
   // A host's note above a table (tableNote).
-  ".cm-md-table-note": { padding: "0.5rem 0 0" },
+  ".cm-md-table-note": { padding: "0.5rem 2.75rem 0 6px" },
   ".cm-md-table button": {
     position: "absolute",
     display: "grid",
