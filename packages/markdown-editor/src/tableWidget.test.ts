@@ -273,3 +273,106 @@ describe("table widget", () => {
     view.destroy();
   });
 });
+
+describe("picking a block of cells", () => {
+  const doc = "| Part | Qty | Notes |\n| --- | --- | --- |\n| Servo | 2 | ears |\n| Pico | 1 | brain |\n";
+
+  function pickView(text = doc): EditorView {
+    return new EditorView({
+      state: EditorState.create({ doc: text, extensions: [markdown({ base: markdownLanguage }), tableField, selectionToolbar()] }),
+      parent: document.body,
+    });
+  }
+
+  const cellOf = (view: EditorView, row: number, col: number) =>
+    view.dom.querySelector<HTMLElement>(`.cm-md-table [data-row="${row}"][data-col="${col}"]`)!;
+
+  function dragAcross(view: EditorView, from: [number, number], to: [number, number]) {
+    cellOf(view, ...from).dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0, buttons: 1 }));
+    cellOf(view, ...to).dispatchEvent(new MouseEvent("mousemove", { bubbles: true, buttons: 1 }));
+    document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+  }
+
+  const picked = (view: EditorView) =>
+    Array.from(view.dom.querySelectorAll<HTMLElement>(".cm-md-table .selected"), (c) => `${c.dataset.row},${c.dataset.col}`);
+  const bar = (view: EditorView) => view.dom.querySelector<HTMLElement>(".cm-md-table-rangebar");
+
+  it("picks the cells a drag runs across and bolds them all from the bar", () => {
+    const view = pickView();
+    dragAcross(view, [1, 0], [2, 1]);
+    expect(picked(view)).toEqual(["1,0", "1,1", "2,0", "2,1"]);
+    bar(view)!.querySelector<HTMLElement>("[data-action=bold]")!.click();
+    expect(view.state.doc.toString()).toBe("| Part | Qty | Notes |\n| --- | --- | --- |\n| **Servo** | **2** | ears |\n| **Pico** | **1** | brain |\n");
+    // Still picked, and Bold now shows as on; again takes it off.
+    expect(picked(view)).toHaveLength(4);
+    const again = bar(view)!.querySelector<HTMLElement>("[data-action=bold]")!;
+    expect(again.getAttribute("aria-pressed")).toBe("true");
+    again.click();
+    expect(view.state.doc.toString()).toBe(doc);
+    view.destroy();
+  });
+
+  it("picks from the caret's cell with Shift+click, and italicises with Mod-I", () => {
+    const view = pickView();
+    cellOf(view, 1, 1).focus();
+    cellOf(view, 2, 2).dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0, shiftKey: true }));
+    expect(picked(view)).toEqual(["1,1", "1,2", "2,1", "2,2"]);
+    const table = view.dom.querySelector<HTMLElement>(".cm-md-table")!;
+    table.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "i", ctrlKey: true }));
+    expect(view.state.doc.toString()).toContain("| Servo | *2* | *ears* |");
+    // Delete empties them; Escape goes back to typing in a cell.
+    table.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Delete" }));
+    expect(view.state.doc.toString()).toContain("| Servo |  |  |\n| Pico |  |  |");
+    table.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "Escape" }));
+    expect(picked(view)).toEqual([]);
+    view.destroy();
+  });
+
+  it("aligns the columns a block covers", () => {
+    const view = pickView();
+    dragAcross(view, [1, 1], [1, 2]);
+    bar(view)!.querySelector<HTMLElement>("[data-action=align-center]")!.click();
+    expect(view.state.doc.line(2).text).toBe("| --- | :---: | :---: |");
+    view.destroy();
+  });
+
+  it("Shift+clicks row handles to pick rows, then deletes them", () => {
+    const view = pickView("| A |  B |\n| --- | --- |\n| 1 | x |\n| 2 | y |\n| 3 | z |\n");
+    hoverCell(view, 1, 0);
+    const handle = view.dom.querySelector<HTMLElement>(".cm-md-table-rowhandle")!;
+    handle.click();
+    // The menu opens for the row; Shift+click on another row's handle picks the rows between.
+    expect(view.dom.querySelector(".cm-md-table-menu")).not.toBeNull();
+    cellOf(view, 2, 0).dispatchEvent(new MouseEvent("mouseover", { bubbles: true, shiftKey: true }));
+    handle.dispatchEvent(new MouseEvent("click", { bubbles: true, shiftKey: true }));
+    expect(picked(view)).toEqual(["1,0", "1,1", "2,0", "2,1"]);
+    const rows = bar(view)!.querySelector<HTMLButtonElement>("[data-action=delete-rows]")!;
+    expect(rows.hidden).toBe(false);
+    expect(bar(view)!.querySelector<HTMLButtonElement>("[data-action=delete-cols]")!.hidden).toBe(true);
+    rows.click();
+    expect(view.state.doc.toString()).toBe("| A | B |\n| --- | --- |\n| 3 | z |\n");
+    view.destroy();
+  });
+
+  it("opens the row menu for every picked row", () => {
+    const view = pickView();
+    dragAcross(view, [1, 0], [2, 2]);
+    hoverCell(view, 2, 0);
+    view.dom.querySelector<HTMLElement>(".cm-md-table-rowhandle")!.click();
+    const labels = Array.from(view.dom.querySelectorAll(".cm-md-table-menu button"), (b) => b.textContent);
+    expect(labels).toContain("Delete 2 rows");
+    expect(labels).toContain("Clear 2 rows");
+    view.destroy();
+  });
+
+  it("copies a block as tab-separated text", () => {
+    const view = pickView();
+    dragAcross(view, [0, 0], [1, 1]);
+    const data = new DataTransfer();
+    const event = new Event("copy", { bubbles: true, cancelable: true }) as ClipboardEvent;
+    Object.defineProperty(event, "clipboardData", { value: data });
+    document.dispatchEvent(event);
+    expect(data.getData("text/plain")).toBe("Part\tQty\nServo\t2");
+    view.destroy();
+  });
+});

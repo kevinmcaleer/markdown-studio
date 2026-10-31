@@ -5,12 +5,30 @@ import { parseCalloutHeader } from "./callouts";
 import { clearCellFormatting, cellMarkActive, toggleCellMark, type CellEdit } from "./format/cellMarks";
 import type { Mark } from "./format/formatting";
 import type { FormatItem } from "./format/items";
-import { CELL_TOOLBAR, iconSvg, itemTitle } from "./format/items";
+import { CELL_TOOLBAR, ITEMS, iconSvg, itemTitle } from "./format/items";
 import { hasLinkPopover, linkCard, linkForm, linkInText, type LinkAt } from "./format/linkPopover";
 import { hasSelectionToolbar } from "./format/selectionToolbar";
 import { cellHasImage, isImageGrid } from "./imageGrid";
 import { renderCell } from "./markdown";
 import { columnWidths, widthsToDashes } from "./tableWidths";
+import {
+  alignBlock,
+  blockAlign,
+  blockClipboard,
+  blockHasMark,
+  blockOf,
+  blockSize,
+  clearBlock,
+  clearBlockFormatting,
+  deleteBlockColumns,
+  deleteBlockRows,
+  inBlock,
+  toggleBlockMark,
+  wholeColumns,
+  wholeRows,
+  type Block,
+  type CellRange,
+} from "./tableSelection";
 import { applyCommand, commandsOf, filterCommands, hasSlashMenu, type SlashCommand } from "./slashMenu";
 import { rememberedHeight, rememberHeight, sizePictures } from "./steadyScroll";
 import {
@@ -45,6 +63,12 @@ import {
 // edit to the Markdown underneath, so co-editing and undo work as for text.
 // Dragging the edge between two columns sets their widths, as the dashes on
 // the delimiter row (tableWidths.ts); "Reset column widths" clears them.
+//
+// Dragging across cells, Shift+clicking one, Shift+arrows, or clicking (and
+// Shift+clicking) the row and column handles picks a block of cells. A bar
+// over it applies bold, italic and the other marks, alignment, clearing and
+// deleting to the whole block, and it copies, cuts and pastes as a block
+// (tableSelection.ts).
 
 //
 // A host can draw a table some other way (`tableRenderer`): a Videos table as
@@ -346,6 +370,9 @@ const ICONS = {
   clear: "M2.5 5.5h11v5h-11zM6 3.5l4 9",
   split: "M2.5 2.5h11v4h-11zM2.5 9.5h11v4h-11zM1 8h2M5 8h2M9 8h2M13 8h2",
   copy: "M5.5 5.5h8v8h-8zM10.5 5.5v-3h-8v8h3",
+  eraser: "M6.5 13.5h7M3 10.5 9.5 4l3.5 3.5-6 6H4.5zM6 7.5l3.5 3.5",
+  deleteRows: "M2.5 3.5h11v4h-11zM2.5 9.5h4M10.5 9.5l3 3M13.5 9.5l-3 3",
+  deleteCols: "M3.5 2.5h4v11h-4zM9.5 2.5v4M10 9.5l3 3M13 9.5l-3 3",
   alignLeft: "M2.5 3.5h11M2.5 6.5h7M2.5 9.5h11M2.5 12.5h7",
   alignCenter: "M2.5 3.5h11M4.5 6.5h7M2.5 9.5h11M4.5 12.5h7",
   alignRight: "M2.5 3.5h11M6.5 6.5h7M2.5 9.5h11M6.5 12.5h7",
@@ -403,6 +430,15 @@ class TableView {
   private drag: { axis: "row" | "col"; from: number; to: number | null; line: HTMLElement } | null = null;
   /** Set for the click that ends a drag, so it doesn't open the handle's menu. */
   private dragged = false;
+  /** The block of cells picked (see tableSelection.ts), and the bar of actions over it. */
+  private range: CellRange | null = null;
+  private rangeBar: { dom: HTMLElement; buttons: Map<string, HTMLButtonElement> } | null = null;
+  /** Clicking outside the table puts the block down. */
+  private readonly outsideListener = (event: Event) => {
+    if (this.range && !this.dom.contains(event.target as Node)) this.setRange(null);
+  };
+  /** Copy, cut and paste of a block: with nothing selected, they go to the document, not the table. */
+  private readonly clipboardListener = (event: Event) => this.clipboard(event as ClipboardEvent);
   private closeMenuListener = (event: Event) => {
     if (this.menu && !this.menu.contains(event.target as Node)) this.closeMenu();
   };
@@ -436,11 +472,17 @@ class TableView {
       e.preventDefault();
       this.focusCell(this.table.rows.length > 1 ? 1 : 0, 0);
     });
-    dom.addEventListener("focusout", () => window.setTimeout(() => this.redraw()));
+    dom.addEventListener("focusout", () =>
+      window.setTimeout(() => {
+        if (this.range && !this.dom.contains(this.dom.ownerDocument.activeElement)) this.setRange(null);
+        this.redraw();
+      }),
+    );
 
     dom.addEventListener("mouseover", (e) => {
       const cell = (e.target as HTMLElement).closest<HTMLElement>("th, td");
-      if (cell && !this.menu && !this.drag) this.setHover(Number(cell.dataset.row), Number(cell.dataset.col));
+      // With Shift held, the handles follow the mouse even while a menu is open, to Shift+click another.
+      if (cell && (!this.menu || e.shiftKey) && !this.drag) this.setHover(Number(cell.dataset.row), Number(cell.dataset.col));
     });
     dom.addEventListener("focusin", (e) => {
       const cell = e.target as HTMLElement;
@@ -499,23 +541,57 @@ class TableView {
     // Clicking a control shouldn't take the caret out of the cell first.
     dom.addEventListener("mousedown", (e) => {
       if ((e.target as HTMLElement).closest("button")) e.preventDefault();
-      if (e.button !== 0 || !(e.target as HTMLElement).closest("th, td")) return;
+      const cell = (e.target as HTMLElement).closest<HTMLElement>("th, td");
+      if (e.button !== 0 || !cell || !this.scroller.contains(cell)) return;
+      const at = { row: Number(cell.dataset.row), col: Number(cell.dataset.col) };
+      if (e.shiftKey && this.editable) {
+        // Shift+click picks the cells from the caret's cell (or the block's first) to this one.
+        const anchor = this.range?.anchor ?? this.focusedCell();
+        if (anchor && (anchor.row !== at.row || anchor.col !== at.col || this.range)) {
+          e.preventDefault();
+          this.closeMenu();
+          // Whole rows (or columns) picked from their handles stay whole.
+          const block = this.range ? blockOf(this.range) : null;
+          if (block && wholeRows(this.table, block) && !wholeColumns(this.table, block)) this.setRange(this.line("row", anchor.row, at.row));
+          else if (block && wholeColumns(this.table, block) && !wholeRows(this.table, block)) this.setRange(this.line("col", anchor.col, at.col));
+          else this.setRange({ anchor, head: at });
+          return;
+        }
+      }
+      // A plain click goes back to typing in a cell.
+      if (this.range) this.setRange(null, false);
       // Selecting text in a cell: the toolbar shows once the mouse is let go.
       this.selecting = true;
       this.closeFormat();
+      // Dragging out of the cell into another picks the cells between.
+      const move = (ev: MouseEvent) => {
+        if (!(ev.buttons & 1) || !this.editable) return;
+        const over = (ev.target as HTMLElement).closest?.<HTMLElement>("th, td");
+        if (!over || !this.scroller.contains(over)) return;
+        const head = { row: Number(over.dataset.row), col: Number(over.dataset.col) };
+        if (!this.range && head.row === at.row && head.col === at.col) return;
+        if (this.range && this.range.head.row === head.row && this.range.head.col === head.col) return;
+        this.dom.classList.add("range-selecting");
+        this.setRange({ anchor: at, head });
+      };
       const up = () => {
         document.removeEventListener("mouseup", up);
+        document.removeEventListener("mousemove", move);
+        this.dom.classList.remove("range-selecting");
         this.selecting = false;
         window.setTimeout(() => this.updateFormat());
       };
+      document.addEventListener("mousemove", move);
       document.addEventListener("mouseup", up);
     });
     document.addEventListener("selectionchange", this.selectionListener);
+    document.addEventListener("mousedown", this.outsideListener);
+    for (const type of ["copy", "cut", "paste"]) document.addEventListener(type, this.clipboardListener);
 
     this.addRow.addEventListener("click", () => this.structure((t) => insertRow(t, t.rows.length), this.table.rows.length, 0));
     this.addCol.addEventListener("click", () => this.structure((t) => insertColumn(t, t.align.length), 0, this.table.align.length));
-    this.colHandle.addEventListener("click", () => this.dragged || this.columnMenu());
-    this.rowHandle.addEventListener("click", () => this.dragged || this.rowMenu());
+    this.colHandle.addEventListener("click", (e) => this.dragged || this.handleClick("col", e.shiftKey));
+    this.rowHandle.addEventListener("click", (e) => this.dragged || this.handleClick("row", e.shiftKey));
     this.colHandle.addEventListener("pointerdown", (e) => this.startDrag(e, "col"));
     this.rowHandle.addEventListener("pointerdown", (e) => this.startDrag(e, "row"));
     this.more.addEventListener("click", () => this.tableMenu());
@@ -550,7 +626,10 @@ class TableView {
     this.closeSlash();
     this.closeLink();
     this.closeFormat();
+    this.closeRangeBar();
     document.removeEventListener("selectionchange", this.selectionListener);
+    document.removeEventListener("mousedown", this.outsideListener);
+    for (const type of ["copy", "cut", "paste"]) document.removeEventListener(type, this.clipboardListener);
   }
 
   /** Back to the host's drawing once the focus has left the table. */
@@ -631,6 +710,12 @@ class TableView {
     this.makeGrips(align.length);
     if (focused && !sameShape) this.focusCell(Math.min(focused.row, rows.length - 1), Math.min(focused.col, align.length - 1));
     this.setHover(Math.min(this.hover.row, rows.length - 1), Math.min(this.hover.col, align.length - 1));
+    if (this.range) {
+      const clamp = ({ row, col }: { row: number; col: number }) => ({ row: Math.min(row, rows.length - 1), col: Math.min(col, align.length - 1) });
+      this.range = { anchor: clamp(this.range.anchor), head: clamp(this.range.head) };
+    }
+    this.paint();
+    this.updateRangeBar();
   }
 
   private cell(row: number, col: number): HTMLElement | null {
@@ -654,6 +739,7 @@ class TableView {
   focusCell(row: number, col: number, select = false) {
     if (!this.editable) return;
     this.edit();
+    if (this.range) this.setRange(null, false);
     const cell = this.cell(row, col);
     if (!cell || !this.editable) return;
     cell.focus();
@@ -670,6 +756,7 @@ class TableView {
   focusCellAt(row: number, col: number, from: number, to: number) {
     if (!this.editable) return;
     this.edit();
+    if (this.range) this.setRange(null, false);
     const cell = this.cell(row, col);
     if (!cell || !this.editable) return;
     cell.focus();
@@ -912,6 +999,7 @@ class TableView {
 
   private keydown(e: KeyboardEvent) {
     if (this.slash && this.slashKey(e)) return;
+    if (e.target === this.dom && this.range && !this.menu) return this.rangeKey(e);
     const cell = e.target as HTMLElement;
     if (this.link && e.key === "Escape" && isCell(cell)) {
       e.preventDefault();
@@ -965,6 +1053,9 @@ class TableView {
       } else if (col < lastCol) this.focusCell(row, col + 1);
       else if (row < lastRow) this.focusCell(row + 1, 0);
       else this.structure((t) => insertRow(t, t.rows.length), row + 1, 0);
+    } else if (e.shiftKey && !mod && !e.altKey && this.shiftArrowOut(cell, e.key, row, col)) {
+      // Shift+arrow out of a cell's text picks it and the next cell.
+      e.preventDefault();
     } else if (e.altKey && !mod && (e.key === "ArrowUp" || e.key === "ArrowDown") && this.stepperAt(row, col)) {
       // Alt+Up and Alt+Down step a number cell, as its stepper's buttons do.
       e.preventDefault();
@@ -988,6 +1079,7 @@ class TableView {
   /** Shows the formatting toolbar over the selection in a cell, or puts it away when there isn't one. */
   private updateFormat() {
     if (this.selecting) return;
+    if (this.range) return this.closeFormat();
     const picked = this.editable && !this.menu && !this.slash && !this.link?.form && hasSelectionToolbar(this.view.state) ? cellSelection(this.dom) : null;
     if (!picked || !(picked.cell.textContent ?? "").slice(picked.from, picked.to).trim()) return this.closeFormat();
     const { cell, from, to, rect } = picked;
@@ -1365,6 +1457,8 @@ class TableView {
 
   private columnMenu() {
     const { col } = this.hover;
+    const block = this.pickedBlock("col", col);
+    if (block) return this.columnsMenu(block);
     this.openMenu(this.colHandle, [
       { label: "Insert column left", icon: ICONS.colLeft, run: () => this.structure((t) => insertColumn(t, col), this.hover.row, col) },
       { label: "Insert column right", icon: ICONS.colRight, run: () => this.structure((t) => insertColumn(t, col + 1), this.hover.row, col + 1) },
@@ -1395,7 +1489,6 @@ class TableView {
         return { label, icon, pressed, run: () => this.align(col, pressed ? null : align) };
       }),
     });
-    this.select((cell) => Number(cell.dataset.col) === col);
   }
 
   /** Sets a column's alignment on the delimiter row, keeping the caret's cell. */
@@ -1409,6 +1502,8 @@ class TableView {
 
   private rowMenu() {
     const { row } = this.hover;
+    const block = this.pickedBlock("row", row);
+    if (block) return this.rowsMenu(block);
     this.openMenu(this.rowHandle, [
       // The header is always the first row, so nothing goes above it.
       { label: "Insert row above", icon: ICONS.rowAbove, disabled: row === 0, run: () => this.structure((t) => insertRow(t, row), row, this.hover.col) },
@@ -1427,7 +1522,6 @@ class TableView {
         run: () => this.structure((t) => deleteRow(t, row), Math.max(0, row - 1), this.hover.col),
       },
     ]);
-    this.select((cell) => Number(cell.dataset.row) === row);
   }
 
   /** Splits the table in two at a row, keeping the caret in that row's cell in the new table. */
@@ -1534,7 +1628,7 @@ class TableView {
     this.drag.line.remove();
     this.drag = null;
     this.dom.classList.remove("dragging");
-    this.select(() => false);
+    this.paint();
   }
 
   private tableMenu() {
@@ -1563,6 +1657,340 @@ class TableView {
     ]);
   }
 
+  // ------------------------------------------------------------ a block of cells
+
+  /** Picks a block of cells (or puts it down, for null); `focus` moves the keys to the table for it. */
+  private setRange(range: CellRange | null, focus = true) {
+    this.range = range;
+    this.dom.classList.toggle("has-range", !!range);
+    if (range) {
+      this.closeFormat();
+      this.closeSlash();
+      this.closeLink();
+      if (focus) {
+        // The keys go to the table, not a cell, while a block is picked.
+        this.dom.tabIndex = -1;
+        if (this.dom.ownerDocument.activeElement !== this.dom) this.dom.focus({ preventScroll: true });
+        this.dom.ownerDocument.getSelection()?.removeAllRanges();
+      }
+    } else this.dom.removeAttribute("tabindex");
+    this.paint();
+    this.updateRangeBar();
+  }
+
+  /** Shades the picked cells. */
+  private paint() {
+    const block = this.range ? blockOf(this.range) : null;
+    this.select((cell) => !!block && inBlock(block, Number(cell.dataset.row), Number(cell.dataset.col)));
+  }
+
+  /** A whole row (or column), as a block. */
+  private line(axis: "row" | "col", index: number, to = index): CellRange {
+    const lastRow = this.table.rows.length - 1;
+    const lastCol = this.table.align.length - 1;
+    return axis === "row"
+      ? { anchor: { row: index, col: 0 }, head: { row: to, col: lastCol } }
+      : { anchor: { row: 0, col: index }, head: { row: lastRow, col: to } };
+  }
+
+  /** The picked block when it's whole rows (or columns), more than one, and takes in `index`. */
+  private pickedBlock(axis: "row" | "col", index: number): Block | null {
+    if (!this.range) return null;
+    const block = blockOf(this.range);
+    if (axis === "row") return wholeRows(this.table, block) && block.bottom > block.top && index >= block.top && index <= block.bottom ? block : null;
+    return wholeColumns(this.table, block) && block.right > block.left && index >= block.left && index <= block.right ? block : null;
+  }
+
+  /**
+   * A handle's click picks its row or column and opens its menu. Shift+click
+   * picks every row (or column) from the one picked before to this one; a
+   * click inside rows already picked opens the menu for all of them.
+   */
+  private handleClick(axis: "row" | "col", shift: boolean) {
+    if (!this.editable) return;
+    const index = axis === "row" ? this.hover.row : this.hover.col;
+    if (shift) {
+      const block = this.range ? blockOf(this.range) : null;
+      const focused = this.focusedCell();
+      let from = index;
+      if (block && (axis === "row" ? wholeRows(this.table, block) : wholeColumns(this.table, block)))
+        from = axis === "row" ? this.range!.anchor.row : this.range!.anchor.col;
+      else if (focused) from = axis === "row" ? focused.row : focused.col;
+      this.closeMenu();
+      this.setRange(this.line(axis, from, index));
+      return;
+    }
+    if (!this.pickedBlock(axis, index)) this.setRange(this.line(axis, index));
+    if (axis === "row") this.rowMenu();
+    else this.columnMenu();
+  }
+
+  /** The menu for several picked rows. */
+  private rowsMenu(block: Block) {
+    const count = block.bottom - block.top + 1;
+    const { col } = this.hover;
+    this.openMenu(this.rowHandle, [
+      { label: "Insert row above", icon: ICONS.rowAbove, disabled: block.top === 0, run: () => this.structure((t) => insertRow(t, block.top), block.top, col) },
+      { label: "Insert row below", icon: ICONS.rowBelow, run: () => this.structure((t) => insertRow(t, block.bottom + 1), block.bottom + 1, col) },
+      { label: `Clear ${count} rows`, icon: ICONS.clear, run: () => this.rangeEdit((source) => clearBlock(source, block)) },
+      {
+        label: `Delete ${count} rows`,
+        icon: ICONS.delete,
+        disabled: !deleteBlockRows(this.table, block),
+        run: () => this.deleteRows(block),
+      },
+    ]);
+  }
+
+  /** The menu for several picked columns. */
+  private columnsMenu(block: Block) {
+    const count = block.right - block.left + 1;
+    const { row } = this.hover;
+    const current = blockAlign(this.table, block);
+    this.openMenu(
+      this.colHandle,
+      [
+        { label: "Insert column left", icon: ICONS.colLeft, run: () => this.structure((t) => insertColumn(t, block.left), row, block.left) },
+        { label: "Insert column right", icon: ICONS.colRight, run: () => this.structure((t) => insertColumn(t, block.right + 1), row, block.right + 1) },
+        { label: `Clear ${count} columns`, icon: ICONS.clear, run: () => this.rangeEdit((source) => clearBlock(source, block)) },
+        {
+          label: `Delete ${count} columns`,
+          icon: ICONS.delete,
+          disabled: !deleteBlockColumns(this.table, block),
+          run: () => this.deleteColumns(block),
+        },
+      ],
+      {
+        label: "Align columns",
+        choices: ALIGNMENTS.map(({ align, label, icon }) => {
+          const pressed = current === align;
+          return { label, icon, pressed, run: () => this.rangeEdit((source) => alignBlock(source, block, pressed ? null : align)) };
+        }),
+      },
+    );
+  }
+
+  /**
+   * Applies an edit to the picked block's cells, keeping the block picked
+   * (in whichever view holds the table afterwards).
+   */
+  private rangeEdit(edit: (source: string) => string) {
+    const range = this.range;
+    this.closeMenu();
+    if (!range) return;
+    const at = this.change(edit);
+    const view = at ? (tableViewAt(this.view, at.from) ?? this) : this;
+    view.setRange(range);
+  }
+
+  private deleteRows(block: Block) {
+    this.structure((t) => deleteBlockRows(t, block) ?? t, Math.max(0, block.top - 1), block.left);
+  }
+
+  private deleteColumns(block: Block) {
+    this.structure((t) => deleteBlockColumns(t, block) ?? t, block.top, Math.max(0, block.left - 1));
+  }
+
+  /** Bold, italic and the other marks, or clearing them, on every picked cell. */
+  private formatRange(id: string) {
+    if (!this.range) return;
+    const block = blockOf(this.range);
+    if (id === "clear") return this.rangeEdit((source) => clearBlockFormatting(source, block));
+    const mark = CELL_MARKS[id];
+    if (mark) this.rangeEdit((source) => toggleBlockMark(source, block, mark));
+  }
+
+  /** Keys while a block is picked: marks, clearing, Shift+arrows to grow it, arrows and Escape to go back to a cell. */
+  private rangeKey(e: KeyboardEvent) {
+    const range = this.range!;
+    const mod = e.metaKey || e.ctrlKey;
+    if (mod && /^[zy]$/i.test(e.key)) {
+      e.preventDefault();
+      runScopeHandlers(this.view, e, "editor");
+      return;
+    }
+    const shortcut = mod && !e.altKey ? cellShortcut(e) : null;
+    if (shortcut) {
+      e.preventDefault();
+      if (shortcut !== "link") this.formatRange(shortcut);
+      return;
+    }
+    if (mod) return; // Copy, cut and paste come as their own events.
+    const lastRow = this.table.rows.length - 1;
+    const lastCol = this.table.align.length - 1;
+    const step = ARROWS[e.key];
+    if (step) {
+      e.preventDefault();
+      const { head } = range;
+      const next = { row: Math.max(0, Math.min(lastRow, head.row + step[0])), col: Math.max(0, Math.min(lastCol, head.col + step[1])) };
+      if (e.shiftKey) this.setRange({ anchor: range.anchor, head: next });
+      else this.focusCell(next.row, next.col);
+    } else if (e.key === "Escape" || e.key === "Enter" || e.key === "F2") {
+      e.preventDefault();
+      this.focusCell(range.head.row, range.head.col);
+    } else if (e.key === "Backspace" || e.key === "Delete") {
+      e.preventDefault();
+      const block = blockOf(range);
+      this.rangeEdit((source) => clearBlock(source, block));
+    } else if (e.key === "Tab") {
+      e.preventDefault();
+      this.focusCell(range.head.row, range.head.col);
+    }
+  }
+
+  /**
+   * Shift+arrow in a cell picks it and the next cell over, once the caret has
+   * nowhere further to go in the cell's text: up and down always, left at the
+   * start of the text and right at its end. True when it picked them.
+   */
+  private shiftArrowOut(cell: HTMLElement, key: string, row: number, col: number): boolean {
+    const step = ARROWS[key];
+    if (!step || !this.editable) return false;
+    if (step[1]) {
+      const selection = window.getSelection();
+      if (!selection?.isCollapsed) return false;
+      const caret = caretOffset(cell);
+      const length = (cell.textContent ?? "").length;
+      if (caret === null || (step[1] < 0 ? caret > 0 : caret < length)) return false;
+    }
+    const next = { row: row + step[0], col: col + step[1] };
+    if (next.row < 0 || next.col < 0 || next.row >= this.table.rows.length || next.col >= this.table.align.length) return false;
+    this.setRange({ anchor: { row, col }, head: next });
+    return true;
+  }
+
+  /** Copies the picked block (as tab-separated Markdown and an HTML table), cuts it, or pastes over it. */
+  private clipboard(e: ClipboardEvent) {
+    if (!this.range || this.dom.ownerDocument.activeElement !== this.dom) return;
+    const block = blockOf(this.range);
+    e.preventDefault();
+    if (e.type === "paste") {
+      const text = e.clipboardData?.getData("text/plain") ?? "";
+      const cells = spreadsheetCells(text, e.clipboardData?.getData("text/html"));
+      if (cells) {
+        // A block of cells goes in from the block's top-left corner, growing the table if it needs to.
+        const at = this.change((source) => pasteCells(source, block.top, block.left, cells));
+        const view = at ? (tableViewAt(this.view, at.from) ?? this) : this;
+        view.setRange({
+          anchor: { row: block.top, col: block.left },
+          head: { row: block.top + cells.length - 1, col: block.left + Math.max(...cells.map((r) => r.length)) - 1 },
+        });
+      } else {
+        // Plain text fills every picked cell.
+        const value = text.replace(/\r?\n/g, " ").trim();
+        this.rangeEdit((source) => {
+          let next = source;
+          for (let row = block.top; row <= block.bottom; row++)
+            for (let col = block.left; col <= block.right; col++) next = setCell(next, row, col, value);
+          return next;
+        });
+      }
+      return;
+    }
+    const { text, html } = blockClipboard(this.table, block);
+    e.clipboardData?.setData("text/plain", text);
+    e.clipboardData?.setData("text/html", html);
+    if (e.type === "cut") this.rangeEdit((source) => clearBlock(source, block));
+  }
+
+  /** The bar's Copy: the same as ⌘C. */
+  private copyRange() {
+    if (!this.range) return;
+    const { text, html } = blockClipboard(this.table, blockOf(this.range));
+    const clipboard = navigator.clipboard;
+    if (!clipboard) return;
+    if (typeof ClipboardItem !== "undefined" && clipboard.write) {
+      const item = new ClipboardItem({ "text/plain": new Blob([text], { type: "text/plain" }), "text/html": new Blob([html], { type: "text/html" }) });
+      void clipboard.write([item]).catch(() => clipboard.writeText(text));
+    } else void clipboard.writeText(text);
+  }
+
+  /** Shows the bar of actions over the picked block (not while a menu is open), or puts it away. */
+  private updateRangeBar() {
+    const range = this.range;
+    // Like the cell toolbar, it comes with the editor's selection toolbar; the keys work either way.
+    if (!range || this.menu || !this.editable || !hasSelectionToolbar(this.view.state) || blockSize(blockOf(range)) < 1) return this.closeRangeBar();
+    const block = blockOf(range);
+    let bar = this.rangeBar;
+    if (!bar) {
+      const dom = el("div", "cm-tooltip cm-format-mini cm-md-table-format cm-md-table-rangebar");
+      dom.setAttribute("role", "toolbar");
+      dom.setAttribute("aria-label", "Format cells");
+      dom.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+      const buttons = new Map<string, HTMLButtonElement>();
+      const add = (id: string, label: string, icon: string, run: () => void) => {
+        const entry = document.createElement("button");
+        entry.type = "button";
+        entry.className = "cm-format-mini-btn";
+        entry.title = label;
+        entry.setAttribute("aria-label", label.replace(/ \(.*\)$/, ""));
+        entry.innerHTML = iconSvg(icon);
+        entry.dataset.action = id;
+        entry.addEventListener("click", run);
+        dom.append(entry);
+        buttons.set(id, entry);
+      };
+      const sep = () => dom.append(el("span", "cm-format-mini-sep"));
+      for (const item of [ITEMS.bold, ITEMS.italic, ITEMS.strike, ITEMS.highlight, ITEMS.code])
+        add(item.id, itemTitle(item), item.icon, () => this.formatRange(item.id));
+      add("clear", itemTitle(ITEMS.clear), ITEMS.clear.icon, () => this.formatRange("clear"));
+      sep();
+      for (const { align, label, icon } of ALIGNMENTS)
+        add(`align-${align}`, `${label} (the whole column)`, icon, () => {
+          if (!this.range) return;
+          const picked = blockOf(this.range);
+          const pressed = blockAlign(this.table, picked) === align;
+          this.rangeEdit((source) => alignBlock(source, picked, pressed ? null : align));
+        });
+      sep();
+      add("copy", "Copy cells", ICONS.copy, () => this.copyRange());
+      add("empty", "Clear cells (Delete)", ICONS.eraser, () => {
+        if (!this.range) return;
+        const picked = blockOf(this.range);
+        this.rangeEdit((source) => clearBlock(source, picked));
+      });
+      add("delete-rows", "Delete rows", ICONS.deleteRows, () => this.range && this.deleteRows(blockOf(this.range)));
+      add("delete-cols", "Delete columns", ICONS.deleteCols, () => this.range && this.deleteColumns(blockOf(this.range)));
+      this.dom.append(dom);
+      bar = this.rangeBar = { dom, buttons };
+    }
+    const { dom, buttons } = bar;
+    for (const id of Object.keys(CELL_MARKS)) buttons.get(id)?.setAttribute("aria-pressed", String(blockHasMark(this.source, block, CELL_MARKS[id]!)));
+    const align = blockAlign(this.table, block);
+    for (const { align: a } of ALIGNMENTS) buttons.get(`align-${a}`)?.setAttribute("aria-pressed", String(align === a));
+    // Deleting is for whole rows or columns, and never all of them.
+    const rows = buttons.get("delete-rows")!;
+    const cols = buttons.get("delete-cols")!;
+    rows.hidden = !wholeRows(this.table, block);
+    rows.disabled = !deleteBlockRows(this.table, block);
+    cols.hidden = !wholeColumns(this.table, block);
+    cols.disabled = !deleteBlockColumns(this.table, block);
+    const count = (n: number, what: string) => `${n} ${what}${n === 1 ? "" : "s"}`;
+    rows.title = `Delete ${count(block.bottom - block.top + 1, "row")}`;
+    cols.title = `Delete ${count(block.right - block.left + 1, "column")}`;
+    // Over the block's top-left cell, or under the block when that would go behind the toolbar at the top.
+    const first = this.cell(block.top, block.left);
+    const last = this.cell(block.bottom, block.left);
+    if (!first || !last) return;
+    const base = this.dom.getBoundingClientRect();
+    const top = first.getBoundingClientRect();
+    const bottom = last.getBoundingClientRect();
+    const width = dom.offsetWidth;
+    const height = dom.offsetHeight;
+    dom.style.left = `${Math.max(0, Math.min(top.left - base.left, base.width - width))}px`;
+    const below = top.top - 6 - height < this.menuRoom().top;
+    dom.style.top = below ? `${bottom.bottom - base.top + 6}px` : `${top.top - base.top - 6 - height}px`;
+  }
+
+  private closeRangeBar() {
+    if (!this.rangeBar) return;
+    this.rangeBar.dom.remove();
+    this.rangeBar = null;
+  }
+
   private select(test: (cell: HTMLElement) => boolean) {
     this.scroller.querySelectorAll<HTMLElement>("th, td").forEach((cell) => cell.classList.toggle("selected", test(cell)));
   }
@@ -1570,6 +1998,7 @@ class TableView {
   private openMenu(anchor: HTMLElement, items: MenuItem[], choices?: MenuChoices) {
     this.closeMenu();
     this.closeFormat();
+    this.closeRangeBar();
     if (!this.editable) return;
     const menu = el("div", "cm-md-table-menu");
     menu.setAttribute("role", "menu");
@@ -1636,8 +2065,9 @@ class TableView {
     this.menu.remove();
     this.menu = null;
     this.dom.classList.remove("menu-open");
-    this.select(() => false);
+    this.paint();
     document.removeEventListener("mousedown", this.closeMenuListener);
+    this.updateRangeBar();
     window.setTimeout(() => this.redraw());
   }
 }
@@ -1801,6 +2231,9 @@ function caretAtEnd(cell: HTMLElement) {
   selection?.removeAllRanges();
   selection?.addRange(range);
 }
+
+/** Which way each arrow key moves, as [rows, columns]. */
+const ARROWS: Record<string, [number, number] | undefined> = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
 
 /** The note's mark for each of the cell toolbar's mark buttons. */
 const CELL_MARKS: Record<string, Mark | undefined> = { bold: "bold", italic: "italic", strike: "strike", highlight: "highlight", code: "code" };

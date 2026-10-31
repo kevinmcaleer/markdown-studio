@@ -265,6 +265,22 @@ They write GFM's colons on the delimiter row (`:---`, `:---:`, `---:`), so any
 Markdown renderer aligns the column the same way. Picking the column's current
 alignment again sets it back to the default.
 
+### Picking several cells
+
+In the live view, drag across cells (or Shift+click a cell, or Shift+arrow out of
+one) to pick a block of them. Clicking a row or column handle picks that row or
+column, and Shift+clicking another handle picks every row or column in between;
+the handle's menu then inserts, clears or deletes all of them (and aligns all the
+picked columns). A bar over the block (shown with the selection toolbar) applies
+bold, italic, strikethrough, highlight, code or Clear formatting to every cell,
+aligns the block's columns (alignment is a column's, in GFM), copies the cells,
+clears them, and deletes whole rows or columns. `Ctrl/⌘+B`, `I`, `E`, `Shift+X`,
+`Shift+H` and `\`, Delete, and copy, cut and paste work on the block too; copying
+gives tab-separated Markdown and an HTML table, so it pastes back cell by cell or
+into a spreadsheet. Marks wrap each cell's whole text (merging any of the same
+mark inside, so `**a** and **b**` becomes `**a and b**`) and stay inside a cell's
+`## ` heading marker. The logic is in `src/tableSelection.ts`.
+
 ### Table column widths
 
 Column widths stay plain GFM, the way Pandoc does it: each column's share of the
