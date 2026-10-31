@@ -28,10 +28,10 @@ const editor = mount(el, {
 
 - **Side rail**: Templates, Elements (shapes, lines, arrows, step numbers),
   Text (styles), Uploads (upload, drop, paste, the host's pictures), Layers
-  (reorder by dragging, rename, hide, lock) and Page (size, colour or
+  (reorder by dragging, rename, hide, lock) and Page (size, "Fit to contents" with a margin, colour or
   see-through).
 - **Selection bar**: changes with what's selected (font, size, colours,
-  border, dashes, corners, step number, flip, fill page), plus
+  border, dashes, corners (slider plus a number box), step number, flip, fill page), plus
   transparency, position (layer order, line up on the page) and group.
 - Smart guides snap to the page's and other layers' edges and middles
   (hold Alt to move freely). Ctrl+Z/Ctrl+Shift+Z, Ctrl+D, Ctrl+C/V,

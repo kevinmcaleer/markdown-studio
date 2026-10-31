@@ -250,6 +250,11 @@
 .lyr-custom-size { display: flex; gap: 10px; margin-top: 10px; color: var(--lyr-muted); }
 .lyr-custom-size label { display: flex; flex-direction: column; gap: 4px; }
 .lyr-custom-size .lyr-num { width: 80px; }
+.lyr-fit { display: flex; align-items: flex-end; gap: 10px; margin-top: 10px; color: var(--lyr-muted); }
+.lyr-fit label { display: flex; flex-direction: column; gap: 4px; }
+.lyr-fit .lyr-num { width: 64px; }
+.lyr-fit-btn { flex: 1; justify-content: center; border: 1px solid var(--lyr-line); background: #fff; }
+.lyr-fit-btn:disabled { opacity: 0.5; cursor: default; }
 .lyr-chips { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
 .lyr-chip-btn { display: flex; align-items: center; justify-content: center; padding: 3px; border: 2px solid transparent; border-radius: 50%; background: none; cursor: pointer; }
 .lyr-chip-btn:hover { border-color: var(--lyr-line); }
