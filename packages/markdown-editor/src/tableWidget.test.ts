@@ -4,7 +4,7 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { describe, expect, it } from "vitest";
 import { selectionToolbar } from "./format/selectionToolbar";
-import { tableField, tableSteppers, type TableStepper } from "./tableWidget";
+import { tableColumnActions, tableField, tableSteppers, type TableColumnAction, type TableStepper } from "./tableWidget";
 
 function tableView(doc: string): EditorView {
   return new EditorView({
@@ -90,6 +90,48 @@ describe("table steppers", () => {
     const view = tableView(doc);
     hoverCell(view, 1, 1);
     expect(stepButtons(view).on).toBe(false);
+  });
+});
+
+describe("column actions", () => {
+  const currency: TableColumnAction = ({ header }) =>
+    /^price/i.test(header)
+      ? {
+          label: "Currency",
+          options: ["£", "$"].map((symbol) => ({
+            label: symbol,
+            checked: header.includes(symbol),
+            apply: (rows) => rows.map((row, r) => row.map((cell, c) => (c !== 1 ? cell : r === 0 ? `Price (${symbol})` : `${symbol}${Number(cell).toFixed(2)}`))),
+          })),
+        }
+      : null;
+
+  function actionView(doc: string): EditorView {
+    return new EditorView({
+      state: EditorState.create({ doc, extensions: [markdown({ base: markdownLanguage }), tableField, tableColumnActions.of(currency)] }),
+      parent: document.body,
+    });
+  }
+
+  function openColumnMenu(view: EditorView, col: number) {
+    view.dom.querySelector<HTMLElement>(`.cm-md-table [data-row="1"][data-col="${col}"]`)!.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+    view.dom.querySelector<HTMLElement>(".cm-md-table-colhandle")!.click();
+    return Array.from(view.dom.querySelectorAll<HTMLButtonElement>(".cm-md-table-menu button"));
+  }
+
+  it("adds the host's entry to the column's menu, and only where it answers", () => {
+    const doc = "| Part | Price (£) |\n|---|---|\n| Servo | 4 |\n";
+    expect(openColumnMenu(actionView(doc), 0).some((b) => b.textContent === "Currency")).toBe(false);
+    expect(openColumnMenu(actionView(doc), 1).some((b) => b.textContent === "Currency")).toBe(true);
+  });
+
+  it("lists the choices with the current one ticked, and applies one as an edit", () => {
+    const view = actionView("| Part | Price (£) |\n|---|---|\n| Servo | 4 |\n");
+    openColumnMenu(view, 1).find((b) => b.textContent === "Currency")!.click();
+    const options = Array.from(view.dom.querySelectorAll<HTMLButtonElement>(".cm-md-table-menu [role=menuitemradio]"));
+    expect(options.map((b) => [b.textContent, b.getAttribute("aria-checked")])).toEqual([["£", "true"], ["$", "false"]]);
+    options[1].click();
+    expect(view.state.doc.toString()).toBe("| Part | Price ($) |\n| --- | --- |\n| Servo | $4.00 |\n");
   });
 });
 
