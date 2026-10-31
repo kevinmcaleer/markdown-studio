@@ -13,6 +13,7 @@ import { videosField, videosTheme } from "./videosWidget";
 import { tableCursor, tableField } from "./tableWidget";
 import { sizePicture } from "./steadyScroll";
 import { imagePopover, imagePopoverAt, openImagePopover } from "./imagePopover";
+import { imageCaption } from "./imageCaption";
 
 // The live view: Markdown shown as it reads, and still edited as text, like
 // Obsidian's live preview. Headings, emphasis, links, list bullets, quotes
@@ -220,6 +221,8 @@ class ImageWidget extends WidgetType {
     readonly readOnly: boolean,
     /** Its popover is open. */
     readonly editing = false,
+    /** Its title, shown under it when it's on a line of its own (imageCaption.ts). */
+    readonly caption: string | null = null,
   ) {
     super();
   }
@@ -231,7 +234,8 @@ class ImageWidget extends WidgetType {
       other.markdownLength === this.markdownLength &&
       other.modifierLength === this.modifierLength &&
       other.readOnly === this.readOnly &&
-      other.editing === this.editing
+      other.editing === this.editing &&
+      other.caption === this.caption
     );
   }
   toDOM(view: EditorView) {
@@ -250,6 +254,10 @@ class ImageWidget extends WidgetType {
     img.alt = this.alt;
     sizePicture(img);
     wrap.append(img);
+    if (this.caption) {
+      wrap.classList.add("cm-md-image-captioned");
+      wrap.append(Object.assign(document.createElement("span"), { className: "cm-md-image-caption", textContent: this.caption }));
+    }
     if (this.readOnly) return wrap;
     img.title = "Click to change the picture";
     img.draggable = false;
@@ -397,6 +405,10 @@ export function buildDecorations(state: EditorState, visible: readonly { from: n
   const seen = new Set<number>();
   const { doc } = state;
   const isActive = (pos: number) => active.has(doc.lineAt(pos).number);
+  const onItsOwnLine = (from: number, to: number) => {
+    const line = doc.lineAt(from);
+    return to <= line.to && !(state.sliceDoc(line.from, from) + state.sliceDoc(to, line.to)).replace(/^\s*>\s?/, "").trim();
+  };
   const hide = (from: number, to: number) => to > from && decorations.push(hidden.range(from, to));
   const lines = (from: number, to: number, className: string) => {
     const first = doc.lineAt(from).number;
@@ -504,6 +516,7 @@ export function buildDecorations(state: EditorState, visible: readonly { from: n
                     length,
                     state.readOnly,
                     imagePopoverAt(state) === node.from,
+                    onItsOwnLine(node.from, node.to + length) ? imageCaption(alt.replace(/\\([[\]])/g, "$1")) : null,
                   ),
                 }).range(node.from, node.to + length),
               );
@@ -819,6 +832,18 @@ const liveTheme = EditorView.theme({
   ".cm-md-image-sizes button:hover": { background: "var(--surface-2)" },
   ".cm-md-image-sizes button[aria-pressed=true]": { background: "var(--accent)", color: "var(--accent-text)" },
   ".cm-md-image-alt": { color: "var(--muted)", fontStyle: "italic" },
+  // A caption under a picture on its own line; it doesn't widen the picture.
+  ".cm-md-image-caption": {
+    display: "block",
+    width: "0",
+    minWidth: "100%",
+    paddingTop: "0.4em",
+    fontFamily: "var(--font-sans)",
+    fontSize: "0.875em",
+    lineHeight: "1.4",
+    color: "var(--muted)",
+    textAlign: "center",
+  },
 
   // Tables, drawn like Claude docs: a hover handle on each row and column,
   // and bars below and to the right that add a row or a column.

@@ -70,7 +70,7 @@ describe("image popover", () => {
     const view = viewOf("![](https://example.com/a.jpg)", [cardPicturePicker.of((_anchor, done) => done({ src: "https://example.com/robot-arm.png", alt: "" }))]);
     openImagePopover(view, 0);
     buttonNamed("Choose image").click();
-    expect(view.state.doc.toString()).toBe("![robot arm](https://example.com/robot-arm.png)");
+    expect(view.state.doc.toString()).toBe("![robot-arm](https://example.com/robot-arm.png)");
     expect(popover()!.querySelectorAll("input")[1].value).toBe("https://example.com/robot-arm.png");
     buttonNamed("Remove image").click();
     expect(view.state.doc.toString()).toBe("");

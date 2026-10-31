@@ -114,6 +114,7 @@ export {
   type VideosBlock,
 } from "./videos";
 export { videoRenderers, type VideoRenderer } from "./videosWidget";
+export { imageCaption, imageCaptionPlugin, imageFigureClass } from "./imageCaption";
 export { imageSizePlugin, imageSizes, parseImageSize, imageSizeMarkdown, imageSizeClass, type ImageSize } from "./imageSize";
 export {
   parseOutline,

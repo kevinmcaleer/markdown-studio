@@ -41,6 +41,7 @@ const PICTURES: GuideSection = {
   title: "Pictures",
   rows: [
     ["![alt](https://…)", "Picture, with alt text for screen readers"],
+    ["![My caption](…)", "On a line of its own, the title shows as a caption under the picture (not one made from a file name, like IMG_2041 or robot-arm)"],
     ["![alt](…){full}", "The width of the text"],
     ["![alt](…){half}", "Half the size"],
     ["![alt](…){cover}", "A full-width banner, cropped to fit"],

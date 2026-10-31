@@ -247,6 +247,13 @@ line when the image is all that's on it) and **Edit markdown**, which puts the
 caret in the image's Markdown. Everything is written back as plain
 `![title](url){size}`, and the arrow keys still reach the Markdown as before.
 
+An image on a line of its own shows its title (the alt text) as a caption
+under it, in the live view and the preview, where it renders as
+`<figure class="image-figure image-figure-half"><img …><figcaption>…</figcaption></figure>`.
+Titles that look made from a file name (`IMG_2041`, `robot-arm`, `chassis`,
+`duck.jpg`, `hero`) aren't shown. The rule is `imageCaption()` in
+`src/imageCaption.ts`; the figure styles are in `src/image-sizes.css`.
+
 ### Table column alignment
 
 Each column's handle menu has **Align column** buttons: left, center and right.
