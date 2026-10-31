@@ -8,11 +8,12 @@ import { Popover, type Anchor } from "./Popover";
 // a fold, one open at a time so the sheet stays short; the first starts open. A host adds its
 // own topics (a project page's Bill of Materials, say) with the `guide` option.
 
-/** One topic in the guide: rows of what to type and what it does, and an optional line under them. */
+/** One topic in the guide: rows of what to type and what it does, an optional line under them, and an optional link to more help (it opens in a new tab). */
 export type GuideSection = {
   title: string;
   rows: [string, string][];
   note?: string;
+  link?: { label: string; href: string };
 };
 
 export type GuideShortcut = { label: string; keys: string };
@@ -152,6 +153,13 @@ export function Guide({
             </tbody>
           </table>
           {section.note && <p className="mde-guide-note">{section.note}</p>}
+          {section.link && (
+            <p className="mde-guide-link">
+              <a href={section.link.href} target="_blank" rel="noopener">
+                {section.link.label}
+              </a>
+            </p>
+          )}
         </details>
       ))}
       <details name="mde-guide">

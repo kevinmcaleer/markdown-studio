@@ -142,7 +142,8 @@ export type MountOptions = {
   /**
    * The host's own topics in the "?" Markdown guide, after the built-in ones
    * (text, pictures, callouts, tables, checking your writing): rows of what to
-   * type and what it does, and an optional line under them.
+   * type and what it does, an optional line under them and an optional link
+   * to more help.
    */
   guide?: GuideSection[];
   /** EasyMDE-style templates for the link, image, table, horizontal rule and code inserts. */
