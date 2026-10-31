@@ -12,6 +12,7 @@ import { findReplace } from "../findReplace";
 import { activeFormats, DEFAULT_SHORTCUTS, formatKeys, runFormat, sameActive, type Active, type ShortcutName } from "../format/formatting";
 import type { FormatItem } from "../format/items";
 import { linkPopover } from "../format/linkPopover";
+import { calloutPicker } from "../calloutPicker";
 import { selectionToolbar } from "../format/selectionToolbar";
 import { useWritingLint } from "../lint/useWritingLint";
 import { createMarkdownIt } from "../markdown";
@@ -283,6 +284,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
       smartPaste(pasteOptions),
       formatKeys(options.shortcuts),
       linkPopover(),
+      calloutPicker(),
       options.selectionToolbar === false ? [] : selectionToolbar(),
       spellcheck === "off" ? [] : proofingExtension(),
       lintEnabled ? lint.extensions : [],

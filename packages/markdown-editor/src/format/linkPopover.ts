@@ -35,6 +35,8 @@ export function linkAtCursor(state: EditorState): LinkAt | null {
       const url = node.getChild("URL");
       if (marks.length < 2) return null;
       const label = state.sliceDoc(marks[0].to, marks[1].from);
+      // A callout's `[!type]` reads as a shortcut link; it has its type picker instead.
+      if (!url && /^![\w-]*$/.test(label)) return null;
       return { from: node.from, to: node.to, text: unescape(label), label, url: url ? state.sliceDoc(url.from, url.to) : "", bare: false };
     }
     if (node.name === "Autolink" || (node.name === "URL" && !/^(Link|Autolink|Image)$/.test(node.parent?.name ?? ""))) {

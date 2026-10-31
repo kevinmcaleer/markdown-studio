@@ -2,6 +2,7 @@ import { codeFolding, foldEffect, foldedRanges, syntaxTree, unfoldEffect } from 
 import type { EditorState, Extension, Range, StateEffect } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { parseCalloutHeader } from "./callouts";
+import { editCalloutType } from "./calloutPicker";
 import { hiddenCommentsField } from "./hiddenComments";
 import { pageBreaksField, pageBreaksTheme } from "./pageBreaks";
 import "./callouts.css";
@@ -328,17 +329,26 @@ class CalloutHeadWidget extends WidgetType {
   eq(other: CalloutHeadWidget) {
     return other.title === this.title;
   }
-  toDOM() {
+  toDOM(view: EditorView) {
     const head = document.createElement("span");
     head.className = "cm-md-callout-head";
     const icon = document.createElement("span");
     icon.className = "callout-icon";
     head.append(icon);
     if (this.title) head.append(this.title);
+    if (!view.state.readOnly) {
+      // A click shows the `[!type]` with the caret on the type, which opens the type picker.
+      head.title = "Change the callout type";
+      head.addEventListener("mousedown", (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        editCalloutType(view, view.posAtDOM(head));
+      });
+    }
     return head;
   }
-  ignoreEvent() {
-    return false;
+  ignoreEvent(event: Event) {
+    return event.type === "mousedown";
   }
 }
 

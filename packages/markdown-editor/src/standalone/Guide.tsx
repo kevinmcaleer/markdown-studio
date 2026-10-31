@@ -71,7 +71,7 @@ const CALLOUTS: GuideSection = {
     ["> [!warning]-", "Folded: click the title to open it (+ starts open)"],
     ["> | a | b |", "A table inside a callout"],
   ],
-  note: `Types: ${calloutKinds.map((kind) => kind.type).join(", ")}.`,
+  note: `Types: ${calloutKinds.map((kind) => kind.type).join(", ")}. Click a callout's icon, or put the cursor on its type, to pick another from a list.`,
 };
 
 const TABLES: GuideSection = {
