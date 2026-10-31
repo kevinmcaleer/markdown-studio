@@ -133,3 +133,53 @@ def test_images_from_other_users_are_left_out(app_factory):
         response = kev.get(f"/api/files/{note['id']}/export?format=docx")
         with zipfile.ZipFile(io.BytesIO(response.content)) as z:
             assert not any(name.startswith("word/media/") for name in z.namelist())
+
+
+# ------------------------------------------------- tables, as the editor writes them
+
+TABLES = """| ## Open Duck Mini | ### **Microduck** ## |
+| ----- | --------------- |
+| ![a](/a.jpg)<br>## A<br>By me | ![b](/b.jpg) ## B |
+| One<br>Two<BR />Three | Issue #4 and ## not a heading |
+"""
+
+
+def test_cells_keep_their_lines_and_headings():
+    html = render_html(TABLES)
+    assert '<th><h2 class="cell-heading">Open Duck Mini</h2></th>' in html
+    assert '<th><h3 class="cell-heading"><strong>Microduck</strong></h3></th>' in html
+    assert '<td><img src="/a.jpg" alt="a" /><h2 class="cell-heading">A</h2>By me</td>' in html
+    assert '<td><img src="/b.jpg" alt="b" /><h2 class="cell-heading">B</h2></td>' in html
+    assert "<td>One<br />\nTwo<br />\nThree</td>" in html
+    assert "<td>Issue #4 and ## not a heading</td>" in html
+    # Outside tables, headings are as they were; <br> is a break anywhere, as in the editor.
+    assert render_html("## Title\n") == "<h2>Title</h2>\n"
+    assert render_html("a<br>b <b>x</b>\n") == "<p>a<br />\nb &lt;b&gt;x&lt;/b&gt;</p>\n"
+
+
+def test_dash_counts_set_column_widths():
+    html = render_html(TABLES)
+    assert (
+        '<table class="has-widths">\n<colgroup><col style="width: 25%"><col style="width: 75%"></colgroup>'
+        in html
+    )
+    # Equal counts (the usual `---`) set none.
+    assert "colgroup" not in render_html("| a | b |\n| --- | :---: |\n| 1 | 2 |\n")
+    # In a quote (a callout) too.
+    assert '<col style="width: 80%">' in render_html(
+        "> | a | b |\n> | -------- | -- |\n> | 1 | 2 |\n"
+    )
+
+
+def test_word_tables_keep_lines_headings_and_widths():
+    doc = Document(io.BytesIO(export.to_docx(TABLES, "Tables", lambda _id: None)))
+    table = doc.tables[0]
+    first, second = (column.width for column in table.columns)
+    assert round(second / first) == 3
+    card = table.cell(1, 0)
+    assert [p.text for p in card.paragraphs] == ["[a]", "A", "By me"]
+    heading = card.paragraphs[1].runs[0]
+    assert heading.bold and heading.font.size == export.Pt(13)
+    assert [p.text for p in table.cell(1, 1).paragraphs] == ["[b]", "B"]
+    lines = table.cell(2, 0).paragraphs[0]
+    assert lines.text == "One\nTwo\nThree"
