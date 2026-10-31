@@ -8,7 +8,7 @@
 // with the document stored inside it.
 
 import {
-  ActiveSelection, Canvas, Control, FabricImage, FabricObject, Group, Point, Polygon, Textbox, util, type TPointerEventInfo, type TPointerEvent,
+  ActiveSelection, Canvas, Control, FabricImage, FabricObject, Group, Point, Polygon, Rect, Textbox, util, type TPointerEventInfo, type TPointerEvent,
 } from "fabric";
 import { Connector, type ConnectorEnd } from "./connector";
 import { blankDoc, clampSide, embedDoc, defaultFetch, MAX_SIDE, MIN_SIDE, normalizeDoc, SIZES, type LayersDoc } from "./doc";
@@ -298,6 +298,10 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     const isLocked = locked(o);
     o.set({ selectable: !isLocked && o.visible !== false, evented: !isLocked && o.visible !== false });
     if (o.type === "image") o.setControlsVisibility({ mt: false, mb: false, ml: false, mr: false });
+    if (o instanceof Rect && !o.group && (o.scaleX !== 1 || o.scaleY !== 1)) {
+      // Older graphics stretched boxes by scaling them, which stretched their corners too.
+      bakeScale(o, Math.min((Number(o.rx) || 0) * Math.abs(o.scaleX || 1), (Number(o.ry) || 0) * Math.abs(o.scaleY || 1)));
+    }
     if (o instanceof Connector) {
       // A line is changed by its two ends, which snap to other layers.
       o.controls = lineControls;
@@ -1006,8 +1010,44 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     follow();
   });
   for (const ev of ["object:scaling", "object:rotating", "object:resizing", "object:skewing"] as const) canvas.on(ev, () => follow());
+
+  // A box keeps its corner size while it's stretched: the stretch goes into its width and height.
+  let stretching: { o: Rect; r: number } | null = null;
+  canvas.on("object:scaling", e => {
+    const o = e.target;
+    if (!(o instanceof Rect) || o.group) return;
+    if (stretching?.o !== o) {
+      const t = e.transform?.original;
+      const sx = Math.abs(t?.scaleX ?? 1);
+      const sy = Math.abs(t?.scaleY ?? 1);
+      stretching = { o, r: Math.min((Number(o.rx) || 0) * sx, (Number(o.ry) || 0) * sy) };
+    }
+    const r = stretching.r;
+    o.set({ rx: r / Math.abs(o.scaleX || 1), ry: r / Math.abs(o.scaleY || 1) });
+  });
+  canvas.on("object:modified", e => {
+    const o = e.target;
+    if (stretching && o === stretching.o) {
+      bakeScale(o as Rect, stretching.r);
+      stretching = null;
+    }
+    syncSizeFields();
+  });
+
+  /** Puts a box's stretch into its width and height, so its corners and the size fields read true. */
+  function bakeScale(o: Rect, r: number): void {
+    const sx = o.scaleX || 1;
+    const sy = o.scaleY || 1;
+    if (sx === 1 && sy === 1) return;
+    const centre = o.getCenterPoint();
+    o.set({ width: (o.width || 0) * Math.abs(sx), height: (o.height || 0) * Math.abs(sy), scaleX: 1, scaleY: 1, rx: r, ry: r, flipX: sx < 0 !== !!o.flipX, flipY: sy < 0 !== !!o.flipY });
+    o.setPositionByOrigin(centre, "center", "center");
+    o.setCoords();
+    canvas.requestRenderAll();
+  }
   canvas.on("after:render", ({ ctx }) => {
-    if (!ctx) return;
+    // Fabric also fires this for its top layer, which isn't cleared on every redraw: drawing there left old handles behind.
+    if (!ctx || ctx !== canvas.getContext()) return;
     drawConnectHints(ctx);
     if (!guides.length) return;
     const r = canvas.getRetinaScaling();
@@ -1175,7 +1215,8 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
         ${swatch("stroke", String(o.stroke || ""), "Border colour", "border")}
         ${borderWidth(o)}
         <button type="button" class="lyr-btn${o.strokeDashArray?.length ? " lyr-on" : ""}" data-toggle="dash" title="Dashed border" aria-label="Dashed border">${icon("dash")}</button>
-        ${o.type === "rect" ? cornerControl(o) : ""}`;
+        ${o.type === "rect" ? cornerControl(o) : ""}
+        ${sizeFields(o)}`;
       if (canHoldText(o)) {
         const t = textFor(o);
         html += t
@@ -1200,6 +1241,44 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     });
   }
   const radiusValue = (el: HTMLInputElement) => Math.max(0, Math.min(MAX_RADIUS, Math.round(Number(el.value)) || 0));
+
+  /** The shape's width and height on the page, so shapes can be made the same size. */
+  const sizeOf = (o: FabricObject) => ({ w: Math.round((o.width || 0) * Math.abs(o.scaleX || 1)), h: Math.round((o.height || 0) * Math.abs(o.scaleY || 1)) });
+  function sizeFields(o: FabricObject): string {
+    const { w, h } = sizeOf(o);
+    return `<span class="lyr-size-fields" title="Size on the page">
+        <label>W <input class="lyr-num" type="number" min="4" max="${MAX_SIDE}" step="1" data-prop="w" value="${w}" aria-label="Width"></label>
+        <label>H <input class="lyr-num" type="number" min="4" max="${MAX_SIDE}" step="1" data-prop="h" value="${h}" aria-label="Height"></label>
+      </span>`;
+  }
+  function syncSizeFields(): void {
+    const o = active();
+    if (!o) return;
+    const { w, h } = sizeOf(o);
+    contextBar.querySelectorAll<HTMLInputElement>("[data-prop=w],[data-prop=h]").forEach(el => {
+      if (el !== document.activeElement) el.value = String(el.dataset.prop === "w" ? w : h);
+    });
+  }
+  /** Sets the selected shapes' width or height, keeping each one's middle where it is. */
+  function setSize(which: "w" | "h", value: number): void {
+    const n = Math.max(4, Math.min(MAX_SIDE, Math.round(value) || 0));
+    if (!n) return;
+    const list = selected().filter(x => !isLine(x) && !isText(x) && !(x instanceof Group));
+    for (const o of list) {
+      const centre = o.getCenterPoint();
+      const base = which === "w" ? o.width || 1 : o.height || 1;
+      if (o instanceof Rect) {
+        o.set(which === "w" ? { width: n, scaleX: 1 } : { height: n, scaleY: 1 });
+      } else {
+        const sign = Math.sign((which === "w" ? o.scaleX : o.scaleY) || 1);
+        o.set(which === "w" ? { scaleX: (sign * n) / base } : { scaleY: (sign * n) / base });
+      }
+      o.setPositionByOrigin(centre, "center", "center");
+      o.setCoords();
+    }
+    canvas.requestRenderAll();
+    if (list[0]) canvas.fire("object:modified", { target: list[0] });
+  }
 
   /** Font, size, colour, bold, italic, underline and alignment for the text box `t` (or a shape's text). */
   function textTools(t: Textbox, colourProp: string): string {
@@ -1298,6 +1377,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       apply({ strokeWidth: w, ...(o.strokeWidth === 0 && !o.stroke && w ? { stroke: INK } : {}) });
     }
     if (prop === "badge") setBadge(o, Number(el.value));
+    if (prop === "w" || prop === "h") setSize(prop, Number(el.value));
     if (prop === "radius") {
       const r = radiusValue(el as HTMLInputElement);
       if (el.type === "number") el.value = String(r);

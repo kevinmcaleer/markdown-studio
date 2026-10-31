@@ -42,6 +42,8 @@ const editor = mount(el, {
 - **Text in shapes**: double-click a shape (or select it and press Enter) to
   type in it. The shape's bar has the font, size, colour, bold/italic/
   underline and alignment for its text, which moves and turns with it.
+- Shapes have **W** and **H** fields for exact sizes. Stretching a box keeps
+  its corner size.
 - Smart guides snap to the page's and other layers' edges and middles
   (hold Alt to move freely). Ctrl+Z/Ctrl+Shift+Z, Ctrl+D, Ctrl+C/V,
   Ctrl+G, arrows to nudge, Delete, T for text, R for a rectangle, Esc,
