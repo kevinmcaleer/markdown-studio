@@ -4,7 +4,7 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { describe, expect, it } from "vitest";
 import { selectionToolbar } from "./format/selectionToolbar";
-import { tableColumnActions, tableField, tableSteppers, type TableColumnAction, type TableStepper } from "./tableWidget";
+import { scrollWithin, tableColumnActions, tableField, tableSteppers, type TableColumnAction, type TableStepper } from "./tableWidget";
 
 function tableView(doc: string): EditorView {
   return new EditorView({
@@ -434,5 +434,26 @@ describe("picking a block of cells", () => {
     document.dispatchEvent(event);
     expect(data.getData("text/plain")).toBe("Part\tQty\nServo\t2");
     view.destroy();
+  });
+});
+
+describe("the \"/\" menu in a cell", () => {
+  // The menu scrolled its highlighted command into view with scrollIntoView,
+  // which scrolled the page too, so the cell being typed in went out of sight.
+  const rect = (top: number, height: number) => () => ({ top, bottom: top + height }) as DOMRect;
+  it("scrolls only the menu to show the highlighted command", () => {
+    const list = document.createElement("div");
+    const row = document.createElement("div");
+    list.getBoundingClientRect = rect(100, 200);
+    list.scrollTop = 0;
+    row.getBoundingClientRect = rect(320, 30);
+    scrollWithin(list, row);
+    expect(list.scrollTop).toBe(50);
+    row.getBoundingClientRect = rect(80, 30);
+    scrollWithin(list, row);
+    expect(list.scrollTop).toBe(30);
+    row.getBoundingClientRect = rect(150, 30);
+    scrollWithin(list, row);
+    expect(list.scrollTop).toBe(30);
   });
 });

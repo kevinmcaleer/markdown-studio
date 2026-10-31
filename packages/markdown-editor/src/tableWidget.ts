@@ -1403,8 +1403,8 @@ class TableView {
       item.addEventListener("click", () => this.pickSlash(i));
       dom.append(item);
     });
-    dom.querySelector<HTMLElement>("[aria-selected=true]")?.scrollIntoView?.({ block: "nearest" });
-    // Under the slash.
+    // Under the slash, or above it when the room below (above the sticky
+    // status bar) is too short and there's more room above.
     const base = this.dom.getBoundingClientRect();
     const range = document.createRange();
     const node = slash.cell.firstChild;
@@ -1412,7 +1412,14 @@ class TableView {
     else range.selectNodeContents(slash.cell);
     const box = range.getClientRects()[0] ?? slash.cell.getBoundingClientRect();
     dom.style.left = `${Math.max(0, box.left - base.left)}px`;
-    dom.style.top = `${box.bottom - base.top + 4}px`;
+    const { top, bottom } = this.menuRoom();
+    const height = dom.offsetHeight;
+    const up = box.bottom + 4 + height > bottom && box.top - top > bottom - box.bottom;
+    dom.style.top = up ? `${box.top - base.top - 4 - height}px` : `${box.bottom - base.top + 4}px`;
+    // Only the menu scrolls to its highlighted command: scrollIntoView would
+    // scroll the page as well, taking the cell being typed in out of sight.
+    const selected = dom.querySelector<HTMLElement>("[aria-selected=true]");
+    if (selected) scrollWithin(dom, selected);
   }
 
   /** Arrows, Enter or Tab and Escape while the menu is open; true when the key was the menu's. */
@@ -2208,6 +2215,14 @@ class TableView {
     this.updateRangeBar();
     window.setTimeout(() => this.redraw());
   }
+}
+
+/** Scrolls a list just enough to show one of its rows, leaving the page where it is. */
+export function scrollWithin(list: HTMLElement, row: HTMLElement) {
+  const r = row.getBoundingClientRect();
+  const b = list.getBoundingClientRect();
+  if (r.top < b.top) list.scrollTop -= b.top - r.top;
+  else if (r.bottom > b.bottom) list.scrollTop += r.bottom - b.bottom;
 }
 
 function tableViewAt(view: EditorView, from: number): TableView | null {
