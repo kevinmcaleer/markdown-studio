@@ -27,6 +27,7 @@ backups/*
 node_modules/
 web/dist/
 packages/markdown-editor/dist/
+packages/layers/dist/
 
 # Editors / OS
 .DS_Store

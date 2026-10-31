@@ -2,14 +2,15 @@
   "name": "markdown-studio",
   "private": true,
   "workspaces": [
+    "packages/layers",
     "packages/markdown-editor",
     "web"
   ],
   "scripts": {
     "dev": "npm run dev -w web",
-    "build": "npm run build -w packages/markdown-editor && npm run build -w web",
-    "test": "npm test -w packages/markdown-editor && npm test -w web",
-    "typecheck": "npm run typecheck -w packages/markdown-editor && npm run typecheck -w web"
+    "build": "npm run build -w packages/layers && npm run build -w packages/markdown-editor && npm run build -w web",
+    "test": "npm test -w packages/layers && npm test -w packages/markdown-editor && npm test -w web",
+    "typecheck": "npm run typecheck -w packages/layers && npm run typecheck -w packages/markdown-editor && npm run typecheck -w web"
   },
   "devDependencies": {
     "wordnet-db": "3.1.14"

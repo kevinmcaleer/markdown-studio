@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Layers demo</title>
+  <style>
+    body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: #fafafa; color: #222; }
+    main { max-width: 860px; margin: 0 auto; padding: 24px 16px 80px; }
+    #result img { max-width: 100%; border: 1px solid #ddd; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Layers</h1>
+    <p>Text above the graphic, as in a write-up.</p>
+    <div id="editor"></div>
+    <p>Text below it.</p>
+    <div id="result"></div>
+  </main>
+  <script type="module">
+    import { mount, readDoc } from "../src/index.ts";
+    const result = document.getElementById("result");
+    let handle;
+    function open(doc) {
+      handle?.destroy();
+      handle = mount(document.getElementById("editor"), {
+        doc,
+        title: doc?.title,
+        listImages: async () => [],
+        onDone: async r => {
+          const url = URL.createObjectURL(r.png);
+          result.innerHTML = `<p>Saved ${r.width}×${r.height}, ${(r.png.size / 1024).toFixed(1)} KB. Click to edit again.</p><img src="${url}" alt="">`;
+          result.querySelector("img").onclick = async () => open(await readDoc(url));
+          window.lastResult = r;
+          handle.destroy();
+          handle = null;
+        },
+        onCancel: () => { handle.destroy(); handle = null; },
+      });
+      window.layers = handle;
+    }
+    open(null);
+  </script>
+</body>
+</html>
