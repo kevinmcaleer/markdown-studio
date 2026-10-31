@@ -50,7 +50,9 @@ export function toDiagnostic(hint: LintHint): Diagnostic {
     rule: hint.rule,
     title: RULE_INFO[hint.rule].title,
     message: hint.message,
-    fixes: hint.fix ? [hint.fix] : undefined,
+    fixes: hint.fixes,
+    // A ready-made rewording already shows the idea; the example is for when there isn't one.
+    example: hint.fixes?.[0]?.label.startsWith("Change to") ? undefined : RULE_INFO[hint.rule].example,
   };
 }
 

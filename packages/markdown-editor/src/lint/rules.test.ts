@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { lint, maskCode, readability, sentences, proseBlocks, syllables, type LintRule } from "./rules";
 
 const rules = (text: string) => lint(text).map((h) => h.rule);
+const applyAll = (text: string, rule: LintRule) =>
+  lint(text)
+    .filter((h) => h.rule === rule)
+    .flatMap((h) => h.fixes ?? [])
+    .map((f) => text.slice(0, f.from) + f.insert + text.slice(f.to));
 const found = (text: string, rule: LintRule) => lint(text).filter((h) => h.rule === rule).map((h) => text.slice(h.from, h.to));
 
 describe("maskCode", () => {
@@ -79,11 +84,30 @@ describe("lint", () => {
     expect(found("He ran quickly to the family reunion, only slightly late.", "adverb")).toEqual(["quickly", "slightly"]);
   });
 
+  it("suggests a stronger verb for an adverb beside a verb it knows, and always offers to remove it", () => {
+    expect(applyAll("She ran quickly to the bench.", "adverb")).toEqual(["She sprinted to the bench.", "She ran to the bench."]);
+    expect(applyAll("Quickly look at the board.", "adverb")).toEqual(["Glance at the board.", "Look at the board."]);
+    expect(applyAll("He said loudly that it works.", "adverb")[0]).toBe("He shouted that it works.");
+    expect(applyAll("The command enables you to quickly add text.", "adverb")).toEqual(["The command enables you to add text."]);
+    expect(applyAll("It works. Basically, it reads the pin.", "adverb")).toEqual(["It works. It reads the pin."]);
+    expect(applyAll("It reads the pin quickly.", "adverb")).toEqual(["It reads the pin."]);
+    const [hint] = lint("This is actually fine.").filter((h) => h.rule === "adverb");
+    expect(hint.message).toContain("rarely adds anything");
+  });
+
+  it("finds wordy phrases and offers the short form, keeping the capital", () => {
+    expect(found("Solder it in order to make it strong.", "wordy")).toEqual(["in order to"]);
+    expect(applyAll("Solder it in order to make it strong.", "wordy")).toEqual(["Solder it to make it strong."]);
+    expect(applyAll("Due to the fact that it\nrained, we stopped.", "wordy")).toEqual(["Because it\nrained, we stopped."]);
+    expect(applyAll("A very big motor.", "wordy")).toEqual(["A huge motor."]);
+    expect(rules("Every one of us, inorder to.")).not.toContain("wordy");
+  });
+
   it("finds repeated words with a fix that removes the second", () => {
     const text = "Go to the the shop.";
     const [hint] = lint(text).filter((h) => h.rule === "repeated-word");
     expect(text.slice(hint.from, hint.to)).toBe("the the");
-    const fixed = text.slice(0, hint.fix!.from) + hint.fix!.insert + text.slice(hint.fix!.to);
+    const fixed = text.slice(0, hint.fixes![0].from) + hint.fixes![0].insert + text.slice(hint.fixes![0].to);
     expect(fixed).toBe("Go to the shop.");
     expect(rules("We had had enough.")).not.toContain("repeated-word");
   });
@@ -102,8 +126,8 @@ describe("lint", () => {
     const text = "# One\n\n### Three\n\n# Again\n\n##\n";
     expect(rules(text)).toEqual(["heading-skip", "multiple-h1", "empty-heading"]);
     const skip = lint(text).find((h) => h.rule === "heading-skip")!;
-    expect(text.slice(skip.fix!.from, skip.fix!.to)).toBe("###");
-    expect(skip.fix!.insert).toBe("##");
+    expect(text.slice(skip.fixes![0].from, skip.fixes![0].to)).toBe("###");
+    expect(skip.fixes![0].insert).toBe("##");
     expect(rules("# A\n## B\n### C\n## D")).toEqual([]);
   });
 

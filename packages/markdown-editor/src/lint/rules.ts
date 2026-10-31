@@ -1,3 +1,5 @@
+import { adverbFixes, wordyPhrases, type Fix } from "./suggest";
+
 // Writing lint: gentle hints in the spirit of Hemingway, worked out from the
 // Markdown text alone. Everything here is pure so it can be tested and run
 // anywhere; `writingLint.ts` puts the results in the editor.
@@ -7,6 +9,7 @@ export type LintRule =
   | "long-paragraph"
   | "passive"
   | "adverb"
+  | "wordy"
   | "repeated-word"
   | "double-space"
   | "heading-skip"
@@ -21,28 +24,39 @@ export type LintHint = {
   from: number;
   to: number;
   message: string;
-  fix?: { label: string; from: number; to: number; insert: string };
+  /** One-click changes, best first. */
+  fixes?: Fix[];
 };
 
-export type RuleInfo = { rule: LintRule; title: string; looksFor: string; group: "Style" | "Tidiness" | "Structure" | "Links and images" };
+/** A before-and-after line that shows what a rule means. */
+export type RuleExample = { before: string; after: string };
+
+export type RuleInfo = {
+  rule: LintRule;
+  title: string;
+  looksFor: string;
+  group: "Style" | "Tidiness" | "Structure" | "Links and images";
+  example?: RuleExample;
+};
 
 export const LONG_SENTENCE = 25;
 export const LONG_PARAGRAPH = 150;
 
 /** What each rule looks for, in the order the panel lists them. */
 export const RULES: RuleInfo[] = [
-  { rule: "long-sentence", group: "Style", title: "Long sentence", looksFor: `Sentences over ${LONG_SENTENCE} words.` },
+  { rule: "long-sentence", group: "Style", title: "Long sentence", looksFor: `Sentences over ${LONG_SENTENCE} words.`, example: { before: "The robot reads the sensor and then it turns the motor so that the wheels move forward.", after: "The robot reads the sensor. Then it turns the motor to drive forward." } },
   { rule: "long-paragraph", group: "Style", title: "Long paragraph", looksFor: `Paragraphs over ${LONG_PARAGRAPH} words.` },
-  { rule: "passive", group: "Style", title: "Passive voice", looksFor: "A form of “to be” followed by a past participle, like “was written”." },
-  { rule: "adverb", group: "Style", title: "Adverb", looksFor: "Words ending in “-ly” that usually prop up a weaker verb." },
-  { rule: "repeated-word", group: "Tidiness", title: "Repeated word", looksFor: "The same word twice in a row, like “the the”." },
+  { rule: "passive", group: "Style", title: "Passive voice", looksFor: "A form of “to be” followed by a past participle, like “was written”.", example: { before: "The code was written by Kev.", after: "Kev wrote the code." } },
+  { rule: "adverb", group: "Style", title: "Adverb", looksFor: "Words ending in “-ly” that usually prop up a weaker verb.", example: { before: "She ran quickly to the bench.", after: "She sprinted to the bench." } },
+  { rule: "wordy", group: "Style", title: "Wordy phrase", looksFor: "Phrases with a shorter way to say them, like “in order to” or “very big”.", example: { before: "Solder it in order to make it stronger.", after: "Solder it to make it stronger." } },
+  { rule: "repeated-word", group: "Tidiness", title: "Repeated word", looksFor: "The same word twice in a row, like “the the”.", example: { before: "Connect the the battery.", after: "Connect the battery." } },
   { rule: "double-space", group: "Tidiness", title: "Double space", looksFor: "Two or more spaces between words." },
-  { rule: "heading-skip", group: "Structure", title: "Skipped heading level", looksFor: "A heading more than one level below the one before it, like # then ###." },
-  { rule: "multiple-h1", group: "Structure", title: "More than one H1", looksFor: "A second top-level (#) heading." },
+  { rule: "heading-skip", group: "Structure", title: "Skipped heading level", looksFor: "A heading more than one level below the one before it, like # then ###.", example: { before: "# Build, then ### Wiring", after: "# Build, then ## Wiring" } },
+  { rule: "multiple-h1", group: "Structure", title: "More than one H1", looksFor: "A second top-level (#) heading.", example: { before: "# Wiring", after: "## Wiring" } },
   { rule: "empty-heading", group: "Structure", title: "Empty heading", looksFor: "A heading with no text." },
   { rule: "empty-list-item", group: "Structure", title: "Empty list item", looksFor: "A bullet or number with nothing after it." },
-  { rule: "image-alt", group: "Links and images", title: "Image without alt text", looksFor: "Images written as ![](…), which screen readers can't describe." },
-  { rule: "link-text", group: "Links and images", title: "Unclear link text", looksFor: "Links with no text, or with the bare address as their text." },
+  { rule: "image-alt", group: "Links and images", title: "Image without alt text", looksFor: "Images written as ![](…), which screen readers can't describe.", example: { before: "![](arm.jpg)", after: "![The robot arm on my desk](arm.jpg)" } },
+  { rule: "link-text", group: "Links and images", title: "Unclear link text", looksFor: "Links with no text, or with the bare address as their text.", example: { before: "[https://github.com/…](https://github.com/…)", after: "[the code on GitHub](https://github.com/…)" } },
 ];
 
 export const RULE_INFO = Object.fromEntries(RULES.map((r) => [r.rule, r])) as Record<LintRule, RuleInfo>;
@@ -258,14 +272,18 @@ export function lint(text: string): LintHint[] {
     for (const m of block.text.matchAll(ADVERB)) {
       if (NOT_ADVERB.has(m[0].toLowerCase())) continue;
       const from = block.from + m.index!;
-      hints.push({ rule: "adverb", from, to: from + m[0].length, message: "A stronger verb often says it better, or the sentence works without it." });
+      const to = from + m[0].length;
+      const { fixes, message } = adverbFixes(block.text, block.from, from, to);
+      hints.push({ rule: "adverb", from, to, message: message ?? "A stronger verb often says it better, or the sentence works without it.", fixes });
     }
+    for (const w of wordyPhrases(block.text, block.from))
+      hints.push({ rule: "wordy", from: w.from, to: w.to, message: w.short ? `“${w.short}” says the same in fewer words.` : "The sentence works without this.", fixes: [w.fix] });
     for (const m of block.text.matchAll(REPEATED)) {
       if (m[1].toLowerCase() !== m[3].toLowerCase() || OK_REPEATED.has(m[1].toLowerCase())) continue;
       const from = block.from + m.index!;
       const to = from + m[0].length;
       const second = from + m[1].length;
-      hints.push({ rule: "repeated-word", from, to, message: `“${m[1]}” twice in a row.`, fix: { label: `Remove the second “${m[3]}”`, from: second, to, insert: "" } });
+      hints.push({ rule: "repeated-word", from, to, message: `“${m[1]}” twice in a row.`, fixes: [{ label: `Remove the second “${m[3]}”`, from: second, to, insert: "" }] });
     }
   }
 
@@ -275,7 +293,7 @@ export function lint(text: string): LintHint[] {
     if (line.trim() && !TABLE_LINE.test(line) && !/^\s*\|/.test(line))
       for (const m of line.matchAll(/(?<=\S) {2,}(?=\S)/g)) {
         const from = pos + m.index!;
-        hints.push({ rule: "double-space", from, to: from + m[0].length, message: `${m[0].length} spaces where one will do.`, fix: { label: "Use one space", from, to: from + m[0].length, insert: " " } });
+        hints.push({ rule: "double-space", from, to: from + m[0].length, message: `${m[0].length} spaces where one will do.`, fixes: [{ label: "Use one space", from, to: from + m[0].length, insert: " " }] });
       }
     pos += line.length + 1;
   }
@@ -299,14 +317,21 @@ function structure(masked: string): LintHint[] {
       const to = from + line.length;
       const text = h[2].replace(/\s#+\s*$/, "").trim();
       if (!text) hints.push({ rule: "empty-heading", from, to, message: "This heading has no text, so it won't help anyone find their way." });
-      if (level === 1 && ++h1s > 1) hints.push({ rule: "multiple-h1", from, to, message: "There's already a top-level heading. Most notes read best with one # and the rest below it." });
+      if (level === 1 && ++h1s > 1)
+        hints.push({
+          rule: "multiple-h1",
+          from,
+          to,
+          message: "There's already a top-level heading. Most notes read best with one # and the rest below it.",
+          fixes: [{ label: "Make it H2", from: from + line.indexOf("#"), to: from + line.indexOf("#") + 1, insert: "##" }],
+        });
       if (prevLevel && level > prevLevel + 1)
         hints.push({
           rule: "heading-skip",
           from,
           to,
           message: `Jumps from H${prevLevel} to H${level}. Readers and screen readers expect one level at a time.`,
-          fix: { label: `Make it H${prevLevel + 1}`, from: from + line.indexOf("#"), to: from + line.indexOf("#") + level, insert: "#".repeat(prevLevel + 1) },
+          fixes: [{ label: `Make it H${prevLevel + 1}`, from: from + line.indexOf("#"), to: from + line.indexOf("#") + level, insert: "#".repeat(prevLevel + 1) }],
         });
       prevLevel = level;
       continue;
