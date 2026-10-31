@@ -51,6 +51,7 @@ export {
   type TableStepperContext,
   type TableStepperSpec,
 } from "./tableWidget";
+export { hiddenComments, hideComments, type HiddenComment } from "./hiddenComments";
 export { slashMenu, slashCommands, filterCommands, applyCommand, withInsertTexts, type SlashCommand, type InsertTexts } from "./slashMenu";
 export { smartPaste, insertImages, DEFAULT_MAX_IMAGE_BYTES, type SmartPasteOptions } from "./smartPaste";
 export { findReplace } from "./findReplace";

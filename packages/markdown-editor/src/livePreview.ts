@@ -2,6 +2,7 @@ import { codeFolding, foldEffect, foldedRanges, syntaxTree, unfoldEffect } from 
 import type { EditorState, Extension, Range, StateEffect } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { parseCalloutHeader } from "./callouts";
+import { hiddenCommentsField } from "./hiddenComments";
 import "./callouts.css";
 import { copyText } from "./clipboard";
 import "./image-sizes.css";
@@ -1067,6 +1068,7 @@ export function livePreview(): Extension {
     calloutFolds,
     tableField,
     tableCursor,
+    hiddenCommentsField,
     renderedCodeField,
     galleryField,
     cardsField,
