@@ -151,8 +151,8 @@ describe("setCell", () => {
     expect(setCell(padded, 0, 0, "Fruit")).toBe("| Fruit | Qty |\n| ------- | --- |\n| Apple   | 3   |");
   });
 
-  it("escapes pipes and flattens new lines", () => {
-    expect(setCell(source, 2, 0, "a|b\nc")).toContain("| a\\|b c |");
+  it("escapes pipes and keeps new lines as <br>", () => {
+    expect(setCell(source, 2, 0, "a|b\nc")).toContain("| a\\|b<br>c |");
   });
 
   it("works without outer pipes and on short rows", () => {

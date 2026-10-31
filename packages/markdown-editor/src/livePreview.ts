@@ -803,7 +803,8 @@ const liveTheme = EditorView.theme({
     caretColor: "var(--accent)",
   },
   ".cm-md-table th": { backgroundColor: "var(--surface-2)", fontWeight: "600" },
-  ".cm-md-table td:focus, .cm-md-table th:focus": { boxShadow: "inset 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent)" },
+  // A cell's line breaks (<br> in the Markdown) are "\n"s while it's typed in.
+  ".cm-md-table td:focus, .cm-md-table th:focus": { whiteSpace: "pre-wrap", boxShadow: "inset 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent)" },
   ".cm-md-table .selected": { backgroundColor: "color-mix(in srgb, var(--syntax-function) 10%, transparent)" },
   ".cm-md-table code": {
     fontFamily: "var(--font-mono)",

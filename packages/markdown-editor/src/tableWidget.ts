@@ -13,6 +13,7 @@ import {
   splitTable,
   deleteRow,
   diff,
+  cellText,
   escapeCell,
   formatTable,
   insertColumn,
@@ -21,9 +22,11 @@ import {
   moveRow,
   parseTable,
   pasteCells,
+  rawOffset,
   setAlign,
   setCell,
   spreadsheetCells,
+  textOffset,
   type Align,
   type Table,
 } from "./markdownTable";
@@ -387,7 +390,7 @@ class TableView {
     dom.addEventListener("focusin", (e) => {
       const cell = e.target as HTMLElement;
       if (!isCell(cell)) return;
-      cell.textContent = cell.dataset.raw ?? "";
+      setCellText(cell, cellText(cell.dataset.raw ?? ""));
       this.setHover(Number(cell.dataset.row), Number(cell.dataset.col));
     });
     dom.addEventListener("focusout", (e) => {
@@ -402,7 +405,7 @@ class TableView {
     dom.addEventListener("input", (e) => {
       const cell = e.target as HTMLElement;
       if (!isCell(cell)) return;
-      const text = (cell.textContent ?? "").replace(/\n/g, " ");
+      const text = cell.textContent ?? "";
       cell.dataset.raw = escapeCell(text);
       const row = Number(cell.dataset.row);
       const col = Number(cell.dataset.col);
@@ -544,7 +547,7 @@ class TableView {
         cell.dataset.raw = raw;
         if (editing) {
           // Someone else (or undo) changed the cell being typed in.
-          cell.textContent = raw;
+          setCellText(cell, cellText(raw));
           caretAtEnd(cell);
         } else {
           cell.innerHTML = renderCell(raw);
@@ -589,13 +592,16 @@ class TableView {
     } else caretAtEnd(cell);
   }
 
-  /** Puts the caret in a cell, selecting from..to of its Markdown text. */
+  /** Puts the caret in a cell, selecting from..to of its Markdown (offsets in the Markdown, where a line break is `<br>`). */
   focusCellAt(row: number, col: number, from: number, to: number) {
     if (!this.editable) return;
     this.edit();
     const cell = this.cell(row, col);
     if (!cell || !this.editable) return;
     cell.focus();
+    const raw = cell.dataset.raw ?? "";
+    from = textOffset(raw, from);
+    to = textOffset(raw, to);
     const node = cell.firstChild;
     if (!node || node.nodeType !== 3) return caretAtEnd(cell);
     const length = (node.textContent ?? "").length;
@@ -679,6 +685,13 @@ class TableView {
       runScopeHandlers(this.view, e, "editor");
       return;
     }
+    if (e.key === "Enter" && e.shiftKey && !mod) {
+      // A new line in the cell: a <br> in the Markdown, a line break while typing.
+      e.preventDefault();
+      insertLineBreak(cell);
+      cell.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertLineBreak" }));
+      return;
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       if (row < lastRow) this.focusCell(row + 1, col);
@@ -730,7 +743,8 @@ class TableView {
     const { cell, at } = open;
     const form = linkForm(at, (markdown) => this.replaceLink(markdown), () => {
       this.closeLink();
-      this.focusCellAt(Number(cell.dataset.row), Number(cell.dataset.col), at.to, at.to);
+      const to = rawOffset(cell.textContent ?? "", at.to);
+      this.focusCellAt(Number(cell.dataset.row), Number(cell.dataset.col), to, to);
     });
     form.addEventListener("focusout", (e) => {
       if (this.link?.dom === form && !form.contains(e.relatedTarget as Node)) this.closeLink();
@@ -770,11 +784,12 @@ class TableView {
     const { cell, at } = open;
     const row = Number(cell.dataset.row);
     const col = Number(cell.dataset.col);
-    const raw = cell.dataset.raw ?? "";
+    const text = cell.textContent ?? "";
     this.closeLink();
-    const range = this.change((source) => setCell(source, row, col, raw.slice(0, at.from) + markdown + raw.slice(at.to)));
+    const range = this.change((source) => setCell(source, row, col, text.slice(0, at.from) + markdown + text.slice(at.to)));
     const view = range ? (tableViewAt(this.view, range.from) ?? this) : this;
-    view.focusCellAt(row, col, at.from + markdown.length, at.from + markdown.length);
+    const end = rawOffset(text.slice(0, at.from) + markdown, at.from + markdown.length);
+    view.focusCellAt(row, col, end, end);
   }
 
   private closeLink() {
@@ -885,10 +900,9 @@ class TableView {
     this.closeSlash();
     const start = this.cellStart(cell);
     if (start === null) return;
-    // The cell's text is in the Markdown trimmed, with its pipes escaped.
-    const toSource = (prefix: string) => prefix.replace(/\r?\n/g, " ").replace(/(?<!\\)\|/g, "\\|").replace(/^\s+/, "").length;
-    const from = start + toSource(text.slice(0, at));
-    const spec = applyCommand(this.view.state, { ...command, block: false, blankBefore: false }, from, start + toSource(text.slice(0, caret)));
+    // The cell's text is in the Markdown trimmed, with its pipes escaped and its line breaks as <br>.
+    const from = start + rawOffset(text, at);
+    const spec = applyCommand(this.view.state, { ...command, block: false, blankBefore: false }, from, start + rawOffset(text, caret));
     if (command.run) {
       // The host's picker takes over from here, at this place in the note,
       // with the caret back in the cell for it to open beside.
@@ -1349,10 +1363,51 @@ function caretOffset(cell: HTMLElement): number | null {
   return before.toString().length;
 }
 
+/**
+ * Puts a cell's typed text in it as one text node, its line breaks as "\n"
+ * (cells are white-space: pre-wrap while typed in). A trailing line break
+ * needs a <br> after it to show its empty line; textContent leaves it out.
+ */
+function setCellText(cell: HTMLElement, text: string) {
+  cell.textContent = text;
+  if (text.endsWith("\n")) cell.append(document.createElement("br"));
+}
+
+/** Types a line break at the caret, keeping the cell one text node. */
+function insertLineBreak(cell: HTMLElement) {
+  const text = cell.textContent ?? "";
+  const selection = window.getSelection();
+  let from = text.length;
+  let to = text.length;
+  if (selection?.rangeCount && cell.contains(selection.getRangeAt(0).startContainer)) {
+    const range = selection.getRangeAt(0);
+    const offset = (node: Node, at: number) => {
+      const before = document.createRange();
+      before.selectNodeContents(cell);
+      before.setEnd(node, at);
+      return before.toString().length;
+    };
+    from = offset(range.startContainer, range.startOffset);
+    to = cell.contains(range.endContainer) ? offset(range.endContainer, range.endOffset) : from;
+  }
+  setCellText(cell, text.slice(0, from) + "\n" + text.slice(to));
+  const node = cell.firstChild!;
+  const caret = document.createRange();
+  caret.setStart(node, from + 1);
+  caret.collapse(true);
+  selection?.removeAllRanges();
+  selection?.addRange(caret);
+}
+
 function caretAtEnd(cell: HTMLElement) {
   const range = document.createRange();
-  range.selectNodeContents(cell);
-  range.collapse(false);
+  const node = cell.firstChild;
+  // At the end of the text, not after a trailing line break's <br>.
+  if (node && node.nodeType === 3) range.setStart(node, node.textContent?.length ?? 0);
+  else {
+    range.selectNodeContents(cell);
+    range.collapse(false);
+  }
   const selection = window.getSelection();
   selection?.removeAllRanges();
   selection?.addRange(range);

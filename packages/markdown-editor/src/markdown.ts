@@ -4,7 +4,7 @@ import footnote from "markdown-it-footnote";
 import mark from "markdown-it-mark";
 import taskLists from "markdown-it-task-lists";
 import { calloutPlugin } from "./callouts";
-import { cellHeading, cellHeadingPlugin, headingHtml } from "./cellHeadings";
+import { brTagPlugin, cellHeadingPlugin, cellLines, type TokenClass } from "./cellHeadings";
 import "./callouts.css";
 import { imageGridPlugin } from "./imageGrid";
 import "./image-grid.css";
@@ -42,6 +42,7 @@ export function createMarkdownIt(configure?: (md: MarkdownItInstance) => Markdow
     .use(calloutPlugin)
     .use(imageSizePlugin)
     .use(imageGridPlugin)
+    .use(brTagPlugin)
     .use(cellHeadingPlugin);
 
   // Links open in a new tab, so following one never loses the note you're on.
@@ -68,10 +69,12 @@ export function renderInline(source: string): string {
   return md.renderInline(source);
 }
 
-/** A table cell's Markdown as HTML: inline, or a heading when it starts with #'s (see cellHeadings.ts). */
+/** A table cell's Markdown as HTML: inline, split into lines at `<br>`, with lines that start with #'s as headings (see cellHeadings.ts). */
 export function renderCell(source: string): string {
-  const heading = cellHeading(source);
-  return heading ? headingHtml(heading.level, md.renderInline(heading.text)) : md.renderInline(source);
+  const tokens = md.parseInline(source, {});
+  const inline = tokens[0];
+  if (inline?.children) inline.children = cellLines(inline.children, inline.constructor as TokenClass);
+  return md.renderer.render(tokens, md.options, {});
 }
 
 /** The note's title: its first heading, or its first line of text. */

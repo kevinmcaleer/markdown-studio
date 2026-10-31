@@ -72,7 +72,26 @@ export function formatTable(table: Table): string {
 
 /** A cell's text as it goes in the Markdown: one line, with its pipes escaped. */
 export function escapeCell(text: string): string {
-  return text.replace(/\r?\n/g, " ").replace(/(?<!\\)\|/g, "\\|").trim();
+  return text.replace(/\r?\n/g, "<br>").replace(/(?<!\\)\|/g, "\\|").trim();
+}
+
+// A cell's new lines are `<br>`s in the Markdown (a table row is one line),
+// and line breaks while it's being typed in.
+const BR_TAG = /<br\s*\/?>/gi;
+
+/** A cell's Markdown as the text to type in, its `<br>`s as line breaks. */
+export function cellText(raw: string): string {
+  return raw.replace(BR_TAG, "\n");
+}
+
+/** Where `offset` in a cell's typed text (cellText) falls in its Markdown. */
+export function rawOffset(text: string, offset: number): number {
+  return escapeCell(text.slice(0, offset) + "\u0000").length - 1;
+}
+
+/** Where `offset` in a cell's Markdown falls in its typed text (cellText). */
+export function textOffset(raw: string, offset: number): number {
+  return cellText(raw.slice(0, offset)).length;
 }
 
 export function insertRow(table: Table, index: number): Table {
