@@ -5,6 +5,7 @@ import type { CodeEditor, CodeRenderer } from "../codeRenderers";
 import type { DraftOptions, DraftState } from "../draft";
 import type { ShortcutName } from "../format/formatting";
 import type { EditorHint } from "../lint/useWritingLint";
+import type { GuideSection } from "./Guide";
 import type { MarkdownItInstance } from "../markdown";
 import type { LanguageRequest } from "../proofing/languageApi";
 import type { ProofLanguage } from "../proofing/speller";
@@ -14,7 +15,7 @@ import type { TableNote, TableRenderer } from "../tableWidget";
 // The options `mount()` takes, and the editor it hands back. Every option has
 // a default, so `mount(el)` alone gives the full editor.
 
-export type { EditorHint };
+export type { EditorHint, GuideSection };
 
 /** A built-in toolbar button, by name; "|" draws a separator. */
 export type BuiltInTool =
@@ -125,6 +126,12 @@ export type MountOptions = {
 
   /** Commands added to the "/" menu, or a function given the defaults that returns the full list. */
   slashCommands?: SlashCommand[] | ((defaults: SlashCommand[]) => SlashCommand[]);
+  /**
+   * The host's own topics in the "?" Markdown guide, after the built-in ones
+   * (text, pictures, callouts, tables, checking your writing): rows of what to
+   * type and what it does, and an optional line under them.
+   */
+  guide?: GuideSection[];
   /** EasyMDE-style templates for the link, image, table, horizontal rule and code inserts. */
   insertTexts?: InsertTexts;
   /** Keys for the formatting and view shortcuts: a key to move one, null to turn it off. */

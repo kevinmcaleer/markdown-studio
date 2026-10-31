@@ -6,7 +6,7 @@ import { setDictionaryBase } from "./proofing/dictionaryUrls";
 import type { EditorEvents, MarkdownEditor, MountOptions } from "./standalone/options";
 import { StandaloneEditor, type Bridge } from "./standalone/StandaloneEditor";
 
-export type { BuiltInTool, EditorEvents, EditorHint, ImageInfo, MarkdownEditor, MountOptions, Pane, Stats, StatusItem, ToolbarButton, ToolbarItem } from "./standalone/options";
+export type { BuiltInTool, EditorEvents, EditorHint, GuideSection, ImageInfo, MarkdownEditor, MountOptions, Pane, Stats, StatusItem, ToolbarButton, ToolbarItem } from "./standalone/options";
 export { DEFAULT_STATUS, DEFAULT_TOOLBAR } from "./standalone/options";
 
 // The framework-free way in: `mount(element, options)` puts the whole editor
