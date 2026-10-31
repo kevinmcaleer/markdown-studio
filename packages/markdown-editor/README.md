@@ -285,6 +285,36 @@ hover, until the cursor goes in. The preview renders `galleryHtml` (classes
 `wireGallery(element, open?)` adds the filmstrip swap and a viewer hook, and
 `src/gallery.css` styles it on its own.
 
+### Cards
+
+A `::: cards` block lays out cards side by side, each a picture, a title and
+some words. A line of `---` starts the next card; `:::` ends the block.
+
+```markdown
+::: cards
+![Open Duck Mini](/odm.jpg)
+## Open Duck Mini
+Created by Antoine Pirrone.
+
+---
+
+![Microduck](/md.jpg)
+## Microduck
+By Pollen Robotics and Hugging Face.
+:::
+```
+
+A card's first picture line is its picture and the rest is any Markdown (its
+first heading is its title). `::: cards 3` sets how many across; without a
+number they fill the width. They stack on a phone. In the live view the block
+is built by pointing and clicking: click a card to set its picture (through the
+image picker, `cardPicturePicker`), title and words; hover for move and remove
+buttons; "Add card" adds one; the bar sets how many across, and "Markdown"
+shows the lines underneath until "Show cards". `/cards` inserts one with its
+first card open. The preview renders `cardsHtml` (classes `md-cards`,
+`md-card`, `md-card-media`, `md-card-body`), and `src/cards.css` styles it on
+its own. Card titles stay out of the outline.
+
 ### Headings in table cells
 
 A table cell holds only inline Markdown, so a cell that starts with `#`'s is drawn

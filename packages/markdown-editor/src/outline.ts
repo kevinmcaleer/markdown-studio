@@ -1,3 +1,4 @@
+import { cardsPlugin } from "./cards";
 import MarkdownIt from "markdown-it";
 
 // The note's outline: its headings, each with the section it starts (the
@@ -22,7 +23,8 @@ export type Heading = {
   words: number;
 };
 
-const md = new MarkdownIt({ html: false });
+// Card titles in a `::: cards` block are the cards' own, not the note's sections.
+const md = new MarkdownIt({ html: false }).use(cardsPlugin);
 
 export function parseOutline(doc: string): Heading[] {
   const tokens = md.parse(doc, {});

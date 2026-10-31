@@ -6,6 +6,8 @@ import taskLists from "markdown-it-task-lists";
 import { calloutPlugin } from "./callouts";
 import { brTagPlugin, cellHeadingPlugin, cellLines, type TokenClass } from "./cellHeadings";
 import "./callouts.css";
+import { cardsPlugin } from "./cards";
+import "./cards.css";
 import { galleryPlugin } from "./gallery";
 import "./gallery.css";
 import { imageGridPlugin } from "./imageGrid";
@@ -43,6 +45,7 @@ export function createMarkdownIt(configure?: (md: MarkdownItInstance) => Markdow
     .use(taskLists, { enabled: false, label: true })
     .use(calloutPlugin)
     .use(galleryPlugin)
+    .use(cardsPlugin)
     .use(imageSizePlugin)
     .use(imageGridPlugin)
     .use(brTagPlugin)

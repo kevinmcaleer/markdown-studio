@@ -81,6 +81,22 @@ export {
   type GalleryImage,
   type GalleryBlock,
 } from "./gallery";
+export {
+  cardsPlugin,
+  cardsHtml,
+  cardHtml,
+  cardMarkdown,
+  cardsMarkdown,
+  cardsBlockMarkdown,
+  cardsOpenLine,
+  parseCardsOpen,
+  parseCard,
+  splitCards,
+  findCardBlocks,
+  type Card,
+  type CardPicture,
+  type CardsBlock,
+} from "./cards";
 export { imageSizePlugin, imageSizes, parseImageSize, imageSizeMarkdown, imageSizeClass, type ImageSize } from "./imageSize";
 export {
   parseOutline,
