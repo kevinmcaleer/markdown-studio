@@ -196,7 +196,28 @@ const theme = EditorView.theme({
   ".cm-format-mini-option.style-h2": { fontSize: "15px" },
   ".cm-format-mini-option.style-quote": { fontStyle: "italic" },
   ".cm-format-mini-sep": { width: "1px", alignSelf: "stretch", margin: "4px 3px", background: "#3a3a3a" },
+  // The same toolbar over a selection in a table cell (tableWidget.ts), in the
+  // table's own layer above its menus. The table's own button styles
+  // (absolute, hidden until hover) are put back.
+  ".cm-md-table-format": { position: "absolute", zIndex: "25" },
+  ".cm-md-table .cm-format-mini .cm-format-mini-btn": {
+    position: "static",
+    display: "flex",
+    opacity: "1",
+    padding: "0 6px",
+    border: "1px solid transparent",
+    background: "transparent",
+    color: "inherit",
+  },
+  ".cm-md-table .cm-format-mini .cm-format-mini-btn:hover": { background: "#3a3a3a", borderColor: "#555", color: "#ffffff" },
+  ".cm-md-table .cm-format-mini .cm-format-mini-btn[aria-pressed=true]": { background: "#3a3a3a", color: "#ffffff" },
+  ".cm-md-table .cm-format-mini .cm-format-mini-btn svg": { width: "16px", height: "16px", strokeWidth: "1.4" },
 });
+
+/** Whether the editor has the selection toolbar (so table cells show one too). */
+export function hasSelectionToolbar(state: EditorState): boolean {
+  return state.field(shownField, false) !== undefined;
+}
 
 /** The floating toolbar over a selection. Add it to an editable Markdown editor. */
 export function selectionToolbar(): Extension {

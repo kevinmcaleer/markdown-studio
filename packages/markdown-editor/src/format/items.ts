@@ -179,6 +179,12 @@ export const MINI_TOOLBAR: FormatItem[][] = [
   [ITEMS.clear],
 ];
 
+/** The mini-toolbar over a selection in a table cell: only what a cell can hold (no lists, headings or quotes). */
+export const CELL_TOOLBAR: FormatItem[][] = [
+  [ITEMS.bold, ITEMS.italic, ITEMS.strike, ITEMS.highlight, ITEMS.code, ITEMS.link],
+  [ITEMS.clear],
+];
+
 /** The mini-toolbar's style menu. */
 export const STYLES: { block: Block; label: string; keys?: string }[] = [
   { block: "paragraph", label: "Body", keys: "Mod-Alt-0" },
