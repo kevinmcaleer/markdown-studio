@@ -133,6 +133,38 @@ export type TableStepper = (cell: TableStepperContext) => TableStepperSpec | boo
 /** The table steppers; the first to answer for a cell wins. */
 export const tableSteppers = Facet.define<TableStepper>();
 
+/** What a column action is asked about: one column of a table. */
+export type TableColumnContext = {
+  /** The column's header, as plain text. */
+  header: string;
+  col: number;
+  /** The table's rows, header first, as each cell's Markdown. */
+  rows: string[][];
+  /** The text of the heading the table sits under, if there is one. */
+  heading: string | null;
+};
+
+/** One choice in a column action's list, and the table it makes. */
+export type TableColumnOption = {
+  label: string;
+  /** The column's current choice, shown ticked. */
+  checked?: boolean;
+  /** The rows (header first, each cell's Markdown) once it's chosen. */
+  apply: (rows: string[][]) => string[][];
+};
+
+/**
+ * An extra entry in a column's menu that opens a list of choices: a Bill of
+ * Materials' Price column offering currencies, say. Null for none.
+ * `icon` is an SVG path on a 16 × 16 grid, drawn like the menu's own icons.
+ */
+export type TableColumnAction = (
+  column: TableColumnContext,
+) => { label: string; icon?: string; options: TableColumnOption[] } | null;
+
+/** The column actions; each one that answers adds an entry to the column menu. */
+export const tableColumnActions = Facet.define<TableColumnAction>();
+
 /** A host's note, as a block above its table. */
 class TableNoteWidget extends WidgetType {
   constructor(readonly element: HTMLElement) {
@@ -377,6 +409,8 @@ const ICONS = {
   alignCenter: "M2.5 3.5h11M4.5 6.5h7M2.5 9.5h11M4.5 12.5h7",
   alignRight: "M2.5 3.5h11M6.5 6.5h7M2.5 9.5h11M6.5 12.5h7",
   resetWidths: "M2.5 3v10M13.5 3v10M5 8h6M6.5 6 4.5 8l2 2M9.5 6l2 2-2 2",
+  choose: "M2.5 4h11M2.5 8h11M2.5 12h7",
+  check: "M3 8.5 6.5 12 13 4.5",
 };
 
 type MenuItem = { label: string; icon: string; run: () => void; disabled?: boolean };
@@ -1530,6 +1564,7 @@ class TableView {
         disabled: !columnWidths(this.table.dashes),
         run: () => this.resetWidths(),
       },
+      ...this.columnActions(col),
     ], {
       label: "Align column",
       // Choosing the column's current alignment again sets it back to the default.
@@ -1537,6 +1572,50 @@ class TableView {
         const pressed = this.table.align[col] === align;
         return { label, icon, pressed, run: () => this.align(col, pressed ? null : align) };
       }),
+    });
+  }
+
+  /** The host's entries for a column's menu (see `tableColumnAction`): each opens its list of choices. */
+  private columnActions(col: number): MenuItem[] {
+    const actions = this.view.state.facet(tableColumnActions);
+    if (!actions.length) return [];
+    const context: TableColumnContext = {
+      header: cellText(this.table.rows[0][col] ?? "").trim(),
+      col,
+      rows: this.table.rows.map((row) => [...row]),
+      heading: this.heading,
+    };
+    const items: MenuItem[] = [];
+    for (const action of actions) {
+      const answer = action(context);
+      if (!answer || !answer.options.length) continue;
+      items.push({ label: answer.label, icon: answer.icon ?? ICONS.choose, run: () => this.columnOptions(col, answer.options) });
+    }
+    return items;
+  }
+
+  /** A column action's choices, in place of the column menu; one click applies it. */
+  private columnOptions(col: number, options: TableColumnOption[]) {
+    const { row } = this.hover;
+    this.openMenu(
+      this.colHandle,
+      options.map((option) => ({
+        label: option.label,
+        icon: option.checked ? ICONS.check : "",
+        run: () =>
+          this.structure((table) => {
+            const width = table.align.length;
+            const rows = option.apply(table.rows.map((cells) => [...cells]));
+            if (!rows.length) return table;
+            // Keep the table's shape whatever the host hands back.
+            const fit = rows.map((cells) => Array.from({ length: width }, (_, i) => cells[i] ?? ""));
+            return { ...table, rows: fit };
+          }, row, col),
+      })),
+    );
+    this.menu?.querySelectorAll<HTMLElement>("button").forEach((entry, i) => {
+      entry.setAttribute("role", "menuitemradio");
+      entry.setAttribute("aria-checked", String(!!options[i]?.checked));
     });
   }
 

@@ -44,12 +44,16 @@ export {
   tableRenderers,
   tableNotes,
   tableSteppers,
+  tableColumnActions,
   type TableRenderer,
   type TableRendererContext,
   type TableNote,
   type TableStepper,
   type TableStepperContext,
   type TableStepperSpec,
+  type TableColumnAction,
+  type TableColumnContext,
+  type TableColumnOption,
 } from "./tableWidget";
 export { hiddenComments, hideComments, type HiddenComment } from "./hiddenComments";
 export { pageBreaks, pageBreaksOn, pageBreakCommand, isPageBreak, PAGE_BREAK } from "./pageBreaks";

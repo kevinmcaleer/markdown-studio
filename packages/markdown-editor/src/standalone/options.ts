@@ -12,7 +12,7 @@ import type { LanguageRequest } from "../proofing/languageApi";
 import type { ProofLanguage } from "../proofing/speller";
 import type { InsertTexts, SlashCommand } from "../slashMenu";
 import type { HiddenComment } from "../hiddenComments";
-import type { TableNote, TableRenderer, TableStepper } from "../tableWidget";
+import type { TableColumnAction, TableNote, TableRenderer, TableStepper } from "../tableWidget";
 import type { VideoRenderer } from "../videosWidget";
 
 // The options `mount()` takes, and the editor it hands back. Every option has
@@ -237,6 +237,16 @@ export type MountOptions = {
    * edit to the Markdown, so the cell stays a plain number.
    */
   tableStepper?: TableStepper;
+  /**
+   * An extra entry in a table column's menu (the handle above the column, in
+   * the live view) that opens a list of choices: a Bill of Materials' Price
+   * column offering currencies, say. It's given the column's header, index,
+   * rows and heading, and returns { label, icon?, options } or null. Each
+   * option has a label, `checked` for the current one, and `apply(rows)`,
+   * which returns the table's rows (header first) as they should be; that
+   * is one edit to the Markdown.
+   */
+  tableColumnAction?: TableColumnAction;
   /**
    * Editors for fenced blocks, by language: while the cursor is in a ```mermaid
    * block, say, it shows as this editor (code beside its live diagram) in place
