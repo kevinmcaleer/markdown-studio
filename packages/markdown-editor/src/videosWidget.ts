@@ -2,7 +2,7 @@ import { Facet, StateField, type EditorState, type Range } from "@codemirror/sta
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
 import { fillVideoTitles, findVideoBlocks, videosHtml, type Video } from "./videos";
 import "./videos.css";
-import { rememberedHeight, rememberHeight } from "./steadyScroll";
+import { rememberedHeight, spacedBlock } from "./steadyScroll";
 
 // In the live view a `::: videos` block (see videos.ts) shows as its cards
 // while the cursor is outside it, and as its lines once the cursor moves in,
@@ -31,7 +31,6 @@ class VideosWidget extends WidgetType {
   toDOM(view: EditorView) {
     const wrap = document.createElement("div");
     wrap.className = "cm-md-videos";
-    rememberHeight(wrap, this.key);
     let drawn: HTMLElement | null = null;
     if (this.videos.length) {
       for (const render of view.state.facet(videoRenderers)) {
@@ -67,7 +66,7 @@ class VideosWidget extends WidgetType {
       view.focus();
       view.dispatch({ selection: { anchor: first.from }, scrollIntoView: true });
     });
-    return wrap;
+    return spacedBlock(wrap, this.key);
   }
   ignoreEvent() {
     return true;
@@ -107,7 +106,7 @@ export const videosField = StateField.define<DecorationSet>({
 
 export const videosTheme = EditorView.theme({
   ".cm-md-videos": {
-    margin: "0.5rem 0",
+    margin: "0",
     padding: "0.5rem",
     borderRadius: "12px",
     border: "1px solid transparent",

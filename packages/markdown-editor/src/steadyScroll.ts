@@ -36,6 +36,23 @@ export function rememberHeight(dom: HTMLElement, key: string) {
   blocks?.observe(dom);
 }
 
+/**
+ * A block widget's DOM in a box that spaces it from the lines around it.
+ * CodeMirror measures a block widget by its border box, so a margin on the
+ * widget isn't counted: every line below it is then drawn lower than
+ * CodeMirror thinks, and a click there lands on the line underneath (a cards
+ * block and a gallery above a link put the caret a line below the link).
+ * Padding on this box is counted. With `key`, the box's height is remembered.
+ */
+export function spacedBlock(dom: HTMLElement, key?: string): HTMLElement {
+  const box = document.createElement("div");
+  box.className = "cm-md-block-space";
+  box.style.padding = "0.5rem 0";
+  box.append(dom);
+  if (key !== undefined) rememberHeight(box, key);
+  return box;
+}
+
 /** The height a block with this key was last drawn at, if it has been. */
 export function rememberedHeight(key: string): number | undefined {
   return heights.get(key);

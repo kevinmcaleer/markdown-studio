@@ -1,7 +1,7 @@
 import { syntaxTree } from "@codemirror/language";
 import { Facet, StateField, Transaction, type EditorState, type Range } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
-import { rememberedHeight, rememberHeight } from "./steadyScroll";
+import { rememberedHeight, spacedBlock } from "./steadyScroll";
 
 // In the live view, a fenced block in a language the host can draw (```mermaid,
 // say) shows as its drawing while the cursor is outside it, and as its source
@@ -173,7 +173,6 @@ class RenderedCodeWidget extends WidgetType {
   toDOM(view: EditorView) {
     const wrap = document.createElement("div");
     wrap.className = "cm-md-rendered";
-    rememberHeight(wrap, `${this.language}\n${this.source}`);
     wrap.title = "Click to edit";
     const body = document.createElement("div");
     body.className = `cm-md-rendered-body cm-md-rendered-${this.language}`;
@@ -203,7 +202,7 @@ class RenderedCodeWidget extends WidgetType {
       view.focus();
       view.dispatch({ selection: { anchor: first.from }, scrollIntoView: true });
     });
-    return wrap;
+    return spacedBlock(wrap, `${this.language}\n${this.source}`);
   }
   ignoreEvent() {
     return true;
@@ -264,7 +263,7 @@ export const renderedCodeTheme = EditorView.theme({
   // No box of its own: the drawing sits on the page's background, with an
   // outline on hover to show it can be clicked.
   ".cm-md-rendered": {
-    margin: "0.5rem 0",
+    margin: "0",
     padding: "0.75rem",
     borderRadius: "10px",
     border: "1px solid transparent",
@@ -275,6 +274,7 @@ export const renderedCodeTheme = EditorView.theme({
   },
   ".cm-md-rendered:hover": { borderColor: "var(--border)" },
   ".cm-md-rendered svg": { maxWidth: "100%", height: "auto" },
-  ".cm-md-code-editor": { margin: "0.5rem 0", cursor: "auto" },
+  // Padding, not margin: CodeMirror doesn't count a block widget's margin (see spacedBlock).
+  ".cm-md-code-editor": { padding: "0.5rem 0", cursor: "auto" },
   ".cm-md-rendered-error": { margin: "0", textAlign: "left", whiteSpace: "pre-wrap", color: "var(--muted)", fontSize: "0.85em" },
 });
