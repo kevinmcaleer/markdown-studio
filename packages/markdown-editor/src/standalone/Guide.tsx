@@ -50,6 +50,15 @@ const PICTURES: GuideSection = {
   note: "Paste or drop pictures straight onto the text. Hover over a picture to change its size.",
 };
 
+const VIDEOS: GuideSection = {
+  title: "Videos",
+  rows: [
+    ["::: videos", "Videos: a YouTube link on each line under it, up to a line of :::, show as a group of cards, in their order"],
+    ["https://youtu.be/… My title", "A video with its title (or [My title](https://youtu.be/…)); without one, YouTube's title is shown"],
+  ],
+  note: "One video or several, it's the same block. Click the cards to change, reorder or remove the links.",
+};
+
 const CALLOUTS: GuideSection = {
   title: "Callouts",
   rows: [
@@ -108,7 +117,7 @@ export function Guide({
     ...CHECKING,
     rows: CHECKING.rows.filter(([what]) => (what === "Hints" ? hints : spelling)),
   };
-  const topics = [TEXT, PICTURES, CALLOUTS, TABLES, ...(checking.rows.length ? [checking] : []), ...sections];
+  const topics = [TEXT, PICTURES, VIDEOS, CALLOUTS, TABLES, ...(checking.rows.length ? [checking] : []), ...sections];
   return (
     <Popover anchor={anchor} onClose={onClose} className="mde-guide" label="Markdown guide">
       {topics.map((section, i) => (

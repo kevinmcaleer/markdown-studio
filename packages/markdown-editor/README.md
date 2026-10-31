@@ -111,6 +111,7 @@ Every option is optional.
 | `codeEditors` | | Editors for fenced blocks, by language, shown in place of the block's lines while the cursor is in it: `{ mermaid: ({ element, source, onChange, onExit, focus }) => handle }`. Call `onChange(code)` after each edit and `onExit("before" \| "after")` to hand the cursor back; return `{ setSource, focus, destroy }`. With `codeRenderers`, a ```` ```mermaid ```` block shows its diagram until clicked and then, say, a split code + diagram editor (Mermaid Factory's `mountEditor`). |
 | `codeLanguages` | | Highlighting for fenced code in more languages, by name: `{ mermaid: MermaidTools.mermaidStreamParser }`. Each is a plain stream parser (`{ token(stream, state), startState? }`, what CodeMirror's `StreamLanguage` takes), so it can come from another bundle with its own copy of CodeMirror. Its token names (`"keyword"`, `"string"`, `"comment"`…) take the editor's colours. A function that resolves to the parser, `() => import(…).then(m => m.mermaidStreamParser)`, loads it the first time a fence needs it. Read once, at mount. |
 | `tableRenderer` | | Draws a table another way in the live view: `({ rows, heading }) => element \| null`. `rows` is the header row then the body rows (each cell's Markdown) and `heading` the text of the heading the table sits under. The element shows in place of the grid until the table is clicked or the caret moves in, and comes back when the focus leaves; return `null` to keep the grid. A Videos table drawn as thumbnail cards, say. |
+| `videoRenderer` | | Draws a `::: videos` block's cards another way in the live view: `(videos) => element \| null`, given `[{ id, title }]` in order (an untitled video's `title` is `""`). The element shows until it's clicked or the caret moves in; return `null` for the editor's own cards. |
 | `tableNote` | | A note above a table in the live view: `({ rows, heading }) => element \| null`, given what `tableRenderer` is given. The element shows above the table (in grid and drawing alike) and clicks in it are the host's; return `null` for no note. A tip on a Bill of Materials' Qty and Price columns, say. |
 | `pane` | `"edit"` | Opens in `"edit"`, `"preview"` or `"split"`. |
 | `lineNumbers` | `false` | Line numbers beside the live view too (the `line-numbers` toolbar button toggles them). |
@@ -284,6 +285,28 @@ hover, until the cursor goes in. The preview renders `galleryHtml` (classes
 `md-gallery`, `md-gallery-<layout>`, `md-gallery-hero`, `md-gallery-item`);
 `wireGallery(element, open?)` adds the filmstrip swap and a viewer hook, and
 `src/gallery.css` styles it on its own.
+
+### Videos
+
+A `::: videos` block shows the YouTube links inside it as a group of thumbnail
+cards, in the order they're written. One video or several, it's the same block:
+
+```markdown
+::: videos
+https://www.youtube.com/watch?v=dQw4w9WgXcQ Part one
+[Part two](https://youtu.be/abcdefghijk)
+https://youtu.be/abcdefghijk
+:::
+```
+
+A video's title is its link text or the words after its address; one without
+a title shows YouTube's own once it's looked up (the live view asks YouTube's
+oEmbed), "YouTube video" until then. Lines without a YouTube link are left out.
+In the live view the block shows as its cards until the cursor goes in. The
+preview renders `videosHtml` (classes `md-videos`, `md-video`, `md-video-thumb`,
+`md-video-title`); `fillVideoTitles(element)` looks up the missing titles, and
+`src/videos.css` styles it on its own. A host can draw the cards its own way
+with the `videoRenderer` option.
 
 ### Headings in table cells
 
