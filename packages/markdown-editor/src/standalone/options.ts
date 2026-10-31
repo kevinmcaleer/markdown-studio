@@ -9,7 +9,7 @@ import type { MarkdownItInstance } from "../markdown";
 import type { LanguageRequest } from "../proofing/languageApi";
 import type { ProofLanguage } from "../proofing/speller";
 import type { InsertTexts, SlashCommand } from "../slashMenu";
-import type { TableRenderer } from "../tableWidget";
+import type { TableNote, TableRenderer } from "../tableWidget";
 
 // The options `mount()` takes, and the editor it hands back. Every option has
 // a default, so `mount(el)` alone gives the full editor.
@@ -179,6 +179,13 @@ export type MountOptions = {
    * until the table is clicked or the caret moves in, then the grid to edit.
    */
   tableRenderer?: TableRenderer;
+  /**
+   * A note shown above a table in the live view: a tip on how to fill in a
+   * Bill of Materials, say. It's given the table's cells and the heading it
+   * sits under, and returns an element, or null for no note. Clicks in it
+   * are the host's to handle.
+   */
+  tableNote?: TableNote;
   /**
    * Editors for fenced blocks, by language: while the cursor is in a ```mermaid
    * block, say, it shows as this editor (code beside its live diagram) in place

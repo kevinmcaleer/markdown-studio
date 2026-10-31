@@ -39,7 +39,7 @@ export {
   type CodeRenderer,
 } from "./codeRenderers";
 export { codeLanguageDescriptions, type CodeLanguage } from "./codeLanguages";
-export { tableRenderers, type TableRenderer, type TableRendererContext } from "./tableWidget";
+export { tableRenderers, tableNotes, type TableRenderer, type TableRendererContext, type TableNote } from "./tableWidget";
 export { slashMenu, slashCommands, filterCommands, applyCommand, withInsertTexts, type SlashCommand, type InsertTexts } from "./slashMenu";
 export { smartPaste, insertImages, DEFAULT_MAX_IMAGE_BYTES, type SmartPasteOptions } from "./smartPaste";
 export { findReplace } from "./findReplace";
