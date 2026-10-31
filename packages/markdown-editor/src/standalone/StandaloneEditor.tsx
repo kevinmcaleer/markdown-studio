@@ -21,6 +21,7 @@ import { slashCommands as defaultCommands, slashMenu, withInsertTexts, type Slas
 import { imageSizeMarkdown, type ImageSize } from "../imageSize";
 import { insertImages, smartPaste, type SmartPasteOptions } from "../smartPaste";
 import { cellCaretRect, inTable, tableNotes, tableRenderers, tableSteppers } from "../tableWidget";
+import { hiddenComments } from "../hiddenComments";
 import { cardPicturePicker } from "../cardsWidget";
 import { videoRenderers } from "../videosWidget";
 import { speechEditor } from "../speech/speechEditor";
@@ -249,6 +250,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
         : [],
       options.videoRenderer ? videoRenderers.of(options.videoRenderer) : [],
       options.tableNote ? tableNotes.of(options.tableNote) : [],
+      options.hiddenComments ? hiddenComments.of(options.hiddenComments) : [],
       options.tableStepper ? tableSteppers.of(options.tableStepper) : [],
       codeEditors.of(
         Object.fromEntries(Object.entries(options.codeEditors ?? {}).map(([language, mount]) => [language.toLowerCase(), mount])),

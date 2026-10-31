@@ -11,6 +11,7 @@ import type { MarkdownItInstance } from "../markdown";
 import type { LanguageRequest } from "../proofing/languageApi";
 import type { ProofLanguage } from "../proofing/speller";
 import type { InsertTexts, SlashCommand } from "../slashMenu";
+import type { HiddenComment } from "../hiddenComments";
 import type { TableNote, TableRenderer, TableStepper } from "../tableWidget";
 import type { VideoRenderer } from "../videosWidget";
 
@@ -207,6 +208,12 @@ export type MountOptions = {
    * are the host's to handle.
    */
   tableNote?: TableNote;
+  /**
+   * HTML comments to hide in the live view: the host's own markers, say. It's
+   * given each comment block's text (`<!--` to `-->`) and returns true to hide
+   * it. The Raw view still shows them; the writer's other comments stay.
+   */
+  hiddenComments?: HiddenComment;
   /**
    * Up and down buttons on whole-number table cells in the live view, shown
    * on hover or focus (Alt+Up and Alt+Down step a focused cell too): a Bill
