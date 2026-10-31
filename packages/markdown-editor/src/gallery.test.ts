@@ -17,7 +17,8 @@ describe("galleries", () => {
     expect(parseGalleryOpen("::: gallery lightbox  ")).toBe("lightbox");
     // None, or one we don't know, is a filmstrip.
     expect(parseGalleryOpen("::: gallery")).toBe("filmstrip");
-    expect(parseGalleryOpen("::: gallery carousel")).toBe("filmstrip");
+    expect(parseGalleryOpen("::: gallery carousel")).toBe("carousel");
+    expect(parseGalleryOpen("::: gallery slideshow")).toBe("filmstrip");
     expect(parseGalleryOpen("::: cards")).toBeNull();
     expect(parseGalleryOpen("text ::: gallery")).toBeNull();
   });
@@ -103,6 +104,83 @@ describe("galleries", () => {
     wireGallery(host.firstElementChild as HTMLElement, (images, i) => opened.push(images[i].src));
     host.querySelectorAll<HTMLAnchorElement>(".md-gallery-item")[1].click();
     expect(opened).toEqual(["/b.jpg"]);
+  });
+});
+
+describe("carousels", () => {
+  const carousel = (markdown = '![Front](/front.jpg)\n![Back](/back.jpg "The back")\n![Side](/side.jpg)') => {
+    const host = document.createElement("div");
+    host.innerHTML = galleryHtml("carousel", galleryImages(markdown));
+    return host.firstElementChild as HTMLElement;
+  };
+  const dots = (gallery: HTMLElement) => Array.from(gallery.querySelectorAll<HTMLButtonElement>(".md-gallery-dot"));
+  const active = (gallery: HTMLElement) => dots(gallery).findIndex((d) => d.classList.contains("is-active"));
+  const countdownEnds = (gallery: HTMLElement) =>
+    gallery.querySelector(".md-gallery-dot.is-active .md-gallery-dot-fill")?.dispatchEvent(new Event("animationend", { bubbles: true }));
+
+  it("draws each picture with its caption, a dot each and a pause button", () => {
+    const gallery = carousel();
+    expect(gallery.dataset.galleryLayout).toBe("carousel");
+    expect(gallery.querySelectorAll(".md-gallery-item")).toHaveLength(3);
+    expect(gallery.querySelector(".md-gallery-caption")?.textContent).toBe("Front");
+    expect(dots(gallery)).toHaveLength(3);
+    expect(gallery.querySelector(".md-gallery-play")?.getAttribute("aria-label")).toBe("Pause the slideshow");
+    // A picture on its own has nothing to move on to.
+    expect(carousel("![a](/a.jpg)").querySelector(".md-gallery-controls")).toBeNull();
+  });
+
+  it("moves on when the countdown ends, round to the first again", () => {
+    const gallery = carousel();
+    wireGallery(gallery);
+    expect(gallery.dataset.galleryWired).toBe("1");
+    expect(dots(gallery)[0].classList.contains("is-counting")).toBe(true);
+    countdownEnds(gallery);
+    expect(active(gallery)).toBe(1);
+    expect(gallery.querySelectorAll(".md-gallery-item")[1].classList.contains("is-active")).toBe(true);
+    expect(dots(gallery)[1].getAttribute("aria-current")).toBe("true");
+    countdownEnds(gallery);
+    countdownEnds(gallery);
+    expect(active(gallery)).toBe(0);
+  });
+
+  it("pauses and plays, and holds still while paused", () => {
+    const gallery = carousel();
+    wireGallery(gallery);
+    const play = gallery.querySelector<HTMLButtonElement>(".md-gallery-play")!;
+    play.click();
+    expect(gallery.classList.contains("is-paused")).toBe(true);
+    expect(play.getAttribute("aria-label")).toBe("Play the slideshow");
+    countdownEnds(gallery);
+    expect(active(gallery)).toBe(0);
+    // A dot picked while paused shows that picture and stays put.
+    dots(gallery)[2].click();
+    expect(active(gallery)).toBe(2);
+    expect(dots(gallery)[2].classList.contains("is-counting")).toBe(false);
+    play.click();
+    expect(gallery.classList.contains("is-paused")).toBe(false);
+    expect(dots(gallery)[2].classList.contains("is-counting")).toBe(true);
+  });
+
+  it("starts paused for people who ask for less motion", () => {
+    const original = window.matchMedia;
+    window.matchMedia = ((query: string) => ({ matches: query.includes("reduce"), media: query }) as MediaQueryList) as typeof window.matchMedia;
+    try {
+      const gallery = carousel();
+      wireGallery(gallery);
+      expect(gallery.classList.contains("is-paused")).toBe(true);
+      expect(dots(gallery)[0].classList.contains("is-counting")).toBe(false);
+    } finally {
+      window.matchMedia = original;
+    }
+  });
+
+  it("opens a picture in the viewer, pausing", () => {
+    const gallery = carousel();
+    const opened: string[] = [];
+    wireGallery(gallery, (images, i) => opened.push(images[i].src));
+    gallery.querySelectorAll<HTMLAnchorElement>(".md-gallery-item")[1].click();
+    expect(opened).toEqual(["/back.jpg"]);
+    expect(gallery.classList.contains("is-paused")).toBe(true);
   });
 });
 
