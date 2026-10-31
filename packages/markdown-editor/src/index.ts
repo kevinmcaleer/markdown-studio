@@ -115,6 +115,7 @@ export {
 } from "./videos";
 export { videoRenderers, type VideoRenderer } from "./videosWidget";
 export { imageCaption, imageCaptionPlugin, imageFigureClass } from "./imageCaption";
+export { tableWidthsPlugin, delimiterDashes, columnWidths, colgroupHtml, widthsToDashes, WIDTH_STEP } from "./tableWidths";
 export { imageSizePlugin, imageSizes, parseImageSize, imageSizeMarkdown, imageSizeClass, type ImageSize } from "./imageSize";
 export {
   parseOutline,

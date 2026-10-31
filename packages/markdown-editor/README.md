@@ -261,6 +261,26 @@ They write GFM's colons on the delimiter row (`:---`, `:---:`, `---:`), so any
 Markdown renderer aligns the column the same way. Picking the column's current
 alignment again sets it back to the default.
 
+### Table column widths
+
+Column widths stay plain GFM, the way Pandoc does it: each column's share of the
+table's width is its share of the dashes on the delimiter row (colons don't count).
+
+```markdown
+| Part | Notes |
+| ----- | --------------- |
+| Servo SG90 | Two needed, one per leg |
+```
+
+Here the columns are 5 and 15 dashes: 25% and 75%. When every column has the same
+number of dashes (`| --- | --- |`), nothing is set and the columns size as usual.
+In the live view, drag the edge between two columns to change their widths in 5%
+steps (one dash each, 20 a table); **Reset column widths** in a column's menu puts
+every column back to `---`. The preview draws widths as a `<colgroup>` on a
+`table.has-widths` (`tableWidthsPlugin` in `src/tableWidths.ts`). A page that renders
+the Markdown itself can do the same with `delimiterDashes()` and `columnWidths()`.
+Table formatters such as Prettier re-pad the dashes, which would reset the widths.
+
 ### Image grids
 
 A table whose cells hold images is a layout, so it shows as a borderless grid of
