@@ -365,6 +365,24 @@ describe("picking a block of cells", () => {
     view.destroy();
   });
 
+  it("keeps the handles on a dragged block, so one click deletes all its rows or columns", () => {
+    const view = pickView("| A | B | C |\n| --- | --- | --- |\n| 1 | x | p |\n| 2 | y | q |\n| 3 | z | r |\n");
+    dragAcross(view, [1, 0], [2, 1]);
+    expect(view.dom.querySelector(".cm-md-table")!.classList.contains("handles-pinned")).toBe(true);
+    // Hovering elsewhere doesn't move the handle off the block.
+    hoverCell(view, 3, 2);
+    view.dom.querySelector<HTMLElement>(".cm-md-table-rowhandle")!.click();
+    const rows = Array.from(view.dom.querySelectorAll<HTMLButtonElement>(".cm-md-table-menu button")).find((b) => b.textContent === "Delete 2 rows")!;
+    rows.click();
+    expect(view.state.doc.toString()).toBe("| A | B | C |\n| --- | --- | --- |\n| 3 | z | r |\n");
+    dragAcross(view, [0, 1], [1, 2]);
+    view.dom.querySelector<HTMLElement>(".cm-md-table-colhandle")!.click();
+    const cols = Array.from(view.dom.querySelectorAll<HTMLButtonElement>(".cm-md-table-menu button")).find((b) => b.textContent === "Delete 2 columns")!;
+    cols.click();
+    expect(view.state.doc.toString()).toBe("| A |\n| --- |\n| 3 |\n");
+    view.destroy();
+  });
+
   it("copies a block as tab-separated text", () => {
     const view = pickView();
     dragAcross(view, [0, 0], [1, 1]);

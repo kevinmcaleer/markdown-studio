@@ -433,6 +433,8 @@ class TableView {
   /** The block of cells picked (see tableSelection.ts), and the bar of actions over it. */
   private range: CellRange | null = null;
   private rangeBar: { dom: HTMLElement; buttons: Map<string, HTMLButtonElement> } | null = null;
+  /** Shift is held over the cells: the handles follow the mouse again, to Shift+click another row's or column's. */
+  private followShift = false;
   /** Clicking outside the table puts the block down. */
   private readonly outsideListener = (event: Event) => {
     if (this.range && !this.dom.contains(event.target as Node)) this.setRange(null);
@@ -482,6 +484,7 @@ class TableView {
     dom.addEventListener("mouseover", (e) => {
       const cell = (e.target as HTMLElement).closest<HTMLElement>("th, td");
       // With Shift held, the handles follow the mouse even while a menu is open, to Shift+click another.
+      this.followShift = e.shiftKey;
       if (cell && (!this.menu || e.shiftKey) && !this.drag) this.setHover(Number(cell.dataset.row), Number(cell.dataset.col));
     });
     dom.addEventListener("focusin", (e) => {
@@ -787,6 +790,27 @@ class TableView {
     this.rowHandle.style.top = `${box.top - base.top + box.height / 2}px`;
     this.placeGrips();
     this.placeStepper(row, col, cell, base);
+    this.pinHandles();
+  }
+
+  /**
+   * While a block is picked, the row and column handles stay on it (at the
+   * middle of its rows and of its columns) instead of following the mouse, so
+   * one click opens the menu for all its rows or columns.
+   */
+  private pinHandles() {
+    const pinned = !!this.range && !this.followShift;
+    this.dom.classList.toggle("handles-pinned", pinned);
+    if (!pinned) return;
+    const block = blockOf(this.range!);
+    const first = this.cell(block.top, block.left);
+    const last = this.cell(block.bottom, block.right);
+    if (!first || !last) return;
+    const base = this.dom.getBoundingClientRect();
+    const a = first.getBoundingClientRect();
+    const b = last.getBoundingClientRect();
+    this.colHandle.style.left = `${(a.left + b.right) / 2 - base.left}px`;
+    this.rowHandle.style.top = `${(a.top + b.bottom) / 2 - base.top}px`;
   }
 
   // ------------------------------------------------------------ number steppers
@@ -1701,6 +1725,7 @@ class TableView {
     } else this.dom.removeAttribute("tabindex");
     this.paint();
     this.updateRangeBar();
+    this.pinHandles();
   }
 
   /** Shades the picked cells. */
@@ -1722,8 +1747,11 @@ class TableView {
   private pickedBlock(axis: "row" | "col", index: number): Block | null {
     if (!this.range) return null;
     const block = blockOf(this.range);
-    if (axis === "row") return wholeRows(this.table, block) && block.bottom > block.top && index >= block.top && index <= block.bottom ? block : null;
-    return wholeColumns(this.table, block) && block.right > block.left && index >= block.left && index <= block.right ? block : null;
+    // Any block of several rows (or columns): their menu acts on the whole rows (or columns).
+    const lastRow = this.table.rows.length - 1;
+    const lastCol = this.table.align.length - 1;
+    if (axis === "row") return block.bottom > block.top && index >= block.top && index <= block.bottom ? { ...block, left: 0, right: lastCol } : null;
+    return block.right > block.left && index >= block.left && index <= block.right ? { ...block, top: 0, bottom: lastRow } : null;
   }
 
   /**
@@ -1745,7 +1773,13 @@ class TableView {
       this.setRange(this.line(axis, from, index));
       return;
     }
-    if (!this.pickedBlock(axis, index)) this.setRange(this.line(axis, index));
+    if (this.range && !this.followShift) {
+      // The handle is pinned to the picked block: its menu is for the block's rows (or columns).
+      const block = blockOf(this.range);
+      const at = axis === "row" ? block.top : block.left;
+      this.hover = axis === "row" ? { ...this.hover, row: at } : { ...this.hover, col: at };
+      if (!this.pickedBlock(axis, at)) this.setRange(this.line(axis, at));
+    } else if (!this.pickedBlock(axis, index)) this.setRange(this.line(axis, index));
     if (axis === "row") this.rowMenu();
     else this.columnMenu();
   }
