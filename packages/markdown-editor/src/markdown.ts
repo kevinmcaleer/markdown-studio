@@ -14,6 +14,7 @@ import { videosPlugin } from "./videos";
 import "./videos.css";
 import { imageGridPlugin } from "./imageGrid";
 import "./image-grid.css";
+import { imageCaptionPlugin } from "./imageCaption";
 import { imageSizePlugin } from "./imageSize";
 import "./image-sizes.css";
 import "./prose.css";
@@ -50,6 +51,7 @@ export function createMarkdownIt(configure?: (md: MarkdownItInstance) => Markdow
     .use(cardsPlugin)
     .use(videosPlugin)
     .use(imageSizePlugin)
+    .use(imageCaptionPlugin)
     .use(imageGridPlugin)
     .use(brTagPlugin)
     .use(cellHeadingPlugin);

@@ -69,11 +69,16 @@ export function imageRemoval(state: EditorState, image: ImageAt): { from: number
   return { from: line.from > 0 ? line.from - 1 : line.from, to: line.to };
 }
 
-/** A picture's alt text from its file name, for a picture picked without one. */
-const altFromUrl = (url: string) =>
-  decodeURIComponent(url.split(/[?#]/)[0].split("/").filter(Boolean).pop() ?? "")
-    .replace(/\.\w+$/, "")
-    .replace(/[-_]+/g, " ");
+/** A picture's alt text from its file name, for a picture picked without one. Left as the
+ *  file name, so it isn't taken for a caption someone wrote (imageCaption.ts). */
+const altFromUrl = (url: string) => {
+  const name = url.split(/[?#]/)[0].split("/").filter(Boolean).pop() ?? "";
+  try {
+    return decodeURIComponent(name).replace(/\.\w+$/, "");
+  } catch {
+    return name.replace(/\.\w+$/, "");
+  }
+};
 
 const open = StateEffect.define<number>();
 const close = StateEffect.define<null>();
@@ -149,7 +154,7 @@ function popover(view: EditorView, start: number): HTMLElement {
     dom.append(wrap);
     return input;
   };
-  const alt = row("Title", first?.alt ?? "", "What the picture shows");
+  const alt = row("Title", first?.alt ?? "", "A caption, shown under the picture");
   alt.spellcheck = true;
   const url = row("URL", first?.url ?? "", "https://… or /images/…");
   url.inputMode = "url";

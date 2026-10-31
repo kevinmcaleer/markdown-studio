@@ -17,7 +17,11 @@ describe("image sizes", () => {
   });
 
   it("renders the size as a class and drops the modifier", () => {
-    expect(renderMarkdown("![Chassis](/c.jpg){small}")).toBe('<p><img src="/c.jpg" alt="Chassis" class="image-small"></p>\n');
+    // On its own line with a title, it's a captioned figure (imageCaption.ts).
+    expect(renderMarkdown("![Chassis](/c.jpg){small}")).toBe(
+      '<figure class="image-figure image-figure-small"><img src="/c.jpg" alt="Chassis" class="image-small"><figcaption>Chassis</figcaption></figure>\n',
+    );
+    expect(renderMarkdown("![chassis](/c.jpg){small}")).toBe('<p><img src="/c.jpg" alt="chassis" class="image-small"></p>\n');
     expect(renderMarkdown("![A](/a.jpg){half} ![B](/b.jpg){half}")).toBe(
       '<p><img src="/a.jpg" alt="A" class="image-half"> <img src="/b.jpg" alt="B" class="image-half"></p>\n',
     );
