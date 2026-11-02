@@ -375,6 +375,46 @@ describe("table widget", () => {
   });
 });
 
+describe("the bar above a table", () => {
+  const doc = "| Part | Notes |\n| :--- | ------------: |\n| Servo | two |\n\nAfter\n";
+  const barButton = (view: EditorView, label: string) =>
+    Array.from(view.dom.querySelectorAll<HTMLButtonElement>(".cm-md-table-bar button")).find((b) => b.textContent === label || b.title === label)!;
+
+  it("switches the table to fit its content and back to full width, keeping the alignment", () => {
+    const view = tableView(doc);
+    const table = view.dom.querySelector<HTMLElement>(".cm-md-table")!;
+    expect(barButton(view, "Full width").getAttribute("aria-pressed")).toBe("true");
+    expect(table.classList.contains("fit")).toBe(false);
+    barButton(view, "Fit to content").click();
+    expect(view.state.doc.toString()).toContain("| :- | -: |");
+    expect(table.classList.contains("fit")).toBe(true);
+    expect(barButton(view, "Fit to content").getAttribute("aria-pressed")).toBe("true");
+    expect(table.querySelectorAll(".cm-md-table-grip").length).toBe(0);
+    barButton(view, "Full width").click();
+    expect(view.state.doc.toString()).toContain("| :--- | ---: |");
+    expect(table.classList.contains("fit")).toBe(false);
+  });
+
+  it("keeps a fitted table fitted when a column is added", () => {
+    const view = tableView("| a | b |\n| - | - |\n| 1 | 2 |\n");
+    view.dom.querySelector<HTMLButtonElement>(".cm-md-table-addcol")!.click();
+    expect(view.state.doc.toString()).toContain("| - | - | - |");
+  });
+
+  it("deletes the table", () => {
+    const view = tableView(doc);
+    barButton(view, "Delete table").click();
+    expect(view.state.doc.toString()).toBe("\nAfter\n");
+  });
+
+  it("has Copy as Markdown in its \u2026 menu", () => {
+    const view = tableView(doc);
+    barButton(view, "More table options").click();
+    const items = Array.from(view.dom.querySelectorAll<HTMLButtonElement>(".cm-md-table-menu [role=menuitem]")).map((b) => b.textContent);
+    expect(items).toEqual(["Copy as Markdown", "Reset column widths"]);
+  });
+});
+
 describe("picking a block of cells", () => {
   const doc = "| Part | Qty | Notes |\n| --- | --- | --- |\n| Servo | 2 | ears |\n| Pico | 1 | brain |\n";
 

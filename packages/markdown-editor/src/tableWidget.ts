@@ -10,7 +10,7 @@ import { hasLinkPopover, linkCard, linkForm, linkInText, type LinkAt } from "./f
 import { hasSelectionToolbar } from "./format/selectionToolbar";
 import { cellHasImage, isImageGrid } from "./imageGrid";
 import { renderCell } from "./markdown";
-import { columnWidths, fitColumnDashes, widthsToDashes } from "./tableWidths";
+import { columnWidths, fitColumnDashes, fitDashes, isFitTable, widthsToDashes } from "./tableWidths";
 import {
   alignBlock,
   blockAlign,
@@ -476,7 +476,12 @@ class TableView {
   private readonly rowHandle = button("cm-md-table-handle cm-md-table-rowhandle", "Row options");
   private readonly addCol = button("cm-md-table-add cm-md-table-addcol", "Add column");
   private readonly addRow = button("cm-md-table-add cm-md-table-addrow", "Add row");
-  private readonly more = button("cm-md-table-more", "Table options");
+  /** The bar that floats above the table while it's being edited: its width, a delete button and a "…" menu. */
+  private readonly bar = el("div", "cm-md-table-bar");
+  private readonly fullWidth = button("cm-md-table-bar-text", "Full width: the table fills the page");
+  private readonly fitWidth = button("cm-md-table-bar-text", "Fit to content: the table is only as wide as what's in it");
+  private readonly more = button("cm-md-table-more", "More table options");
+  private readonly remove = button("cm-md-table-remove", "Delete table");
   /** Up and down buttons on a number cell (see `tableStepper`), and the cell they're on. */
   private readonly stepper = el("div", "cm-md-table-stepper");
   private readonly stepUp = button("cm-md-table-step", "Increase (Alt+\u2191)");
@@ -513,6 +518,8 @@ class TableView {
   };
   /** Copy, cut and paste of a block: with nothing selected, they go to the document, not the table. */
   private readonly clipboardListener = (event: Event) => this.clipboard(event as ClipboardEvent);
+  /** Keeps the bar in sight while the page scrolls a long table under the toolbar. */
+  private readonly scrollListener = () => this.placeBar();
   private closeMenuListener = (event: Event) => {
     if (this.menu && !this.menu.contains(event.target as Node)) this.closeMenu();
   };
@@ -532,12 +539,22 @@ class TableView {
     dom.contentEditable = "false";
     this.addCol.innerHTML = this.addRow.innerHTML = plusIcon();
     this.more.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 8h.01M8 8h.01M12 8h.01"/></svg>';
+    this.remove.innerHTML = `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="${ICONS.delete}"/></svg>`;
+    this.fullWidth.textContent = "Full width";
+    this.fitWidth.textContent = "Fit to content";
+    const widths = el("div", "cm-md-table-bar-group");
+    widths.setAttribute("role", "group");
+    widths.setAttribute("aria-label", "Table width");
+    widths.append(this.fullWidth, this.fitWidth);
+    this.bar.setAttribute("role", "toolbar");
+    this.bar.setAttribute("aria-label", "Table");
+    this.bar.append(widths, el("span", "cm-md-table-bar-sep"), this.more, this.remove);
     this.colHandle.innerHTML = '<svg viewBox="0 0 16 8" aria-hidden="true"><path d="M4 4h.01M8 4h.01M12 4h.01"/></svg>';
     this.rowHandle.innerHTML = '<svg viewBox="0 0 8 16" aria-hidden="true"><path d="M4 4h.01M4 8h.01M4 12h.01"/></svg>';
     this.stepUp.innerHTML = '<svg viewBox="0 0 16 10" aria-hidden="true"><path d="M4 7l4-4 4 4"/></svg>';
     this.stepDown.innerHTML = '<svg viewBox="0 0 16 10" aria-hidden="true"><path d="M4 3l4 4 4-4"/></svg>';
     this.stepper.append(this.stepUp, this.stepDown);
-    dom.append(this.scroller, this.colHandle, this.rowHandle, this.addCol, this.addRow, this.more, this.stepper, this.action, this.preview);
+    dom.append(this.scroller, this.colHandle, this.rowHandle, this.addCol, this.addRow, this.bar, this.stepper, this.action, this.preview);
     this.render();
 
     // Clicking the drawing edits the table (its links aren't followed while editing).
@@ -670,6 +687,11 @@ class TableView {
     this.colHandle.addEventListener("pointerdown", (e) => this.startDrag(e, "col"));
     this.rowHandle.addEventListener("pointerdown", (e) => this.startDrag(e, "row"));
     this.more.addEventListener("click", () => this.tableMenu());
+    this.remove.addEventListener("click", () => this.deleteTable());
+    this.fullWidth.addEventListener("click", () => this.setFit(false));
+    this.fitWidth.addEventListener("click", () => this.setFit(true));
+    dom.addEventListener("focusin", () => this.placeBar());
+    document.addEventListener("scroll", this.scrollListener, true);
     this.stepUp.addEventListener("click", () => this.stepperCell && this.step(this.stepperCell.row, this.stepperCell.col, 1));
     this.stepDown.addEventListener("click", () => this.stepperCell && this.step(this.stepperCell.row, this.stepperCell.col, -1));
     // Keeps the caret where it is: the host's dialog, say, takes the focus itself.
@@ -711,6 +733,7 @@ class TableView {
     this.closeFormat();
     this.closeRangeBar();
     document.removeEventListener("selectionchange", this.selectionListener);
+    document.removeEventListener("scroll", this.scrollListener, true);
     document.removeEventListener("mousedown", this.outsideListener);
     for (const type of ["copy", "cut", "paste"]) document.removeEventListener(type, this.clipboardListener);
   }
@@ -790,7 +813,14 @@ class TableView {
       }
     }
     if (!this.resizing) setColumnWidths(table, columnWidths(this.table.dashes));
-    this.makeGrips(align.length);
+    // One dash per column: the table is only as wide as its content (a grid of images is a layout, always full).
+    const fit = !grid && isFitTable(this.table.dashes);
+    this.dom.classList.toggle("fit", fit);
+    this.fullWidth.setAttribute("aria-pressed", String(!fit));
+    this.fitWidth.setAttribute("aria-pressed", String(fit));
+    this.fullWidth.hidden = this.fitWidth.hidden = grid;
+    this.bar.querySelector<HTMLElement>(".cm-md-table-bar-sep")!.hidden = grid;
+    this.makeGrips(fit ? 0 : align.length);
     if (focused && !sameShape) this.focusCell(Math.min(focused.row, rows.length - 1), Math.min(focused.col, align.length - 1));
     this.setHover(Math.min(this.hover.row, rows.length - 1), Math.min(this.hover.col, align.length - 1));
     if (this.range) {
@@ -1855,6 +1885,7 @@ class TableView {
     this.paint();
   }
 
+  /** The bar's "…" menu. */
   private tableMenu() {
     this.openMenu(this.more, [
       {
@@ -1866,19 +1897,51 @@ class TableView {
         },
       },
       {
-        label: "Delete table",
-        icon: ICONS.delete,
-        run: () => {
-          this.closeMenu();
-          const range = tableAt(this.view.state, this.view.posAtDOM(this.dom));
-          if (!range) return;
-          const { doc } = this.view.state;
-          const to = range.to < doc.length ? range.to + 1 : range.to;
-          this.view.focus();
-          this.view.dispatch({ changes: { from: range.from, to }, selection: { anchor: range.from }, userEvent: "delete.table" });
-        },
+        label: "Reset column widths",
+        icon: ICONS.resetWidths,
+        disabled: !columnWidths(this.table.dashes),
+        run: () => this.resetWidths(),
       },
     ]);
+  }
+
+  private deleteTable() {
+    this.closeMenu();
+    const range = tableAt(this.view.state, this.view.posAtDOM(this.dom));
+    if (!range) return;
+    const { doc } = this.view.state;
+    const to = range.to < doc.length ? range.to + 1 : range.to;
+    this.view.focus();
+    this.view.dispatch({ changes: { from: range.from, to }, selection: { anchor: range.from }, userEvent: "delete.table" });
+  }
+
+  /**
+   * Full width (`| --- | --- |`) or fit to content (`| - | - |`, one dash a
+   * column). Either way any column widths go: they're shares of the full width.
+   */
+  private setFit(fit: boolean) {
+    if (fit === isFitTable(this.table.dashes)) return;
+    this.closeMenu();
+    const columns = this.table.align.length;
+    this.change((source) => setWidths(source, fit ? fitDashes(columns) : null));
+    this.placeBar();
+  }
+
+  /**
+   * The bar sits just above the table. When the top of a long table has
+   * scrolled up under the editor's toolbar, it stays in sight at the top of
+   * the room, as long as some of the table is still showing below it.
+   */
+  private placeBar() {
+    const { style } = this.bar;
+    style.transform = "";
+    if (!this.dom.matches(":focus-within") && !this.menu) return;
+    const box = this.dom.getBoundingClientRect();
+    const bar = this.bar.getBoundingClientRect();
+    if (!box.height || !bar.height) return;
+    const room = this.menuRoom();
+    const shift = Math.min(room.top - bar.top, box.bottom - bar.bottom - 48);
+    if (shift > 0) style.transform = `translateY(${shift}px)`;
   }
 
   // ------------------------------------------------------------ a block of cells
@@ -2263,8 +2326,9 @@ class TableView {
     }
     const base = this.dom.getBoundingClientRect();
     const box = anchor.getBoundingClientRect();
-    menu.style.left = `${Math.max(0, box.left - base.left)}px`;
     this.dom.append(menu);
+    // Under its button, but not past the table's right edge (the bar's buttons are at the right).
+    menu.style.left = `${Math.max(0, Math.min(box.left - base.left, base.width - menu.offsetWidth))}px`;
     // The menu can't rise above the editor's scroller (CodeMirror makes it a
     // stacking context that clips), so it opens upward when the room below,
     // above the sticky status bar, is too short and there's more room above.

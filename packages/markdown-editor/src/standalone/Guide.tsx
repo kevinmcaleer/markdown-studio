@@ -83,6 +83,8 @@ const TABLES: GuideSection = {
     ["| ----- | --------------- |", "Column widths: each column gets its share of the dashes, so 5 and 15 make 25% and 75%. Equal dashes leave the widths automatic"],
     ["Drag a column edge", "Sets the widths in 5% steps, one dash each; Reset column widths in the column menu clears them"],
     ["Double-click a column edge", "Fits the column on its left to its content, so its lines don't wrap where there's room"],
+    ["| - | - |", "One dash a column: the table is only as wide as its content, not the full width"],
+    ["Full width / Fit to content", "In the bar above a table you're editing, with Delete table and a ⋯ menu (Copy as Markdown, Reset column widths)"],
     ["| ## Title |", "A heading in a cell"],
     ["Shift+Enter", "A new line in a cell, saved as <br>"],
     ["Drag a handle", "Moves its row or column (or use Move in its menu)"],
