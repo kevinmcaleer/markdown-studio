@@ -378,7 +378,8 @@ export interface MarkdownEditor {
    * Puts a box the host fills (`block.element`) in the live view: in place of
    * the picture whose Markdown starts at `pos`, or after the line at `pos`.
    * It keeps its contents while the text changes, until `block.close()`.
-   * One at a time. kevsrobots edits its wiring diagram in one.
+   * One per `options.slot` ("default"): kevsrobots edits its wiring diagram
+   * in one and shows its Files & Models panel in another.
    */
   openBlock(pos: number, options?: HostBlockOptions): HostBlock;
   on<K extends keyof EditorEvents>(event: K, listener: (value: EditorEvents[K]) => void): () => void;
