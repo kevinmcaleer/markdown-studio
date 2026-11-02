@@ -311,6 +311,24 @@ rest in proportion, each keeping at least 10%. The preview draws widths as a `<c
 the Markdown itself can do the same with `delimiterDashes()` and `columnWidths()`.
 Table formatters such as Prettier re-pad the dashes, which would reset the widths.
 
+### Table width: full or fit to content
+
+A table fills the width by default. One dash in every delimiter cell fits it to its
+content instead, so it is only as wide as what's in it (colons still align):
+
+```markdown
+| Pin | Use |
+| - | :- |
+| GP0 | Servo |
+```
+
+While a table is being edited, a bar floats above it: **Full width** / **Fit to
+content** (they write `---` or `-` in every cell, and clear any column widths),
+a **⋯** menu (Copy as Markdown, Reset column widths) and **Delete table**. The
+preview gives a fitted table the `table-fit` class; a page that renders the
+Markdown itself can test the dashes with `isFitTable()`. Column edges aren't
+dragged on a fitted table: widths are shares of the full width.
+
 ### Image grids
 
 A table whose cells hold images is a layout, so it shows as a borderless grid of

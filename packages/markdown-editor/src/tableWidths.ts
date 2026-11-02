@@ -7,7 +7,9 @@ import type { MarkdownItInstance } from "./markdown";
 //   | ----- | --------------- |      ← 5 and 15 dashes: 25% and 75%
 //
 // When every cell has the same number of dashes (`| --- | --- |`, as tables
-// usually are) nothing is set and the browser sizes the columns as before.
+// usually are) nothing is set: the table fills the width and the browser sizes
+// the columns. One dash in every cell (`| - | - |`) fits the table to its
+// content instead: it is only as wide as what's in it (`isFitTable`).
 // Dragging a column's edge in the live view (tableWidget.ts) writes the dashes,
 // one per 5%; the preview (tableWidthsPlugin) and hosts that render the
 // Markdown themselves (kevsrobots' project pages) draw them as a <colgroup>.
@@ -32,6 +34,16 @@ export function columnWidths(dashes: number[] | undefined | null): number[] | nu
   return dashes.map((n) => (n / total) * 100);
 }
 
+/** One dash in every delimiter cell (`| - | - |`): the table is only as wide as its content. */
+export function isFitTable(dashes: number[] | undefined | null): boolean {
+  return !!dashes && dashes.length > 0 && dashes.every((n) => n === 1);
+}
+
+/** The dash counts that fit a table of `columns` columns to its content. */
+export function fitDashes(columns: number): number[] {
+  return Array.from({ length: columns }, () => 1);
+}
+
 /** A `<colgroup>` for the widths, or "" when there are none. */
 export function colgroupHtml(widths: number[] | null): string {
   if (!widths) return "";
@@ -51,6 +63,8 @@ export function widthsToDashes(widths: number[]): number[] {
   // Round so they add up to 100% (20 dashes), the biggest remainders first.
   const order = exact.map((n, i) => [n - Math.floor(n), i]).sort((a, b) => b[0] - a[0]);
   for (let k = 0, sum = dashes.reduce((a, b) => a + b, 0); sum < steps && k < order.length; k++, sum++) dashes[order[k][1]]++;
+  // Twenty or more equal columns would come out as one dash each, which reads as "fit to content".
+  if (isFitTable(dashes)) return dashes.map(() => 3);
   return dashes;
 }
 
@@ -87,7 +101,10 @@ export function fitColumnDashes(widths: number[], col: number, target: number): 
   return dashes;
 }
 
-/** markdown-it: a table whose delimiter row sets widths gets a `<colgroup>` and the `has-widths` class. */
+/**
+ * markdown-it: a table whose delimiter row sets widths gets a `<colgroup>` and
+ * the `has-widths` class; one with a single dash per cell gets `table-fit`.
+ */
 export function tableWidthsPlugin(md: MarkdownItInstance): void {
   md.core.ruler.push("table_widths", (state) => {
     const lines = state.src.split("\n");
@@ -100,6 +117,10 @@ export function tableWidthsPlugin(md: MarkdownItInstance): void {
       let columns = 0;
       for (let j = i + 1; j < tokens.length && tokens[j].type !== "tr_close"; j++) if (tokens[j].type === "th_open") columns++;
       if (!dashes || dashes.length !== columns) continue;
+      if (isFitTable(dashes)) {
+        token.attrJoin("class", "table-fit");
+        continue;
+      }
       const widths = columnWidths(dashes);
       if (!widths) continue;
       token.attrJoin("class", "has-widths");

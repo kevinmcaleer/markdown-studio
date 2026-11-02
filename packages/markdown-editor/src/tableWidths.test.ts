@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderMarkdown } from "./markdown";
-import { columnWidths, delimiterDashes, fitColumnDashes, widthsToDashes } from "./tableWidths";
+import { columnWidths, delimiterDashes, fitColumnDashes, isFitTable, widthsToDashes } from "./tableWidths";
 
 describe("delimiterDashes", () => {
   it("counts each cell's dashes, leaving out the colons", () => {
@@ -67,5 +67,26 @@ describe("fitColumnDashes", () => {
     const dashes = fitColumnDashes([10, 20, 30, 40], 2, 47);
     expect(dashes.reduce((a, b) => a + b, 0)).toBe(20);
     expect(dashes[2]).toBe(10);
+  });
+});
+
+describe("fit to content", () => {
+  it("is one dash in every cell, alignment colons aside", () => {
+    expect(isFitTable(delimiterDashes("| - | :-: | -: |"))).toBe(true);
+    expect(isFitTable(delimiterDashes("| --- | --- |"))).toBe(false);
+    expect(isFitTable(delimiterDashes("| - | -- |"))).toBe(false);
+    expect(isFitTable(null)).toBe(false);
+  });
+  it("sets no column widths", () => {
+    expect(columnWidths([1, 1, 1])).toBeNull();
+  });
+  it("never comes out of widths for many equal columns", () => {
+    expect(isFitTable(widthsToDashes(Array(20).fill(5)))).toBe(false);
+  });
+  it("gives the preview's table the table-fit class", () => {
+    const html = renderMarkdown("| a | b |\n| - | -: |\n| 1 | 2 |\n");
+    expect(html).toContain('class="table-fit"');
+    expect(html).not.toContain("<colgroup>");
+    expect(renderMarkdown("| a | b |\n| --- | --- |\n| 1 | 2 |\n")).not.toContain("table-fit");
   });
 });

@@ -1091,8 +1091,55 @@ const liveTheme = EditorView.theme({
   ".cm-md-table-add:hover": { background: "color-mix(in srgb, var(--text) 12%, transparent) !important" },
   ".cm-md-table-addrow": { left: "6px", right: "2.75rem", bottom: "0", height: "16px" },
   ".cm-md-table-addcol": { top: "0.85rem", bottom: "1.1rem", right: "1.9rem", width: "16px" },
-  ".cm-md-table-more": { top: "0.85rem", right: "0", width: "28px", height: "28px", borderRadius: "8px" },
+  // The bar above the table while it's being edited (or its "…" menu is open):
+  // Full width / Fit to content, the "…" menu and Delete table.
+  ".cm-md-table-bar": {
+    position: "absolute",
+    zIndex: "3",
+    right: "2.75rem",
+    bottom: "calc(100% - 0.85rem + 10px)",
+    display: "none",
+    alignItems: "center",
+    gap: "2px",
+    padding: "3px",
+    background: "var(--surface)",
+    border: "1px solid var(--border)",
+    borderRadius: "10px",
+    boxShadow: "0 4px 14px rgb(0 0 0 / 0.12)",
+    whiteSpace: "nowrap",
+  },
+  ".cm-md-table.editable:focus-within > .cm-md-table-bar, .cm-md-table.editable.menu-open > .cm-md-table-bar": { display: "flex" },
+  ".cm-md-table.dragging > .cm-md-table-bar, .cm-md-table.resizing > .cm-md-table-bar": { display: "none !important" },
+  ".cm-md-table .cm-md-table-bar button": {
+    position: "static",
+    opacity: "1",
+    height: "26px",
+    minWidth: "26px",
+    border: "0",
+    borderRadius: "7px",
+    background: "none",
+    color: "var(--muted)",
+  },
+  ".cm-md-table .cm-md-table-bar button:hover": { color: "var(--text)", backgroundColor: "var(--surface-2)" },
+  ".cm-md-table-bar-group": { display: "flex", gap: "2px", padding: "2px", borderRadius: "8px", backgroundColor: "var(--surface-2)" },
+  ".cm-md-table .cm-md-table-bar .cm-md-table-bar-text": { height: "22px", padding: "0 0.55rem", fontFamily: "inherit", fontSize: "0.78rem", fontWeight: "600" },
+  ".cm-md-table .cm-md-table-bar .cm-md-table-bar-text[aria-pressed=true]": {
+    color: "var(--text)",
+    backgroundColor: "var(--surface)",
+    boxShadow: "0 1px 2px rgb(0 0 0 / 0.12)",
+  },
+  ".cm-md-table-bar-sep": { width: "1px", alignSelf: "stretch", margin: "3px 2px", backgroundColor: "var(--border)" },
+  ".cm-md-table-bar [hidden]": { display: "none !important" },
   ".cm-md-table-more svg": { strokeWidth: "2.5 !important" },
+  ".cm-md-table .cm-md-table-bar .cm-md-table-remove:hover": { color: "var(--danger, #c0392b)" },
+  // Fit to content (one dash a column): the table, and its box with the add
+  // bars, are only as wide as what's in it. In a quote or callout the box keeps
+  // the quote's width, so only the table shrinks.
+  ".cm-md-table.fit:not(.cm-md-table-quoted)": { width: "fit-content", maxWidth: "100%", boxSizing: "border-box" },
+  ".cm-md-table.fit table": { width: "auto" },
+  // A fitted table is often narrower than its bar: the bar starts at its left edge instead.
+  ".cm-md-table.fit > .cm-md-table-bar": { right: "auto", left: "6px" },
+  ".cm-md-table.fit :is(th, td)": { minWidth: "2.5rem" },
   ".cm-md-table-menu": {
     position: "absolute",
     zIndex: "20",
