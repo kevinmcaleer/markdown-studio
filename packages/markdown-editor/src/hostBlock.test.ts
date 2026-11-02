@@ -61,6 +61,27 @@ describe("host blocks", () => {
     view.destroy();
   });
 
+  it("keeps blocks in different slots open together", () => {
+    const view = viewOf(DOC);
+    const wiring = openHostBlock(view, PIC);
+    const files = openHostBlock(view, view.state.doc.length, { slot: "files" });
+    files.element.textContent = "files";
+    expect(wiring.isOpen()).toBe(true);
+    expect(view.dom.querySelectorAll(".cm-host-block")).toHaveLength(2);
+    // Text before both moves both along.
+    view.dispatch({ changes: { from: 0, insert: "Intro\n\n" } });
+    expect(wiring.pos()).toBe(PIC + 7);
+    expect(files.pos()).toBe(view.state.doc.length);
+    // A new block in the files slot replaces only that one.
+    const again = openHostBlock(view, 3, { slot: "files" });
+    expect(files.isOpen()).toBe(false);
+    expect(wiring.isOpen()).toBe(true);
+    again.close();
+    expect(view.dom.querySelectorAll(".cm-host-block")).toHaveLength(1);
+    view.destroy();
+    expect(wiring.isOpen()).toBe(false);
+  });
+
   it("closes when the editor goes", () => {
     const view = viewOf(DOC);
     const onClose = vi.fn();
