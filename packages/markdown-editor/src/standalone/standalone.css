@@ -360,7 +360,8 @@
 .mde-popover {
   position: fixed;
   z-index: 9100;
-  max-height: min(32rem, 80vh);
+  /* --mde-popover-room: the room Popover.tsx found for it beside its button. */
+  max-height: min(32rem, 80vh, var(--mde-popover-room, 100vh));
   overflow-y: auto;
   padding: 0.75rem;
   background: var(--surface);
@@ -464,6 +465,20 @@
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
+}
+
+.mde-images > * {
+  flex-shrink: 0;
+}
+
+/* When the picker is short of room, the images scroll inside it so the size
+   chips, Upload and the URL box stay in view. */
+.mde-images > .mde-image-grid {
+  flex-shrink: 1;
+  min-height: 4rem;
+  overflow-y: auto;
+  grid-auto-rows: max-content;
+  padding: 1px;
 }
 
 .mde-image-grid {
