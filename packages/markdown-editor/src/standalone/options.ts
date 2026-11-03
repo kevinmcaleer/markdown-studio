@@ -12,6 +12,7 @@ import type { LanguageRequest } from "../proofing/languageApi";
 import type { ProofLanguage } from "../proofing/speller";
 import type { InsertTexts, SlashCommand } from "../slashMenu";
 import type { HiddenComment } from "../hiddenComments";
+import type { SectionRemove } from "../blockRemove";
 import type { HostBlock, HostBlockOptions } from "../hostBlock";
 import type { LayersOptions } from "../layersBlock";
 import type { TableCellAction, TableColumnAction, TableNote, TableRenderer, TableStepper } from "../tableWidget";
@@ -236,6 +237,15 @@ export type MountOptions = {
    */
   hiddenComments?: HiddenComment;
   /**
+   * Bins on section headings in the live view. It's given each top-level
+   * heading's text and level, and returns a name for its section ("Bill of
+   * Materials") to give it a bin, or null for none. The bin shows while the
+   * pointer is on the heading and takes out the heading and everything under
+   * it, up to the next heading at its level or above; an Undo note follows.
+   * (Galleries, cards, videos and drawn diagrams always have their own bins.)
+   */
+  sectionRemove?: SectionRemove;
+  /**
    * Page breaks (default off): a line holding only `<!-- page -->` is drawn
    * in the live view as a dashed rule naming the page it starts, and the "/"
    * menu gets a Page break command. For a host that publishes the text a
@@ -382,6 +392,14 @@ export interface MarkdownEditor {
    * in one and shows its Files & Models panel in another.
    */
   openBlock(pos: number, options?: HostBlockOptions): HostBlock;
+  /**
+   * Takes the lines from `from` to `to` (positions in them) out of the text,
+   * with a blank line next to them, and shows "`label` removed · Undo". For a
+   * host's own bins, so every bin behaves the same. False when nothing went.
+   */
+  removeBlock(from: number, to: number, label?: string): boolean;
+  /** Takes out the section headed on line `line` (1-based) the same way. */
+  removeSection(line: number, label: string): boolean;
   on<K extends keyof EditorEvents>(event: K, listener: (value: EditorEvents[K]) => void): () => void;
   off<K extends keyof EditorEvents>(event: K, listener: (value: EditorEvents[K]) => void): void;
   /** Takes the editor out of the page; a `<textarea>` it was mounted on comes back. */

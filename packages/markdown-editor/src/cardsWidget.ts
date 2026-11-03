@@ -4,6 +4,7 @@ import { cardHtml, cardMarkdown, cardsBlockMarkdown, findCardBlocks, parseCard, 
 import "./cards.css";
 import { renderMarkdown } from "./markdown";
 import { rememberedHeight, sizePictures, spacedBlock } from "./steadyScroll";
+import { binButton, removeBlock } from "./blockRemove";
 
 // In the live view a `::: cards` block (see cards.ts) shows as its cards, and
 // is built by pointing and clicking: click a card to give it a picture, a
@@ -205,7 +206,11 @@ class CardsWidget extends WidgetType {
         view.dispatch({ selection: { anchor: first.from }, scrollIntoView: true });
       });
       // In the bar rather than the grid, so the cards sit just as they will on the page.
-      bar.append(add, across, markdown);
+      const bin = binButton("Remove these cards", () => {
+        const block = blockAt(view, wrap);
+        if (block) removeBlock(view, block.from, block.to, "Cards");
+      }, "cm-md-bar-bin");
+      bar.append(add, across, markdown, bin);
       wrap.append(bar);
       // Buttons act without taking the caret out of wherever it was.
       wrap.addEventListener("mousedown", (e) => {

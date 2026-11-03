@@ -2,6 +2,7 @@ import { syntaxTree } from "@codemirror/language";
 import { Facet, StateField, Transaction, type EditorState, type Range } from "@codemirror/state";
 import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemirror/view";
 import { rememberedHeight, spacedBlock } from "./steadyScroll";
+import { binButton, removeWidgetBlock } from "./blockRemove";
 
 // In the live view, a fenced block in a language the host can draw (```mermaid,
 // say) shows as its drawing while the cursor is outside it, and as its source
@@ -185,12 +186,27 @@ class RenderedCodeWidget extends WidgetType {
       body.append(pre);
     };
     const render = view.state.facet(codeRenderers)[this.language];
+    // A bin in the corner, unless the host's drawing has its own (a button marked data-md-remove).
+    const bin = view.state.readOnly
+      ? null
+      : binButton(`Remove this ${this.language === "mermaid" ? "diagram" : `${this.language} block`}`, () => removeWidgetBlock(view, wrap, this.language === "mermaid" ? "Diagram" : "Block"), "cm-md-corner-bin");
+    const placeBin = () => {
+      if (!bin) return;
+      if (body.querySelector("[data-md-remove]")) bin.remove();
+      else if (!bin.isConnected) wrap.append(bin);
+    };
+    if (bin) wrap.classList.add("cm-md-has-corner-bin");
     try {
       Promise.resolve(render?.(this.source, body))
         .catch(failed)
-        .finally(() => view.requestMeasure());
+        .finally(() => {
+          placeBin();
+          view.requestMeasure();
+        });
+      placeBin();
     } catch (error) {
       failed(error);
+      placeBin();
     }
     // Clicking the drawing opens its source, with the cursor on the first line of code.
     wrap.addEventListener("mousedown", (event) => {

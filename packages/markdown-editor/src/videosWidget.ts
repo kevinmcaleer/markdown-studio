@@ -3,6 +3,7 @@ import { Decoration, EditorView, WidgetType, type DecorationSet } from "@codemir
 import { fillVideoTitles, findVideoBlocks, videosHtml, type Video } from "./videos";
 import "./videos.css";
 import { rememberedHeight, spacedBlock } from "./steadyScroll";
+import { binButton, removeWidgetBlock } from "./blockRemove";
 
 // In the live view a `::: videos` block (see videos.ts) shows as its cards
 // while the cursor is outside it, and as its lines once the cursor moves in,
@@ -66,6 +67,17 @@ class VideosWidget extends WidgetType {
       view.focus();
       view.dispatch({ selection: { anchor: first.from }, scrollIntoView: true });
     });
+    if (!view.state.readOnly) {
+      // A bar like the gallery's: what it is, and its bin.
+      wrap.classList.add("editable");
+      const bar = document.createElement("div");
+      bar.className = "cm-md-videos-bar";
+      const label = document.createElement("span");
+      label.className = "cm-md-videos-label";
+      label.textContent = "Videos";
+      bar.append(label, binButton("Remove these videos", () => removeWidgetBlock(view, wrap, "Videos")));
+      wrap.prepend(bar);
+    }
     return spacedBlock(wrap, this.key);
   }
   ignoreEvent() {
@@ -116,6 +128,23 @@ export const videosTheme = EditorView.theme({
     whiteSpace: "normal",
   },
   ".cm-md-videos:hover": { borderColor: "var(--muted)" },
+  ".cm-md-videos.editable": { position: "relative", paddingTop: "2.4rem" },
+  ".cm-md-videos-bar": {
+    position: "absolute",
+    top: "0.45rem",
+    left: "0.5rem",
+    right: "0.5rem",
+    display: "flex",
+    alignItems: "center",
+    gap: "0.5rem",
+    fontFamily: "var(--font-ui, inherit)",
+    fontSize: "0.8rem",
+    color: "var(--muted)",
+    opacity: "0.55",
+    transition: "opacity 0.12s",
+  },
+  ".cm-md-videos:hover .cm-md-videos-bar, .cm-md-videos:focus-within .cm-md-videos-bar": { opacity: "1" },
+  ".cm-md-videos-label": { fontWeight: "600", letterSpacing: "0.02em", marginRight: "auto" },
   ".cm-md-videos .md-videos": { margin: "0" },
   ".cm-line.cm-md-videos-line": { backgroundColor: "rgb(var(--gallery-tint, 120 120 120) / 0.07)", paddingLeft: "0.75rem", paddingRight: "0.75rem" },
   ".cm-line.cm-md-videos-first": { borderTopLeftRadius: "8px", borderTopRightRadius: "8px", paddingTop: "0.3em", color: "var(--muted)" },

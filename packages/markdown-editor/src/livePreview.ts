@@ -10,6 +10,7 @@ import { copyText } from "./clipboard";
 import "./image-sizes.css";
 import { imageSizeClass, imageSizeMarkdown, imageSizes, parseImageSize, type ImageSize } from "./imageSize";
 import { renderedCodeField, renderedCodeTheme } from "./codeRenderers";
+import { binTheme, sectionBinsField } from "./blockRemove";
 import { cardsField, cardsTheme, openCardBlocks } from "./cardsWidget";
 import { galleryField, galleryTheme, openGalleryBlocks } from "./galleryWidget";
 import { videosField, videosTheme } from "./videosWidget";
@@ -1197,6 +1198,7 @@ export function livePreview(): Extension {
     galleryField,
     cardsField,
     videosField,
+    sectionBinsField,
     linkClicks,
     imagePopover(),
     liveTheme,
@@ -1205,5 +1207,6 @@ export function livePreview(): Extension {
     cardsTheme,
     videosTheme,
     pageBreaksTheme,
+    binTheme,
   ];
 }
