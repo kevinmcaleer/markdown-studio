@@ -5,6 +5,7 @@ import { EditorView } from "@codemirror/view";
 import { describe, expect, it } from "vitest";
 import { cardsField, cardsTheme } from "./cardsWidget";
 import { galleryField, galleryTheme } from "./galleryWidget";
+import { hostBlocks, openHostBlock } from "./hostBlock";
 import { videosField, videosTheme } from "./videosWidget";
 
 // CodeMirror measures a block widget by its border box. A margin on the
@@ -36,4 +37,20 @@ describe("block widgets' spacing", () => {
       view.destroy();
     });
   }
+});
+
+describe("host blocks' spacing", () => {
+  it("spaces a host block with padding and keeps the host's margins inside it", () => {
+    const state = EditorState.create({ doc: "# Files\n\nText\n\n# Next\nUnder", extensions: [markdown({ base: markdownLanguage }), hostBlocks()] });
+    const view = new EditorView({ state, parent: document.body });
+    const block = openHostBlock(view, view.state.doc.line(3).from, { slot: "files" });
+    const el = block.element;
+    expect(el.parentElement).toBe(view.contentDOM);
+    const style = getComputedStyle(el);
+    for (const side of ["marginTop", "marginBottom"] as const) expect(["", "0px"]).toContain(style[side]);
+    expect(style.paddingTop).not.toMatch(/^(0px)?$/);
+    // A child's margin would collapse out through the box without this.
+    expect(style.display).toBe("flow-root");
+    view.destroy();
+  });
 });
