@@ -82,6 +82,7 @@ export { useProofing, type Proofing } from "./proofing/useProofing";
 export { configureLanguageApi, fetchLanguageApi, type LanguageRequest } from "./proofing/languageApi";
 export { setDictionaryBase } from "./proofing/dictionaryUrls";
 export { useWritingLint } from "./lint/useWritingLint";
+export { htmlImages, findHtmlImages, imgTagToMarkdown, convertHtmlImages, type HtmlImage } from "./htmlImages";
 
 // ---------------------------------------------------------------- speech
 export { speechEditor } from "./speech/speechEditor";

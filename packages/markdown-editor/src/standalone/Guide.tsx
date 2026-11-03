@@ -48,6 +48,7 @@ const PICTURES: GuideSection = {
     ["![alt](…){half}", "Half the size"],
     ["![alt](…){cover}", "A full-width banner, cropped to fit"],
     ["![alt](…){small}", "A quarter of the size"],
+    ["<img src=\"…\" width=\"500\">", "HTML pictures (the way GitHub writes them) are underlined and listed in the hints: Change to Markdown, or Fix all, writes them as ![alt](…) with the nearest size"],
     ["| ![a](…) | ![b](…) |", "A table of pictures shows as a grid of cards; text beside a picture is its caption"],
     ["::: gallery filmstrip", "A gallery of the picture lines under it, up to a line of :::, in their order (also bento, lightbox, or carousel: one picture at a time, moving on by itself with a pause button). Add pictures in its bar; hover a picture to move or remove it, or drag it into place"],
     ["::: cards", "Cards side by side: each a picture line, a ## title and some words, with a line of --- between cards and ::: to end (::: cards 3 sets three across). Or type /cards and click to fill them in"],
