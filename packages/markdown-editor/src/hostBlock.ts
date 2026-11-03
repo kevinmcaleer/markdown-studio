@@ -164,8 +164,20 @@ export function openHostBlock(view: EditorView, pos: number, options: HostBlockO
   };
 }
 
+// Spaced with padding, never margin: CodeMirror measures a block widget by its
+// border box, so a margin (its own, or a child's that collapses through it)
+// put every line below the block that much lower than CodeMirror thought,
+// and clicks and the arrow keys landed a line or two down. flow-root keeps
+// the host's own margins inside the box.
 const theme = EditorView.theme({
-  ".cm-host-block": { margin: "0.5rem 0 1rem", whiteSpace: "normal", cursor: "default", fontFamily: "var(--font-sans, system-ui)" },
+  ".cm-host-block": {
+    display: "flow-root",
+    margin: "0",
+    padding: "0.5rem 0 1rem",
+    whiteSpace: "normal",
+    cursor: "default",
+    fontFamily: "var(--font-sans, system-ui)",
+  },
 });
 
 // One extension, so redrawing the editor's extensions keeps an open block.
