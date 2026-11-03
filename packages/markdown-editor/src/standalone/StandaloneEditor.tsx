@@ -24,6 +24,7 @@ import { insertImages, smartPaste, type SmartPasteOptions } from "../smartPaste"
 import { cellCaretRect, inTable, tableCellActions, tableColumnActions, tableNotes, tableRenderers, tableSteppers } from "../tableWidget";
 import { hiddenComments } from "../hiddenComments";
 import { pageBreakCommand, pageBreaksOn } from "../pageBreaks";
+import { sectionRemovers } from "../blockRemove";
 import { completeTodo, findTodos, todoMarks, type Todo } from "../todos";
 import { cardPicturePicker } from "../cardsWidget";
 import { hostBlocks } from "../hostBlock";
@@ -307,6 +308,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
       options.tableNote ? tableNotes.of(options.tableNote) : [],
       options.hiddenComments ? hiddenComments.of(options.hiddenComments) : [],
       options.pageBreaks ? pageBreaksOn.of(true) : [],
+      options.sectionRemove ? sectionRemovers.of(options.sectionRemove) : [],
       todosOn ? todoMarks : [],
       options.tableStepper ? tableSteppers.of(options.tableStepper) : [],
       options.tableCellAction ? tableCellActions.of(options.tableCellAction) : [],

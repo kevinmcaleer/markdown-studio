@@ -14,6 +14,7 @@ import {
 import "./gallery.css";
 import { imageMarkdown } from "./imagePopover";
 import { rememberedHeight, spacedBlock } from "./steadyScroll";
+import { binButton, removeBlock } from "./blockRemove";
 
 // In the live view a `::: gallery` block (see gallery.ts) shows as its
 // gallery, and is managed by pointing and clicking: "Add pictures" in its bar
@@ -171,7 +172,11 @@ class GalleryWidget extends WidgetType {
       view.focus();
       view.dispatch({ selection: { anchor: first.from }, scrollIntoView: true });
     });
-    bar.append(addButton, layouts, markdown);
+    const bin = binButton("Remove this gallery (the pictures stay in your uploads)", () => {
+      const block = blockAt(view, wrap);
+      if (block) removeBlock(view, block.from, block.to, "Gallery");
+    }, "cm-md-bar-bin");
+    bar.append(addButton, layouts, markdown, bin);
     wrap.append(bar);
 
     // Each picture: move it left or right, or remove it; or drag it.

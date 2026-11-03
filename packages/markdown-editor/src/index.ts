@@ -61,6 +61,7 @@ export {
   type TableColumnOption,
 } from "./tableWidget";
 export { hiddenComments, hideComments, type HiddenComment } from "./hiddenComments";
+export { binButton, binSvg, blockRemoval, removeBlock, removeSection, sectionEnd, sectionRemovers, showUndoNote, type SectionRemove } from "./blockRemove";
 export { pageBreaks, pageBreaksOn, pageBreakCommand, isPageBreak, PAGE_BREAK } from "./pageBreaks";
 export { findTodos, completeTodo, todoMarks, type Todo } from "./todos";
 export { slashMenu, slashCommands, filterCommands, applyCommand, withInsertTexts, type SlashCommand, type InsertTexts } from "./slashMenu";
