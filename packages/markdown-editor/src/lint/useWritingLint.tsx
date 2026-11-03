@@ -2,6 +2,7 @@ import { EditorSelection } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { applyFix } from "../diagnostics";
+import { convertHtmlImages, htmlImages, type HtmlImage } from "../htmlImages";
 import { RULES, type LintRule, type Readability } from "./rules";
 import { setLint, writingLint, type LintReport, type LintSettings } from "./writingLint";
 import "./lint.css";
@@ -66,8 +67,12 @@ export function useWritingLint(hostHints: EditorHint[] = [], skip: LintRule[] = 
   const current = useRef(settings);
   current.current = settings;
 
+  // HTML pictures (`<img src=…>`, as GitHub writes them) are always looked
+  // for, writing hints on or off: they're listed above the hints with a fix-all.
+  const [htmlImgs, setHtmlImgs] = useState<HtmlImage[]>([]);
+
   // Built once: the settings go in by effect, so toggling never rebuilds the editor.
-  const extensions = useMemo(() => [writingLint(setReport)], []);
+  const extensions = useMemo(() => [writingLint(setReport), htmlImages(setHtmlImgs)], []);
 
   const onReady = useCallback((v: EditorView) => {
     view.current = v;
@@ -99,7 +104,23 @@ export function useWritingLint(hostHints: EditorHint[] = [], skip: LintRule[] = 
     if (view.current) applyFix(view.current, f);
   }, []);
 
-  const status = <LintStatus rules={rules} settings={settings} report={settings.on ? report : null} hostHints={hostHints} onToggle={toggle} onToggleRule={toggleRule} onJump={jump} onFix={fix} />;
+  const allHints = useMemo(() => {
+    const pictures = htmlImgs.reduce((n, f) => n + f.count, 0);
+    if (!pictures) return hostHints;
+    const first = htmlImgs[0];
+    const hint: EditorHint = {
+      id: "html-images",
+      title: pictures === 1 ? "1 picture written in HTML" : `${pictures} pictures written in HTML`,
+      detail: "<img> tags (the way GitHub writes pictures) show as code here. As Markdown they show as pictures, with sizes and captions.",
+      actions: [
+        { label: pictures === 1 ? "Change to Markdown" : `Fix all ${pictures}`, run: () => view.current && convertHtmlImages(view.current) },
+        { label: pictures === 1 ? "Show it" : "Show the first", run: () => jump(first.from, first.to) },
+      ],
+    };
+    return [hint, ...hostHints];
+  }, [htmlImgs, hostHints, jump]);
+
+  const status = <LintStatus rules={rules} settings={settings} report={settings.on ? report : null} hostHints={allHints} onToggle={toggle} onToggleRule={toggleRule} onJump={jump} onFix={fix} />;
   return { extensions, onReady, status };
 }
 

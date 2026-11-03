@@ -9,9 +9,16 @@ import { Decoration, EditorView, hoverTooltip, type DecorationSet } from "@codem
 // clicks a fix, which is an ordinary editor transaction.
 
 /** Who found it. Each look is set in the theme below, so marks never clash. */
-export type DiagnosticSource = "lint" | "spelling" | "grammar";
+export type DiagnosticSource = "lint" | "spelling" | "grammar" | "markup";
 
-export type DiagnosticFix = { label: string; from: number; to: number; insert: string };
+export type DiagnosticFix = {
+  label: string;
+  from: number;
+  to: number;
+  insert: string;
+  /** Makes the change itself, worked out afresh from the text when clicked (a "fix all", say). */
+  apply?: (view: EditorView) => void;
+};
 
 /**
  * A fix that's worked out when it's clicked, like rewording the whole
@@ -84,6 +91,7 @@ const marks: Record<DiagnosticSource, Decoration> = {
   lint: Decoration.mark({ class: "cm-diag cm-diag-lint" }),
   spelling: Decoration.mark({ class: "cm-diag cm-diag-spelling" }),
   grammar: Decoration.mark({ class: "cm-diag cm-diag-grammar" }),
+  markup: Decoration.mark({ class: "cm-diag cm-diag-lint cm-diag-markup" }),
 };
 
 function decorate(sets: Sets): DecorationSet {
@@ -93,10 +101,10 @@ function decorate(sets: Sets): DecorationSet {
   return Decoration.set(ranges, true);
 }
 
-/** Everything at `pos`, spelling first, then grammar, then lint. */
+/** Everything at `pos`, spelling first, then grammar, then lint, then markup. */
 export function diagnosticsAt(state: EditorState, pos: number): Diagnostic[] {
   const sets = state.field(diagnosticsField, false) ?? {};
-  const order: DiagnosticSource[] = ["spelling", "grammar", "lint"];
+  const order: DiagnosticSource[] = ["spelling", "grammar", "lint", "markup"];
   return order.flatMap((s) => (sets[s] ?? []).filter((d) => d.from <= pos && pos <= d.to));
 }
 
@@ -106,6 +114,11 @@ export function diagnosticsOf(state: EditorState, source: DiagnosticSource): Dia
 }
 
 export function applyFix(view: EditorView, fix: DiagnosticFix) {
+  if (fix.apply) {
+    fix.apply(view);
+    view.focus();
+    return;
+  }
   view.dispatch({ changes: { from: fix.from, to: fix.to, insert: fix.insert }, userEvent: "input.fix" });
   view.focus();
 }
