@@ -7,7 +7,7 @@
 //
 // This module and three.js load only when a scene is opened.
 
-import { Box3 as Bounds, BufferAttribute, BufferGeometry, DoubleSide, Euler, Line, LineBasicMaterial, Matrix4, Mesh, MeshBasicMaterial, Object3D, OrthographicCamera, Quaternion, Raycaster, Vector2, Vector3 } from "three";
+import { Box3 as Bounds, BufferAttribute, BufferGeometry, DoubleSide, Euler, Line, LineBasicMaterial, Matrix4, Mesh, MeshBasicMaterial, Object3D, OrthographicCamera, Plane, Quaternion, Raycaster, Vector2, Vector3 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { icon } from "../icons";
@@ -244,6 +244,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         if (closed) return;
         art.draw(camera, viewW, viewH, Math.min(2, window.devicePixelRatio || 1));
         placeSnaps();
+        placeDial();
         viewCube.sync(camera.quaternion);
         viewCube.render();
       });
@@ -786,6 +787,9 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         if (!l) byParent.set(key, (l = []));
         l.push(p);
       }
+      // Joints undone or removed leave the explode slider's joints.
+      explodeSet = explodeSet.filter(id => partById(id)?.parent);
+      if (!explodeSet.includes(explodeOpen)) explodeOpen = explodeSet[explodeSet.length - 1] || "";
       const lit = highlightedParts(scene.parts);
       const row = (p: ScenePart, depth: number): string => {
         const m = models.get(p.id);
@@ -796,15 +800,17 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         const f = Math.round(explodeOf(p, scene.explode) * 100);
         const broken = m instanceof Error;
         const parent = p.parent ? partById(p.parent) : undefined;
-        const joint = parent ? `<li class="lyr-scene-row lyr-scene-joint-row${shownJoint === p.id ? " lyr-on" : ""}" style="--depth:${depth}">
-              <button type="button" class="lyr-scene-name" data-joint="${esc(p.id)}" title="Show where they join">${icon("link", 14)}<span>${esc(p.joint?.point && p.joint.type === "revolute" ? "Turns on" : p.joint?.point && p.joint.type === "prismatic" ? "Slides on" : "Joint to")} ${esc(parent.name)}</span></button>
-              <button type="button" class="lyr-btn lyr-icon-btn${ownExplode ? " lyr-on" : ""}" data-joint-explode="${esc(p.id)}" title="${ownExplode ? `Explodes ${f}% on its own` : "Explode just this joint"}" aria-label="Explode the joint of ${esc(p.name)}" aria-expanded="${explodeOpen === p.id}">${icon("expand", 16)}</button>
+        const picked = explodeSet.includes(p.id);
+        const many = explodeSet.length > 1;
+        const joint = parent ? `<li class="lyr-scene-row lyr-scene-joint-row${shownJoint === p.id ? " lyr-on" : ""}${picked && many ? " lyr-picked" : ""}" style="--depth:${depth}">
+              <button type="button" class="lyr-scene-name" data-joint="${esc(p.id)}" title="Show where they join. ⌘ or Shift-click to pick several joints and explode them together">${icon("link", 14)}<span>${esc(p.joint?.point && p.joint.type === "revolute" ? "Turns on" : p.joint?.point && p.joint.type === "prismatic" ? "Slides on" : "Joint to")} ${esc(parent.name)}</span></button>
+              <button type="button" class="lyr-btn lyr-icon-btn${ownExplode ? " lyr-on" : ""}" data-joint-explode="${esc(p.id)}" title="${ownExplode ? `Explodes ${f}% on its own` : "Explode just this joint"} (⌘ or Shift-click to add more joints)" aria-label="Explode the joint of ${esc(p.name)}" aria-expanded="${picked}">${icon("expand", 16)}</button>
               <button type="button" class="lyr-btn lyr-icon-btn" data-rejoin="${esc(p.id)}" title="Change the joint: pick the two faces again" aria-label="Change the joint of ${esc(p.name)}">${icon("pencil", 16)}</button>
               <button type="button" class="lyr-btn lyr-icon-btn" data-unjoin="${esc(p.id)}" title="Remove the joint (the part stays where it is)" aria-label="Remove the joint of ${esc(p.name)}">${icon("unlink", 16)}</button>
-            </li>${explodeOpen === p.id ? `<li class="lyr-scene-row lyr-scene-joint-explode" style="--depth:${depth}" data-explode-for="${esc(p.id)}">
+            </li>${explodeOpen === p.id ? `${many ? `<li class="lyr-scene-row lyr-scene-joint-explode-count" style="--depth:${depth}">${explodeSet.length} joints</li>` : ""}<li class="lyr-scene-row lyr-scene-joint-explode" style="--depth:${depth}" data-explode-for="${esc(p.id)}">
               <input type="range" min="0" max="100" step="1" value="${f}" data-joint-explode-range aria-label="How far this joint comes apart, per cent">
               <input type="number" class="lyr-scene-explode-num" min="0" max="100" step="1" value="${f}" data-joint-explode-num aria-label="How far this joint comes apart, per cent"><span class="lyr-scene-explode-unit">%</span>
-              <button type="button" class="lyr-btn lyr-icon-btn" data-joint-explode-reset="${esc(p.id)}" title="Follow the main Explode slider again" aria-label="Follow the main Explode slider"${ownExplode ? "" : " disabled"}>${icon("rotate", 16)}</button>
+              <button type="button" class="lyr-btn lyr-icon-btn" data-joint-explode-reset="${esc(p.id)}" title="Follow the main Explode slider again" aria-label="Follow the main Explode slider"${explodeSet.some(id => partById(id)?.explode !== undefined) ? "" : " disabled"}>${icon("rotate", 16)}</button>
             </li>` : ""}` : "";
         return `${joint}<li class="lyr-scene-row${p.id === selectedId && !shownJoint ? " lyr-on" : ""}${p.hidden ? " lyr-off" : ""}" data-id="${esc(p.id)}" style="--depth:${depth}">
               <button type="button" class="lyr-scene-name" data-pick="${esc(p.id)}" title="${broken ? "Its model couldn't be loaded" : "Select"}">${icon("cube", 14)}<span>${esc(p.name)}</span>${broken ? `<em>missing</em>` : ""}</button>
@@ -869,6 +875,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         const off = d.pick === selectedId && !shownJoint;
         select(off ? "" : d.pick);
         if (!off) zoomTo(d.pick, false);
+      } else if (d.joint && (e.shiftKey || e.metaKey || e.ctrlKey)) {
+        pickExplode(d.joint, true);
       } else if (d.joint) {
         const off = shownJoint === d.joint;
         showJoint(off ? "" : d.joint);
@@ -881,13 +889,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         const p = partById(d.unjoin);
         if (p) unjoin(p);
       } else if (d.jointExplode) {
-        explodeOpen = explodeOpen === d.jointExplode ? "" : d.jointExplode;
-        renderList();
-        if (explodeOpen) list.querySelector<HTMLInputElement>("[data-joint-explode-num]")?.focus();
+        pickExplode(d.jointExplode, e.shiftKey || e.metaKey || e.ctrlKey);
       } else if (d.jointExplodeReset) {
-        const p = partById(d.jointExplodeReset);
-        if (p && p.explode !== undefined) {
-          delete p.explode;
+        const ps = explodeSet.map(partById).filter((x): x is ScenePart => !!x && x.explode !== undefined);
+        if (ps.length) {
+          ps.forEach(x => delete x.explode);
           follow();
           commit();
           renderList();
@@ -899,7 +905,20 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       else if (d.remove) removePart(d.remove);
     });
 
-    // A joint's own explode, from its row's slider or number.
+    /**
+     * Opens a joint's explode slider, or with `add` (⌘ or Shift held) adds
+     * it to the joints the slider sets, or takes it out again.
+     */
+    function pickExplode(id: string, add: boolean): void {
+      if (add) {
+        explodeSet = explodeSet.includes(id) ? explodeSet.filter(x => x !== id) : [...explodeSet, id];
+      } else explodeSet = explodeSet.length === 1 && explodeSet[0] === id ? [] : [id];
+      explodeOpen = explodeSet.includes(id) ? id : explodeSet[explodeSet.length - 1] || "";
+      renderList();
+      if (explodeOpen) list.querySelector<HTMLInputElement>("[data-joint-explode-num]")?.focus();
+    }
+
+    // A joint's own explode (every picked joint's), from its row's slider or number.
     list.addEventListener("input", e => {
       const t = e.target as HTMLInputElement;
       const rowEl = t.closest<HTMLElement>("[data-explode-for]");
@@ -908,13 +927,16 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const v = Number(t.value);
       if (t.value === "" || !Number.isFinite(v)) return;
       const pc = Math.max(0, Math.min(100, Math.round(v)));
-      p.explode = pc / 100;
+      const all = explodeSet.map(partById).filter((x): x is ScenePart => !!x);
+      for (const x of all.length ? all : [p]) x.explode = pc / 100;
       const other = rowEl.querySelector<HTMLInputElement>(t.matches("[data-joint-explode-range]") ? "[data-joint-explode-num]" : "[data-joint-explode-range]");
       if (other) other.value = String(pc);
       rowEl.querySelector<HTMLButtonElement>("[data-joint-explode-reset]")!.disabled = false;
-      const btn = list.querySelector<HTMLElement>(`[data-joint-explode="${CSS.escape(p.id)}"]`);
-      btn?.classList.add("lyr-on");
-      if (btn) btn.title = `Explodes ${pc}% on its own`;
+      for (const x of all.length ? all : [p]) {
+        const btn = list.querySelector<HTMLElement>(`[data-joint-explode="${CSS.escape(x.id)}"]`);
+        btn?.classList.add("lyr-on");
+        if (btn) btn.title = `Explodes ${pc}% on its own`;
+      }
       follow();
     });
     list.addEventListener("change", e => {
@@ -1369,6 +1391,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     let shownJoint = "";
     /** The joint whose own explode slider is open in the list. */
     let explodeOpen = "";
+    /** The joints the open explode slider sets (⌘ or Shift-click adds more). */
+    let explodeSet: string[] = [];
 
     // While joining, the face under the pointer is tinted and its snap
     // points shown: its middle, corners and edge middles, the centres of
@@ -1458,6 +1482,160 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     const snapLayer = document.createElement("div");
     snapLayer.className = "lyr-scene-snaps";
     frameEl.appendChild(snapLayer);
+
+    // ------------------------------------------------------------ the angle dial
+
+    // While the joint dialog is open, a dial round the joint turns the part
+    // about the joint's normal (its Spin, or a turning joint's Angle), as
+    // Fusion's does: drag the handle or the ring, or type the angle.
+    const dialEl = document.createElement("div");
+    dialEl.className = "lyr-scene-dial";
+    dialEl.hidden = true;
+    dialEl.innerHTML = `<svg>
+        <path class="lyr-dial-limits"></path>
+        <path class="lyr-dial-ring"></path>
+        <path class="lyr-dial-sweep"></path>
+        <line class="lyr-dial-zero"></line>
+        <path class="lyr-dial-hit"></path>
+        <circle class="lyr-dial-handle" r="7"></circle>
+      </svg>
+      <label class="lyr-dial-field" title="The angle about the joint. Drag the dial (Shift for 15° steps) or type it.">
+        <input type="number" step="1" aria-label="Angle about the joint, degrees"><em>°</em>
+      </label>`;
+    frameEl.appendChild(dialEl);
+    const dialPart = (sel: string) => dialEl.querySelector(sel)!;
+    const dialInput = dialEl.querySelector<HTMLInputElement>("input")!;
+    /** The dial as drawn now: its middle, the plane's axes (world) and its radius (mm). */
+    let dial: { c: Vector3; n: Vector3; u: Vector3; w: Vector3; r: number } | null = null;
+
+    function dialPartNow(): ScenePart | undefined {
+      if (!draft || joining) return undefined;
+      const p = partById(draft.childId);
+      return p?.parent && p.joint?.point && p.joint.childPoint ? p : undefined;
+    }
+
+    function placeDial(): void {
+      const p = dialPartNow();
+      const cm = p && art.matrixOf(p.id);
+      const pm = p && art.matrixOf(p.parent!);
+      if (!p || !cm || !pm) {
+        dialEl.hidden = true;
+        dial = null;
+        return;
+      }
+      const j = p.joint!;
+      // Where the faces meet, as drawn (exploded too), and the parent's face normal.
+      const c = new Vector3(...j.childPoint!).applyMatrix4(cm);
+      const n = new Vector3(...j.normal).transformDirection(pm).normalize();
+      // Nought degrees: the parent's X across the face (Y when X is the normal), as Spin counts.
+      const lu = new Vector3(1, 0, 0).cross(new Vector3(...j.normal).normalize());
+      if (lu.lengthSq() < 1e-6) lu.set(0, 1, 0).cross(new Vector3(...j.normal).normalize());
+      const u = lu.normalize().transformDirection(pm).normalize();
+      const w = n.clone().cross(u).normalize();
+      const toScreen = (v: Vector3) => {
+        const q = v.clone().project(camera);
+        return { x: ((q.x + 1) / 2) * viewW, y: ((1 - q.y) / 2) * viewH };
+      };
+      // About 70 px across on screen, whatever the zoom.
+      const right = new Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+      const a0 = toScreen(c), a1 = toScreen(c.clone().add(right));
+      const pxPerMm = Math.hypot(a1.x - a0.x, a1.y - a0.y) || 1;
+      const r = 70 / pxPerMm;
+      dial = { c, n, u, w, r };
+      const at = (deg: number) => toScreen(c.clone().addScaledVector(u, Math.cos(deg * DEG) * r).addScaledVector(w, Math.sin(deg * DEG) * r));
+      const arc = (from: number, to: number) => {
+        const steps = Math.max(2, Math.ceil(Math.abs(to - from) / 5));
+        let d = "";
+        for (let k = 0; k <= steps; k++) {
+          const pt = at(from + ((to - from) * k) / steps);
+          d += `${k ? "L" : "M"}${pt.x.toFixed(1)},${pt.y.toFixed(1)}`;
+        }
+        return d;
+      };
+      const spin = j.spin || 0;
+      const ringD = arc(0, 360) + "Z";
+      dialPart(".lyr-dial-ring").setAttribute("d", ringD);
+      dialPart(".lyr-dial-hit").setAttribute("d", ringD);
+      dialPart(".lyr-dial-sweep").setAttribute("d", Math.abs(spin) > 0.05 ? arc(0, spin) : "");
+      dialPart(".lyr-dial-limits").setAttribute("d", j.type === "revolute" ? arc(j.lower ?? 0, j.upper ?? 0) : "");
+      const z = at(0);
+      const zero = dialPart(".lyr-dial-zero");
+      zero.setAttribute("x1", a0.x.toFixed(1));
+      zero.setAttribute("y1", a0.y.toFixed(1));
+      zero.setAttribute("x2", z.x.toFixed(1));
+      zero.setAttribute("y2", z.y.toFixed(1));
+      const h = at(spin);
+      const handle = dialPart(".lyr-dial-handle");
+      handle.setAttribute("cx", h.x.toFixed(1));
+      handle.setAttribute("cy", h.y.toFixed(1));
+      // The number sits outside the ring, beyond the handle.
+      const ox = h.x - a0.x, oy = h.y - a0.y;
+      const ol = Math.hypot(ox, oy) || 1;
+      const field = dialEl.querySelector<HTMLElement>(".lyr-dial-field")!;
+      // Clear of the handle whichever side it's on.
+      const fw = field.offsetWidth || 80, fh = field.offsetHeight || 24;
+      const dx = ox / ol, dy = oy / ol;
+      const gap = 12 + Math.min(Math.abs(dx) > 1e-3 ? fw / 2 / Math.abs(dx) : Infinity, Math.abs(dy) > 1e-3 ? fh / 2 / Math.abs(dy) : Infinity);
+      field.style.left = `${Math.round(h.x + dx * gap)}px`;
+      field.style.top = `${Math.round(h.y + dy * gap)}px`;
+      if (document.activeElement !== dialInput) dialInput.value = String(round(spin, 1));
+      dialEl.hidden = false;
+    }
+
+    /** Turns the dialog's part to `deg` about its joint. */
+    function setDial(deg: number): void {
+      const p = dialPartNow();
+      if (!p?.joint || !Number.isFinite(deg)) return;
+      p.joint.spin = round(wrapAngle(deg), 1);
+      keepInLimits(p.joint);
+      applyJoint(p);
+      follow();
+      syncJointFields();
+      syncFields();
+    }
+
+    dialEl.addEventListener("pointerdown", e => {
+      const t = e.target as Element;
+      if (e.button !== 0 || !(t.matches(".lyr-dial-handle") || t.matches(".lyr-dial-hit"))) return;
+      e.preventDefault();
+      e.stopPropagation();
+      stopGlide();
+      const el = t as SVGElement;
+      el.setPointerCapture(e.pointerId);
+      dialEl.classList.add("lyr-dragging");
+      const plane = new Plane();
+      const hitV = new Vector3();
+      const turn = (m: PointerEvent) => {
+        if (!dial) return;
+        const box = canvasEl.getBoundingClientRect();
+        raycaster.setFromCamera(new Vector2(((m.clientX - box.left) / box.width) * 2 - 1, -((m.clientY - box.top) / box.height) * 2 + 1), camera);
+        plane.setFromNormalAndCoplanarPoint(dial.n, dial.c);
+        if (!raycaster.ray.intersectPlane(plane, hitV)) return;
+        hitV.sub(dial.c);
+        let deg = Math.atan2(hitV.dot(dial.w), hitV.dot(dial.u)) / DEG;
+        deg = m.shiftKey ? Math.round(deg / 15) * 15 : Math.round(deg);
+        setDial(deg);
+      };
+      turn(e);
+      const up = () => {
+        dialEl.classList.remove("lyr-dragging");
+        el.removeEventListener("pointermove", turn);
+        el.removeEventListener("pointerup", up);
+        el.removeEventListener("pointercancel", up);
+      };
+      el.addEventListener("pointermove", turn);
+      el.addEventListener("pointerup", up);
+      el.addEventListener("pointercancel", up);
+    });
+    dialInput.addEventListener("input", () => {
+      if (dialInput.value !== "") setDial(Number(dialInput.value));
+    });
+    dialInput.addEventListener("change", () => {
+      const p = dialPartNow();
+      if (p?.joint) dialInput.value = String(round(p.joint.spin || 0, 1));
+    });
+    // Keys typed in the angle stay out of the scene's shortcuts.
+    dialInput.addEventListener("keydown", e => e.stopPropagation());
 
     interface Hover {
       id: string;
