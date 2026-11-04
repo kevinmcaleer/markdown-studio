@@ -19,6 +19,10 @@ import {
 } from "./elements";
 import { boxSides, dist, distToSegment, facingSide, polygonSides, SIDES, snapAngle, type Pt, type Side } from "./geometry";
 import { icon } from "./icons";
+import { blankScene, normalizeScene } from "./scene/model";
+import type { ModelStore } from "./scene/render";
+import type { SceneModel } from "./scene/workspace";
+import { isScene, placeholderPicture, SceneLayer } from "./sceneLayer";
 import { snap, type Box, type Guide } from "./snap";
 import css from "./layers.css?inline";
 
@@ -64,6 +68,10 @@ export interface LayersOptions {
   fetchImage?(url: string): Promise<Blob>;
   /** The host's pictures, offered under Uploads. */
   listImages?(): Promise<LayersImage[]>;
+  /** The host's 3D models (STL files), offered in a 3D scene's Add a part. */
+  listModels?(): Promise<SceneModel[]>;
+  /** Loads a model's bytes (the host's signed-in fetch); plain fetch when left out. */
+  fetchModel?(url: string): Promise<ArrayBuffer | Blob>;
   doneLabel?: string;
   onDone?(result: LayersResult): void | Promise<void>;
   onCancel?(): void;
@@ -299,6 +307,8 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     const isLocked = locked(o);
     o.set({ selectable: !isLocked && o.visible !== false, evented: !isLocked && o.visible !== false });
     if (o.type === "image") o.setControlsVisibility({ mt: false, mb: false, ml: false, mr: false });
+    // A 3D scene's frame can take any shape: the view widens or narrows with it.
+    if (isScene(o)) o.setControlsVisibility({ mt: true, mb: true, ml: true, mr: true });
     if (o instanceof Rect && !o.group && (o.scaleX !== 1 || o.scaleY !== 1)) {
       // Older graphics stretched boxes by scaling them, which stretched their corners too.
       bakeScale(o, Math.min((Number(o.rx) || 0) * Math.abs(o.scaleX || 1), (Number(o.ry) || 0) * Math.abs(o.scaleY || 1)));
@@ -739,6 +749,10 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
   }
 
   function addKind(kind: string, at?: XY): void {
+    if (kind === "scene") {
+      void addScene(at);
+      return;
+    }
     if (kind === "badge") {
       add(badge(nextBadge(), { x: 0, y: 0 }, lastColor.badge || ACCENT), at);
       return;
@@ -771,6 +785,112 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     } catch (e) {
       status(e instanceof Error && e.message ? e.message : "That picture couldn't be added.", true);
       return null;
+    }
+  }
+
+  // ------------------------------------------------------------ 3D scenes
+
+  let modelStore: ModelStore | null = null;
+  async function sceneTools() {
+    const [workspace, render] = await Promise.all([import("./scene/workspace"), import("./scene/render")]);
+    if (!modelStore) {
+      const fetchModel = opts.fetchModel || ((url: string) => fetch(url).then(r => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(`That model couldn't be loaded (${r.status}).`)))));
+      modelStore = new render.ModelStore(async url => {
+        const got = await fetchModel(url);
+        return got instanceof Blob ? got.arrayBuffer() : got;
+      });
+    }
+    return { ...workspace, ...render, store: modelStore };
+  }
+
+  /** The picture's size, times its page size: twice, for sharpness, unless that is very big. */
+  const sceneScale = (w: number, h: number) => Math.max(1, Math.min(2, 3200 / Math.max(w, h)));
+
+  /** A new 3D scene, `box` (fractions of the page) or 60% of the page, opened to add parts. */
+  async function addScene(at?: XY, box?: { left: number; top: number; width: number; height: number }): Promise<void> {
+    const w = Math.round(box ? W * box.width : W * 0.6);
+    const h = Math.round(box ? H * box.height : H * 0.6);
+    const layer = new SceneLayer(placeholderPicture(w, h), { name: "3D scene" } as Partial<SceneLayer>);
+    layer.scene = blankScene();
+    layer.pictureScale = 1;
+    // A canvas picture would be turned into a data URL on every save; a plain one isn't.
+    await layer.setSrc(placeholderPicture(w, h).toDataURL("image/png"));
+    if (box) {
+      prepare(layer);
+      layer.set({ left: W * box.left, top: H * box.top });
+      layer.setCoords();
+      canvas.add(layer);
+      canvas.setActiveObject(layer);
+    } else add(layer, at);
+    canvas.requestRenderAll();
+    await editScene(layer);
+  }
+
+  let sceneOpen = false;
+  /** Opens a scene layer's 3D workspace; Done redraws its picture. */
+  async function editScene(layer: SceneLayer): Promise<void> {
+    if (sceneOpen || destroyed) return;
+    sceneOpen = true;
+    status("Opening the 3D scene…", false, true);
+    try {
+      const t = await sceneTools();
+      status("");
+      const { w, h } = layer.pageSize();
+      const scale = sceneScale(w, h);
+      const result = await t.openWorkspace({
+        scene: layer.scene || blankScene(),
+        width: Math.round(w),
+        height: Math.round(h),
+        scale,
+        background,
+        store: t.store,
+        listModels: opts.listModels,
+      });
+      if (!result || destroyed) return;
+      await setScenePicture(layer, result.scene, result.picture, scale, w, h);
+      canvas.setActiveObject(layer);
+      changed();
+      renderContext();
+    } catch (e) {
+      status(e instanceof Error && e.message ? `The 3D scene couldn't be opened: ${e.message}` : "The 3D scene couldn't be opened.", true);
+    } finally {
+      sceneOpen = false;
+      root.focus({ preventScroll: true });
+    }
+  }
+
+  async function setScenePicture(layer: SceneLayer, scene: SceneLayer["scene"], picture: HTMLCanvasElement, scale: number, w: number, h: number): Promise<void> {
+    // The picture is `scale` times the layer's page size: show it at that size, keeping the layer's middle.
+    const mid = layer.getCenterPoint();
+    await layer.setSrc(picture.toDataURL("image/png"));
+    layer.scene = scene;
+    layer.pictureScale = scale;
+    layer.set({ width: picture.width, height: picture.height, scaleX: w / picture.width, scaleY: h / picture.height });
+    layer.setPositionByOrigin(mid, "center", "center");
+    layer.setCoords();
+    canvas.requestRenderAll();
+  }
+
+  /** After a scene layer is stretched, its picture is drawn again at the new shape, so lines stay sharp. */
+  async function redrawScene(layer: SceneLayer): Promise<void> {
+    const { w, h } = layer.pageSize();
+    const scale = sceneScale(w, h);
+    if (!layer.scene?.parts.length) {
+      const pic = placeholderPicture(w, h);
+      await setScenePicture(layer, layer.scene || blankScene(), pic, 1, w, h);
+      changed();
+      return;
+    }
+    const same = Math.abs((layer.width || 0) - w * scale) < 2 && Math.abs((layer.height || 0) - h * scale) < 2;
+    if (same) return;
+    try {
+      const t = await sceneTools();
+      const picture = await t.renderPicture(normalizeScene(layer.scene), t.store, Math.round(w), Math.round(h), scale);
+      if (destroyed || !canvas.contains(layer)) return;
+      await setScenePicture(layer, layer.scene, picture, scale, w, h);
+      changed();
+    } catch {
+      // Its models can't be loaded here: it keeps the stretched picture.
     }
   }
 
@@ -1224,6 +1344,10 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
           <button type="button" class="lyr-btn" data-badge="1" aria-label="Higher number">${icon("plus", 14)}</button>
         </span>
         ${swatch("badgeFill", String(circle?.fill || ACCENT), "Colour")}`;
+    } else if (isScene(o)) {
+      html += `
+        <button type="button" class="lyr-btn" data-act="edit-scene" title="Add parts, place them and pick the style (or double-click it)">${icon("cube")}<span>Edit 3D scene</span></button>
+        <span class="lyr-hint">${o.scene?.parts.length ? `${o.scene.parts.length} part${o.scene.parts.length === 1 ? "" : "s"}` : "No parts yet"}. Stretch it to change the picture's shape.</span>`;
     } else if (o.type === "image") {
       html += `
         <button type="button" class="lyr-btn" data-act="flip-x" title="Flip across">${icon("flipH")}<span>Flip</span></button>
@@ -1611,6 +1735,8 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
           <div class="lyr-tiles">${SHAPES.map(s => tile(s.id, s.label, s.svg)).join("")}</div>
           <div class="lyr-panel-title">Lines, arrows and steps</div>
           <div class="lyr-tiles">${LINES.map(s => tile(s.id, s.label, s.svg)).join("")}</div>
+          <div class="lyr-panel-title">3D</div>
+          <button type="button" class="lyr-wide-btn" data-add="scene" title="Bring in STL models and draw them as assembly-instruction line art">${icon("cube", 16)} 3D scene from STL files</button>
           <p class="lyr-note">Click to add, or drag onto the page.</p>`;
         break;
       case "text":
@@ -1728,12 +1854,17 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     if (el.dataset.template) {
       const t = TEMPLATES.find(x => x.id === el.dataset.template);
       if (t) {
+        if (t.background) {
+          background = t.background;
+          fit();
+        }
         const list = t.build(W, H);
         list.forEach(o => {
           prepare(o);
           canvas.add(o);
         });
-        selectAll(list);
+        if (t.scene) void addScene(undefined, t.scene);
+        else selectAll(list);
       }
     }
     if (added && mode === "inline") showPanel(null);
@@ -2138,6 +2269,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
         } else if (o) apply({ flipX: !o.flipX });
         break;
       case "shape-text": if (o && canHoldText(o)) editShapeText(o); break;
+      case "edit-scene": if (isScene(o)) void editScene(o); break;
       case "flip-y": if (o) apply({ flipY: !o.flipY }); break;
       case "fill-page":
         if (o) {
@@ -2163,6 +2295,10 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
   canvas.on("object:added", onChange);
   canvas.on("object:removed", onChange);
   canvas.on("object:modified", onChange);
+  canvas.on("object:modified", e => {
+    const t = (e as { target?: FabricObject }).target;
+    if (isScene(t)) void redrawScene(t);
+  });
   canvas.on("text:changed", onChange);
   const onSelect = () => {
     renderContext();
@@ -2195,6 +2331,8 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     if (!t) {
       const p = canvas.getScenePoint(e.e);
       addTextStyle("body", { x: p.x + 280, y: p.y + 20 });
+    } else if (isScene(t) && !locked(t)) {
+      void editScene(t);
     } else if (canHoldText(t) && !locked(t)) {
       // Double-click a shape: type in it.
       editShapeText(t);

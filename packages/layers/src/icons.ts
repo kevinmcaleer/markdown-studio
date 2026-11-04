@@ -57,6 +57,10 @@ const P: Record<string, string> = {
   distributeH: "M3 3v18M21 3v18M9.5 7h5v10h-5z",
   distributeV: "M3 3h18M3 21h18M7 9.5h10v5H7z",
   spinner: "M21 12a9 9 0 1 1-6.2-8.6",
+  cube: "M12 2 3 7v10l9 5 9-5V7zM3 7l9 5 9-5M12 12v10",
+  move: "M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20",
+  rotate: "M21 12a9 9 0 1 1-2.6-6.4L21 8M21 3v5h-5",
+  frame: "M3 8V3h5M16 3h5v5M21 16v5h-5M8 21H3v-5M9 9h6v6H9z",
 };
 
 export type IconName = keyof typeof P;

@@ -18,6 +18,8 @@ const editor = mount(el, {
   mode: "inline",                    // or "full"; the Full screen button switches
   fetchImage: url => fetch(url, { credentials: "include" }).then(r => r.blob()),
   listImages: async () => [{ url, title }],   // offered under Uploads
+  listModels: async () => [{ url, title }],   // STL files offered in a 3D scene
+  fetchModel: url => fetch(url, { credentials: "include" }).then(r => r.arrayBuffer()),
   onDone: async ({ png, doc, title }) => { /* upload png, put it in the page */ },
   onCancel: () => editor.destroy(),
 });
@@ -46,6 +48,20 @@ const editor = mount(el, {
   them up by their left edges, centres, right edges, tops, middles or
   bottoms, and spaces three or more evenly across or up and down. Lines
   fastened to the shapes follow them.
+- **3D scenes** for assembly instructions: Elements → *3D scene from STL
+  files*, or the *Assembly step* template. Double-click a scene to open its
+  3D workspace: add STL files (the host's `listModels`, an upload, or a
+  drop), move and turn each part with handles or exact X/Y/Z (mm) and
+  Roll/Pitch/Yaw (°) boxes (arrow keys step, Shift ×10, Alt ×0.1, or drag a
+  label), highlight parts, look from Iso/Front/Side/Top, and pick a style.
+  Parts are drawn as line art: a flat fill, fine lines where the surface
+  folds, and a bold outline round each part (see `src/scene/render.ts`).
+  The scene is see-through, so the page colour is its background. Its
+  picture is drawn at twice the page size, and stretching the layer draws
+  it again in the new shape. Models from the host are stored by URL;
+  uploads are carried inside the graphic (up to 6 MB). three.js loads only
+  when a scene is opened. The scene data already has joints (`parent`,
+  `joint`) and an `explode` amount, for exploded views.
 - Shapes have **W** and **H** fields for exact sizes. Stretching a box keeps
   its corner size.
 - Smart guides snap to the page's and other layers' edges and middles
