@@ -26,6 +26,8 @@ describe("screws", () => {
   it("names them as they're sold", () => {
     expect(screwLabel({ d: 3, length: 8, head: "socket" })).toBe("M3 × 8");
     expect(screwName({ d: 2.5, length: 6, head: "button" })).toBe("M2.5 × 6 button screw");
+    expect(screwLabel({ d: 2, length: 6, head: "pan" })).toBe("M2 × 6 pan");
+    expect(normalizeScrew({ d: 2, length: 6, head: "pan" })).toEqual({ d: 2, length: 6, head: "pan" });
   });
 
   it("keeps only real sizes", () => {
@@ -77,7 +79,7 @@ describe("screws", () => {
     all.forEach(s => expect(s.n[2]).toBeCloseTo(1, 3));
   });
 
-  for (const head of ["socket", "button", "countersunk"] as const) {
+  for (const head of ["socket", "button", "countersunk", "pan"] as const) {
     it(`makes a closed ${head} screw, centred, meeting the part at the head`, () => {
       const m = screwMesh({ d: 3, length: 8, head });
       expect(m.positions.length % 9).toBe(0);

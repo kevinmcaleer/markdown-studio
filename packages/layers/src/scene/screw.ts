@@ -11,7 +11,7 @@
 
 import type { Topology, Snap, V3 } from "./snaps";
 
-export type ScrewHead = "socket" | "button" | "countersunk";
+export type ScrewHead = "socket" | "button" | "countersunk" | "pan";
 
 export interface ScrewSpec {
   /** Thread size in mm: 3 for M3. */
@@ -28,16 +28,18 @@ interface Size {
   socket: [number, number, number];
   button: [number, number, number];
   countersunk: [number, number, number];
+  /** A Phillips pan head: diameter, height and the cross's width. */
+  pan: [number, number, number];
 }
 
-// ISO 4762 (socket cap), ISO 7380 (button) and ISO 10642 (countersunk).
+// ISO 4762 (socket cap), ISO 7380 (button), ISO 10642 (countersunk) and ISO 7045 (Phillips pan).
 export const SCREW_SIZES: Size[] = [
-  { d: 2, pitch: 0.4, socket: [3.8, 2, 1.5], button: [3.5, 1.3, 1.3], countersunk: [4.4, 1.2, 1.3] },
-  { d: 2.5, pitch: 0.45, socket: [4.5, 2.5, 2], button: [4.7, 1.4, 1.5], countersunk: [5.5, 1.5, 1.5] },
-  { d: 3, pitch: 0.5, socket: [5.5, 3, 2.5], button: [5.7, 1.65, 2], countersunk: [6.72, 1.86, 2] },
-  { d: 4, pitch: 0.7, socket: [7, 4, 3], button: [7.6, 2.2, 2.5], countersunk: [8.96, 2.48, 2.5] },
-  { d: 5, pitch: 0.8, socket: [8.5, 5, 4], button: [9.5, 2.75, 3], countersunk: [11.2, 3.1, 3] },
-  { d: 6, pitch: 1, socket: [10, 6, 5], button: [10.5, 3.3, 4], countersunk: [13.44, 3.72, 4] },
+  { d: 2, pitch: 0.4, socket: [3.8, 2, 1.5], button: [3.5, 1.3, 1.3], countersunk: [4.4, 1.2, 1.3], pan: [4, 1.6, 2] },
+  { d: 2.5, pitch: 0.45, socket: [4.5, 2.5, 2], button: [4.7, 1.4, 1.5], countersunk: [5.5, 1.5, 1.5], pan: [5, 1.75, 2.6] },
+  { d: 3, pitch: 0.5, socket: [5.5, 3, 2.5], button: [5.7, 1.65, 2], countersunk: [6.72, 1.86, 2], pan: [5.6, 2.4, 3] },
+  { d: 4, pitch: 0.7, socket: [7, 4, 3], button: [7.6, 2.2, 2.5], countersunk: [8.96, 2.48, 2.5], pan: [8, 3.1, 4.4] },
+  { d: 5, pitch: 0.8, socket: [8.5, 5, 4], button: [9.5, 2.75, 3], countersunk: [11.2, 3.1, 3], pan: [9.5, 3.7, 4.9] },
+  { d: 6, pitch: 1, socket: [10, 6, 5], button: [10.5, 3.3, 4], countersunk: [13.44, 3.72, 4], pan: [12, 4.6, 6.9] },
 ];
 
 export const SCREW_LENGTHS = [3, 4, 5, 6, 8, 10, 12, 14, 16, 18, 20, 25, 30, 35, 40, 45, 50];
@@ -46,6 +48,7 @@ export const SCREW_HEADS: { id: ScrewHead; label: string; detail: string }[] = [
   { id: "socket", label: "Socket cap", detail: "A round head with a hex key socket" },
   { id: "button", label: "Button", detail: "A low domed head" },
   { id: "countersunk", label: "Countersunk", detail: "Sits flush in a countersunk hole" },
+  { id: "pan", label: "Pan (Phillips)", detail: "A rounded head with a cross, like the screws that come with STS3215 servos" },
 ];
 
 const sizeOf = (d: number): Size => SCREW_SIZES.find(s => s.d === d) || SCREW_SIZES[2];
@@ -72,7 +75,7 @@ export function normalizeScrew(value: unknown): ScrewSpec | null {
   const d = Number(v.d);
   const length = Number(v.length);
   if (!SCREW_SIZES.some(s => s.d === d) || !Number.isFinite(length) || length < 1 || length > 200) return null;
-  const head: ScrewHead = v.head === "button" || v.head === "countersunk" ? v.head : "socket";
+  const head: ScrewHead = v.head === "button" || v.head === "countersunk" || v.head === "pan" ? v.head : "socket";
   return { d, length: Math.round(length * 10) / 10, head };
 }
 
@@ -224,7 +227,10 @@ export function matchingHoles(topo: Topology, ref: Snap, budgetMs = 400): Snap[]
 
 // ------------------------------------------------------------ the model
 
-const SEGMENTS = 36; // a multiple of 6, so the hex socket's corners fall on it
+// Round the screw: a multiple of 6, so the hex socket's corners fall on it,
+// and finer for a Phillips cross, whose arms are narrow.
+const SEGMENTS = 36;
+const CROSS_SEGMENTS = 72;
 
 interface Built {
   /** Triangles, three corners of x, y, z each, centred on the screw's box. */
@@ -277,7 +283,24 @@ export function screwMesh(spec: ScrewSpec): Built {
     return a / Math.cos(phi);
   };
   const socketDepth = Math.min(k * (sunk ? 0.6 : spec.head === "button" ? 0.55 : 0.5), k - 0.2);
-  if (spec.head === "socket") {
+  // A Phillips cross: the arms' half-length and half-width, as a polar outline.
+  const arm = s / 2;
+  const armW = Math.max(0.2, s * 0.12);
+  const crossR = (th: number) => {
+    const c = Math.abs(Math.cos(th)), sn = Math.abs(Math.sin(th));
+    const box = (a: number, w: number) => Math.min(c > 1e-9 ? a / c : Infinity, sn > 1e-9 ? w / sn : Infinity);
+    return Math.max(box(arm, armW), box(armW, arm));
+  };
+  if (spec.head === "pan") {
+    // A low drum with a domed top, and a cross tapering to a point.
+    rings.push({ r: R, z: 0 }, { r: dk / 2, z: 0 }, { r: dk / 2, z: k * 0.35 });
+    const top = arm + 0.25;
+    for (let i = 1; i <= 6; i++) {
+      const a = (i / 6) * (Math.PI / 2);
+      rings.push({ r: top + (dk / 2 - top) * Math.cos(a), z: k * 0.35 + k * 0.65 * Math.sin(a) });
+    }
+    rings.push({ r: crossR, z: k }, { r: 0, z: k - Math.min(k * 0.6, arm) });
+  } else if (spec.head === "socket") {
     const c = Math.min(dk * 0.06, k * 0.15);
     rings.push({ r: R, z: 0 }, { r: dk / 2, z: 0 }, { r: dk / 2, z: k - c }, { r: dk / 2 - c, z: k });
   } else if (spec.head === "button") {
@@ -291,13 +314,14 @@ export function screwMesh(spec: ScrewSpec): Built {
     rings.push({ r: R, z: 0 }, { r: dk / 2, z: k * 0.9 }, { r: dk / 2, z: k });
   }
   // The hex socket, down to its floor.
-  rings.push({ r: hexR, z: k }, { r: hexR, z: k - socketDepth }, { r: 0, z: k - socketDepth });
+  if (spec.head !== "pan") rings.push({ r: hexR, z: k }, { r: hexR, z: k - socketDepth }, { r: 0, z: k - socketDepth });
+  const segments = spec.head === "pan" ? CROSS_SEGMENTS : SEGMENTS;
   const top = k;
   const bottom = -shank;
   const cz = (top + bottom) / 2;
   const pts: number[] = [];
   const at = (ring: Ring, j: number): V3 => {
-    const th = (j % SEGMENTS) * ((2 * Math.PI) / SEGMENTS);
+    const th = (j % segments) * ((2 * Math.PI) / segments);
     const r = typeof ring.r === "function" ? ring.r(th) : ring.r;
     const z = typeof ring.z === "function" ? ring.z(th) : ring.z;
     return [r * Math.cos(th), r * Math.sin(th), z - cz];
@@ -306,7 +330,7 @@ export function screwMesh(spec: ScrewSpec): Built {
   const tri = (a: V3, b: V3, c: V3) => pts.push(...a, ...b, ...c);
   for (let i = 0; i + 1 < rings.length; i++) {
     const lo = rings[i], hi = rings[i + 1];
-    for (let j = 0; j < SEGMENTS; j++) {
+    for (let j = 0; j < segments; j++) {
       const a = at(lo, j), b = at(lo, j + 1), c = at(hi, j + 1), d = at(hi, j);
       if (!isPoint(lo)) tri(a, b, c);
       if (!isPoint(hi)) tri(a, c, d);
