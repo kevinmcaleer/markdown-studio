@@ -12,7 +12,7 @@ import {
 } from "fabric";
 import { alignBoxes, distributeBoxes, type AlignHow, type DistributeHow } from "./align";
 import { Connector, type ConnectorEnd } from "./connector";
-import { blankDoc, clampSide, embedDoc, defaultFetch, MAX_SIDE, MIN_SIDE, normalizeDoc, SIZES, type LayersDoc } from "./doc";
+import { blankDoc, clampSide, embedDoc, defaultFetch, exportScales, MAX_EXPORT_BYTES, MAX_SIDE, MIN_SIDE, normalizeDoc, SIZES, type LayersDoc } from "./doc";
 import {
   ACCENT, badge, boundTo, canHoldText, FONTS, INK, isLine, isText, kindOf, LINES, makeShape, makeText, newId, PALETTE, SHAPES, shapeText, TEMPLATES, TEXT_STYLES,
   type Point as XY,
@@ -2401,18 +2401,23 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     const vpt = canvas.viewportTransform.slice() as typeof canvas.viewportTransform;
     canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
     canvas.backgroundColor = background || "";
-    let url: string;
+    // Drawn at twice the page size (or as near as fits), so text and lines stay
+    // sharp on retina screens and in full-width views. A picture-heavy page that
+    // would be too big to upload steps down until it fits.
+    let png: Uint8Array | null = null;
     try {
-      url = canvas.toDataURL({ format: "png", multiplier: 1, left: 0, top: 0, width: W, height: H, enableRetinaScaling: false });
+      for (const multiplier of exportScales(W, H)) {
+        const url = canvas.toDataURL({ format: "png", multiplier, left: 0, top: 0, width: W, height: H, enableRetinaScaling: false });
+        png = await embedDoc(Uint8Array.from(atob(url.split(",")[1]), c => c.charCodeAt(0)), doc);
+        if (png.length <= MAX_EXPORT_BYTES) break;
+      }
     } finally {
       canvas.backgroundColor = "";
       canvas.setViewportTransform(vpt);
       if (sel) canvas.setActiveObject(sel);
       canvas.requestRenderAll();
     }
-    const bytes = Uint8Array.from(atob(url.split(",")[1]), c => c.charCodeAt(0));
-    const withDoc = await embedDoc(bytes, doc);
-    return new Blob([withDoc as BlobPart], { type: "image/png" });
+    return new Blob([png as BlobPart], { type: "image/png" });
   }
 
   function destroy(): void {

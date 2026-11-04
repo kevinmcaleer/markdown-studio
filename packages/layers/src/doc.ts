@@ -106,3 +106,15 @@ export function fileName(title: string | undefined): string {
     .slice(0, 40);
   return `${slug || "graphic"}.layers.png`;
 }
+
+/** Saved PNGs stay under this, below the 10 MB image upload limit. */
+export const MAX_EXPORT_BYTES = 9_000_000;
+
+/**
+ * The scales to try when saving a W×H page, best first: 2× (a long side of
+ * at most 4096 px, which every browser's canvas can hold), then 1.5× and 1×.
+ */
+export function exportScales(w: number, h: number): number[] {
+  const best = Math.max(1, Math.min(2, 4096 / Math.max(w, h, 1)));
+  return [...new Set([best, Math.min(best, 1.5), 1])];
+}

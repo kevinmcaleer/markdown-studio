@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isPng, readText, writeText } from "./png";
-import { blankDoc, embedDoc, extractDoc, fileName, normalizeDoc, parseDoc } from "./doc";
+import { blankDoc, embedDoc, exportScales, extractDoc, fileName, normalizeDoc, parseDoc } from "./doc";
 
 // A 1×1 transparent PNG.
 const PIXEL = Uint8Array.from(
@@ -66,5 +66,18 @@ describe("layer documents", () => {
   it("names files from the title", () => {
     expect(fileName("Robot arm: wiring!")).toBe("robot-arm-wiring.layers.png");
     expect(fileName("")).toBe("graphic.layers.png");
+  });
+});
+
+describe("exportScales", () => {
+  it("saves a page at twice its size, then steps down", () => {
+    expect(exportScales(1600, 900)).toEqual([2, 1.5, 1]);
+    expect(exportScales(1200, 1200)).toEqual([2, 1.5, 1]);
+  });
+  it("keeps the long side within 4096 px", () => {
+    const [best] = exportScales(4000, 1000);
+    expect(best * 4000).toBeLessThanOrEqual(4096);
+    expect(exportScales(4096, 4096)).toEqual([1]);
+    expect(exportScales(2400, 600)[0]).toBeCloseTo(4096 / 2400);
   });
 });
