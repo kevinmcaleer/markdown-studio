@@ -586,3 +586,54 @@ export class Thumbnailer {
     this.art.dispose();
   }
 }
+
+// ------------------------------------------------------------ page geometry
+
+/** Where points in the scene (mm) land on its picture, as fractions of its width and height (0–1; outside when off the picture). */
+export function pagePoints(scene: SceneData, points: Vec3[], aspect: number): { x: number; y: number }[] {
+  const camera = cameraFor(scene.camera, aspect, 1);
+  camera.updateMatrixWorld();
+  return points.map(p => {
+    const v = new Vector3(...p).project(camera);
+    return { x: (v.x + 1) / 2, y: (1 - v.y) / 2 };
+  });
+}
+
+export interface StepArrow {
+  /** The part the arrow belongs to. */
+  id: string;
+  name: string;
+  /** From the exploded part towards where it fits, as fractions of the picture. */
+  from: { x: number; y: number };
+  to: { x: number; y: number };
+  /** A Turns joint: the part turns about its joint as well. */
+  turns: boolean;
+}
+
+/**
+ * An arrow for each part drawn apart from its parent in this scene: along
+ * its joint, from where it is drawn to where it fits, as fractions of the
+ * picture. Parts that aren't exploded, are hidden or ghosts, or whose move
+ * is too small to see get none.
+ */
+export function stepArrows(scene: SceneData, aspect: number): StepArrow[] {
+  const world = worldMatrices(scene.parts, scene.explode);
+  const out: StepArrow[] = [];
+  const byId = new Map(scene.parts.map(p => [p.id, p]));
+  for (const p of scene.parts) {
+    const f = explodeOf(p, scene.explode);
+    if (!p.parent || !p.joint || p.hidden || p.ghost || p.joint.distance <= 0 || f <= 0) continue;
+    const parent = byId.get(p.parent);
+    const m = world.get(p.id);
+    const pm = world.get(p.parent);
+    if (!parent || parent.hidden || !m || !pm) continue;
+    const from = new Vector3(...(p.joint.childPoint || [0, 0, 0])).applyMatrix4(m);
+    const slide = new Vector3(...p.joint.normal).transformDirection(pm).multiplyScalar(p.joint.distance * f);
+    if (slide.lengthSq() < 1e-6) continue;
+    const to = from.clone().sub(slide);
+    const [a, b] = pagePoints(scene, [[from.x, from.y, from.z], [to.x, to.y, to.z]], aspect);
+    if (Math.hypot((b.x - a.x) * aspect, b.y - a.y) < 0.04) continue;
+    out.push({ id: p.id, name: p.name, from: a, to: b, turns: p.joint.type === "revolute" });
+  }
+  return out;
+}

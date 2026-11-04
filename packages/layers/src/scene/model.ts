@@ -142,6 +142,8 @@ export interface ProjectModel {
   parts: ScenePart[];
   /** The project's named views (they don't change its stamp). */
   views?: NamedView[];
+  /** The named view new steps start from, so every picture looks from the same side. */
+  defaultView?: string;
 }
 
 export interface StylePreset {
@@ -339,6 +341,7 @@ export function normalizeModel(value: unknown): ProjectModel | null {
   const out: ProjectModel = { version: 1, stamp: num(v.stamp, 0, 0), parts: normalizeScene({ parts: v.parts }).parts.map(modelPart) };
   const views = normalizeViews(v.views);
   if (views.length) out.views = views;
+  if (typeof v.defaultView === "string" && views.some(x => x.id === v.defaultView)) out.defaultView = v.defaultView;
   return out;
 }
 

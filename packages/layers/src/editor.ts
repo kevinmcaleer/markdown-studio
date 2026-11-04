@@ -24,9 +24,10 @@ import type { ModelStore } from "./scene/render";
 import type { SceneModel } from "./scene/workspace";
 import { isScene, placeholderPicture, SceneLayer } from "./sceneLayer";
 import { snap, type Box, type Guide } from "./snap";
+import { partsInStep, TURNED_DEGREES, turnedFromDefault } from "./stepFrame";
 import css from "./layers.css?inline";
 
-FabricObject.customProperties = ["name", "layerId", "layerLocked", "badge", "badgePinned", "boundTo"];
+FabricObject.customProperties = ["name", "layerId", "layerLocked", "badge", "badgePinned", "boundTo", "partsStrip", "stepArrow", "turnMark"];
 // Corner handles that are easier to grab, and a selection colour that reads on any picture.
 Object.assign(FabricObject.ownDefaults, {
   borderColor: "#8b3dff",
@@ -861,6 +862,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
         const picture = await t.renderPicture(scene, t.store, Math.round(w), Math.round(h), scale);
         if (destroyed) return done;
         await setScenePicture(layer, scene, picture, scale, w, h);
+        await followScene(layer);
         done++;
       }
       status(done ? `${done === 1 ? "Picture" : `${done} pictures`} drawn again.` : "");
@@ -938,7 +940,9 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
           : {}),
       });
       if (!result || destroyed) return;
+      const first = !layer.scene?.parts.length;
       await setScenePicture(layer, result.scene, result.picture, scale, w, h);
+      await followScene(layer, first);
       canvas.setActiveObject(layer);
       changed();
       renderContext();
@@ -984,6 +988,146 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     } catch {
       // Its models can't be loaded here: it keeps the stretched picture.
     }
+  }
+
+  // ------------------------------------------------------------ the step frame
+
+  type Owned = FabricObject & { partsStrip?: string; stepArrow?: string; turnMark?: string };
+  const ownedBy = (key: "partsStrip" | "stepArrow" | "turnMark", layer: SceneLayer) => objects().filter(o => (o as Owned)[key] === idOf(layer));
+
+  /**
+   * The parts this step uses, listed beside the picture as on a flat-pack
+   * sheet: a small drawing of each kind of part with its count ("2x").
+   * The highlighted parts count as the step's; drawn again whenever the
+   * scene changes, keeping where it was put.
+   */
+  async function partsStrip(layer: SceneLayer, quiet = false): Promise<void> {
+    const scene = layer.scene ? normalizeScene(layer.scene) : null;
+    const list = scene ? partsInStep(scene) : [];
+    const old = ownedBy("partsStrip", layer);
+    if (!scene || !list.length) {
+      if (!quiet) status("Highlight the parts that are new in this step, then add the strip.", true);
+      return;
+    }
+    if (!quiet) status("Drawing the parts…", false, true);
+    try {
+      const t = await sceneTools();
+      const thumbnailer = new t.Thumbnailer();
+      const unit = Math.round(Math.min(W, H) * 0.13);
+      const items: FabricObject[] = [];
+      let y = 0;
+      try {
+        for (const g of list) {
+          const model = await t.store.get(g.part);
+          if (destroyed) return;
+          const pic = thumbnailer.draw(model, scene.style, scene.camera.direction, unit * 2);
+          const img = await FabricImage.fromURL(pic);
+          img.scaleToWidth(unit);
+          img.set({ left: 0, top: y });
+          Object.assign(img, { name: g.part.name || "Part", layerId: newId() });
+          const label = new Textbox(`${g.count}x`, { left: unit + unit * 0.12, top: y + unit * 0.3, width: unit * 0.9, fontFamily: FONTS[0][1], fontSize: Math.round(unit * 0.34), fontWeight: "700", fill: INK });
+          Object.assign(label, { name: `${g.count}x ${g.part.name || "part"}`, layerId: newId() });
+          items.push(img, label);
+          y += unit + unit * 0.14;
+        }
+      } finally {
+        thumbnailer.dispose();
+      }
+      const at = old.length ? { left: old[0].left || 0, top: old[0].top || 0 } : { left: Math.round(W * 0.05), top: Math.round(badges().length ? H * 0.46 : H * 0.06) };
+      old.forEach(o => canvas.remove(o));
+      const g = new Group(items, at);
+      Object.assign(g, { name: "Parts in this step", layerId: newId(), partsStrip: idOf(layer) });
+      prepare(g);
+      canvas.add(g);
+      canvas.requestRenderAll();
+      if (!quiet) status(`${list.length === 1 ? "One kind of part" : `${list.length} kinds of part`} listed.`);
+      changed();
+    } catch (e) {
+      status(e instanceof Error && e.message ? `The parts couldn't be drawn: ${e.message}` : "The parts couldn't be drawn.", true);
+    }
+  }
+
+  /**
+   * Solid arrows along the joints of the parts drawn apart in the scene,
+   * from each part towards where it fits, plus a turn arrow on a part that
+   * turns. Ordinary arrows afterwards, so they can be moved or deleted.
+   */
+  async function stepArrows(layer: SceneLayer): Promise<void> {
+    if (!layer.scene?.parts.length) return status("Add parts and explode the scene first.", true);
+    if (Math.abs(layer.angle || 0) > 0.5) return status("Arrows follow an unturned scene: turn it back to 0° first.", true);
+    try {
+      const t = await sceneTools();
+      const scene = normalizeScene(layer.scene);
+      const box = layer.getBoundingRect();
+      const list = t.stepArrows(scene, box.width / box.height);
+      if (!list.length) return status("No part is drawn apart from where it fits: slide Explode up in the 3D scene, then add arrows.", true);
+      ownedBy("stepArrow", layer).forEach(o => canvas.remove(o));
+      const page = (p: { x: number; y: number }) => ({ x: box.left + p.x * box.width, y: box.top + p.y * box.height });
+      const made: FabricObject[] = [];
+      const sw = Math.max(6, Math.round(Math.min(W, H) * 0.014));
+      for (const a of list) {
+        const from = page(a.from);
+        const to = page(a.to);
+        // The arrow sits in the gap: it starts clear of the part and stops short of where it fits.
+        const start = { x: from.x + (to.x - from.x) * 0.3, y: from.y + (to.y - from.y) * 0.3 };
+        const end = { x: from.x + (to.x - from.x) * 0.92, y: from.y + (to.y - from.y) * 0.92 };
+        const arrow = makeShape("solid-arrow", { x: 0, y: 0 }, INK) as Connector;
+        arrow.set({ strokeWidth: sw });
+        arrow.setEnds(start, end);
+        Object.assign(arrow, { name: `Arrow: ${a.name}`, stepArrow: idOf(layer) });
+        prepare(arrow);
+        canvas.add(arrow);
+        made.push(arrow);
+        if (a.turns) {
+          const turn = makeShape("rotate", { x: 0, y: 0 }, INK)!;
+          const size = Math.min(W, H) * 0.1;
+          turn.scale(size / 200);
+          turn.set({ left: from.x - size * 1.2, top: from.y - size * 1.2 });
+          Object.assign(turn, { name: `Turns: ${a.name}`, stepArrow: idOf(layer) });
+          prepare(turn);
+          canvas.add(turn);
+          made.push(turn);
+        }
+      }
+      selectAll(made);
+      canvas.requestRenderAll();
+      status(`${made.length === 1 ? "One arrow" : `${made.length} arrows`} added. Move or delete them like any arrow.`);
+      changed();
+    } catch (e) {
+      status(e instanceof Error && e.message ? `Arrows couldn't be worked out: ${e.message}` : "Arrows couldn't be worked out.", true);
+    }
+  }
+
+  /**
+   * A "turn it" mark at the picture's top right when the step looks from a
+   * different side than the project's chosen view (the one new steps start
+   * from), and none when it doesn't.
+   */
+  function turnMark(layer: SceneLayer): void {
+    const had = ownedBy("turnMark", layer);
+    const turned = layer.scene ? turnedFromDefault(normalizeScene(layer.scene), projectModel) : null;
+    if (turned === null || turned < TURNED_DEGREES) {
+      had.forEach(o => canvas.remove(o));
+      return;
+    }
+    if (had.length) return;
+    const mark = makeShape("rotate", { x: 0, y: 0 }, INK)!;
+    const size = Math.min(W, H) * 0.09;
+    mark.scale(size / 200);
+    const box = layer.getBoundingRect();
+    mark.set({ left: box.left + box.width - size * 1.15, top: box.top + size * 0.15 });
+    Object.assign(mark, { name: "Turn it (this step looks from another side)", turnMark: idOf(layer) });
+    prepare(mark);
+    canvas.add(mark);
+  }
+
+  /** After a scene is drawn again: its parts strip follows, and the turn mark comes or goes. */
+  async function followScene(layer: SceneLayer, firstDone = false): Promise<void> {
+    if (destroyed || !canvas.contains(layer)) return;
+    turnMark(layer);
+    const has = ownedBy("partsStrip", layer).length > 0;
+    // An assembly step (one with a step number) lists its parts by itself the first time its scene is drawn.
+    if (has || (firstDone && badges().length && layer.scene && partsInStep(normalizeScene(layer.scene)).length)) await partsStrip(layer, true);
   }
 
   /** A new graphic that starts from a picture: the page takes its shape and the picture fills it. */
@@ -1475,6 +1619,8 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       const shown = o.scene?.parts.filter(p => !p.hidden).length || 0;
       html += `
         <button type="button" class="lyr-btn" data-act="edit-scene" title="Add parts, place them and pick the style (or double-click it)">${icon("cube")}<span>Edit 3D scene</span></button>
+        ${o.scene?.parts.length ? `<button type="button" class="lyr-btn" data-act="parts-strip" title="List the parts this step uses beside the picture, each with its count (the highlighted parts)">${icon("list")}<span>Parts strip</span></button>
+        <button type="button" class="lyr-btn" data-act="step-arrows" title="Solid arrows along the joints of the parts drawn apart (explode the scene first)">${icon("arrow")}<span>Arrows</span></button>` : ""}
         ${stale ? `<button type="button" class="lyr-btn lyr-stale-btn" data-act="update-scene" title="Draw it again from the project's model as it is now">${icon("rotate")}<span>Update picture</span></button>
         <span class="lyr-hint lyr-stale-hint">Out of date: the project's model has changed since this was drawn.</span>`
         : `<span class="lyr-hint">${o.scene?.parts.length ? `${o.scene.model ? `${shown} of the model's ${o.scene.parts.length} parts` : `${o.scene.parts.length} part${o.scene.parts.length === 1 ? "" : "s"}`}` : "No parts yet"}. Stretch it to change the picture's shape.</span>`}`;
@@ -2416,6 +2562,8 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       case "shape-text": if (o && canHoldText(o)) editShapeText(o); break;
       case "edit-scene": if (isScene(o)) void editScene(o); break;
       case "update-scene": if (isScene(o)) void updateScenes([o]); break;
+      case "parts-strip": if (isScene(o)) void partsStrip(o); break;
+      case "step-arrows": if (isScene(o)) void stepArrows(o); break;
       case "badge-auto":
         if (o) {
           delete (o as Group & { badgePinned?: boolean }).badgePinned;

@@ -74,6 +74,18 @@ const editor = mount(el, {
   branch comes apart together, with dashed **draft lines** from each part
   back to where it fits (Style: *Draft lines when exploded*). **Ghost**
   draws a part faint, for parts fitted in an earlier step.
+- **The step frame**, as on a flat-pack sheet, from a 3D scene's bar:
+  *Parts strip* lists the parts the step uses beside the picture (a small
+  drawing of each kind with its count, "2x"): the highlighted parts, or
+  every shown part when none is highlighted. An assembly step (one with a
+  step number) gets its strip the first time its scene is drawn, and a
+  strip is drawn again whenever its scene is. *Arrows* adds a solid arrow
+  along each exploded joint, from the part towards where it fits, and a
+  turn arrow on a part that turns; they're ordinary arrows afterwards.
+  Under Views, the star marks the project's **default view**: new steps
+  start from it, and a step that looks from more than 30° off it gets a
+  "turn it" mark at the picture's top right (removed when it looks from
+  the default view again).
 - **Join snaps**, as in Snakie's Build workspace: while joining, the face
   under the pointer is tinted and its snap points shown: its middle,
   corners and edge middles, the centre of each round hole in it, or, on a

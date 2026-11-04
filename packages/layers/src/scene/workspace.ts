@@ -97,6 +97,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       if (projectModel && (scene.model || !scene.parts.length)) scene = followModel(scene, projectModel);
       else if (!projectModel) scene.model = { stamp: opts.model?.stamp || 0 };
     }
+    // A new step starts from the project's chosen view.
+    if (shared && projectModel?.defaultView && !opts.scene.parts.length) {
+      const v = projectModel.views?.find(x => x.id === projectModel.defaultView);
+      if (v) scene.camera = structuredClone(v.camera);
+    }
     const start = JSON.stringify(scene);
     const aspect = opts.width / opts.height;
     const models = new Map<string, Model | Error>();
@@ -2455,7 +2460,10 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     // With the host's project model they're the project's (saved with it on
     // Done, without making pictures out of date); otherwise the scene's own.
     let views: NamedView[] = structuredClone(shared ? opts.model?.views || [] : scene.views || []);
-    const startViews = JSON.stringify(views);
+    // The view new steps start from (the project's, with a model).
+    let defaultView = shared && views.some(v => v.id === opts.model?.defaultView) ? opts.model!.defaultView! : "";
+    const startViews = JSON.stringify([views, defaultView]);
+    const viewsOut = () => (views.length ? { views, ...(defaultView ? { defaultView } : {}) } : { views: [], defaultView: undefined });
     const viewsMenu = $(".lyr-scene-views-menu");
     const sameCamera = (a: NamedView["camera"], b: NamedView["camera"]) =>
       a.direction.every((x, i) => Math.abs(x - b.direction[i]) < 1e-6) && a.target.every((x, i) => Math.abs(x - b.target[i]) < 1e-3) && Math.abs(a.size - b.size) < 1e-3;
@@ -2471,7 +2479,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         <div class="lyr-panel-title">Named views</div>
         ${views.length
           ? views.map(v => `<div class="lyr-scene-view-row${sameCamera(v.camera, scene.camera) ? " lyr-on" : ""}">
-              <button type="button" class="lyr-scene-menu-item" role="menuitem" data-named-view="${esc(v.id)}" title="Look from this view"><span>${esc(v.name)}</span></button>
+              <button type="button" class="lyr-scene-menu-item" role="menuitem" data-named-view="${esc(v.id)}" title="Look from this view"><span>${esc(v.name)}${v.id === defaultView ? " · new steps" : ""}</span></button>
+              ${shared ? `<button type="button" class="lyr-btn lyr-icon-btn${v.id === defaultView ? " lyr-on" : ""}" data-default-view="${esc(v.id)}" title="${v.id === defaultView ? "New steps start from this view" : "Start new steps from this view, so every picture looks from the same side"}" aria-label="${v.id === defaultView ? "New steps start from" : "Use for new steps:"} ${esc(v.name)}">${icon("star", 16)}</button>` : ""}
               <button type="button" class="lyr-btn lyr-icon-btn" data-update-view="${esc(v.id)}" title="Save the camera as it is now under this name" aria-label="Update ${esc(v.name)}">${icon("pencil", 16)}</button>
               <button type="button" class="lyr-btn lyr-icon-btn" data-delete-view="${esc(v.id)}" title="Delete this view" aria-label="Delete ${esc(v.name)}">${icon("trash", 16)}</button>
             </div>`).join("")
@@ -2504,9 +2513,13 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const b = (e.target as HTMLElement).closest("button");
       if (!b) return;
       const d = b.dataset;
-      const v = views.find(x => x.id === (d.namedView || d.updateView || d.deleteView));
+      const v = views.find(x => x.id === (d.namedView || d.updateView || d.deleteView || d.defaultView));
       if (!v) return;
-      if (d.namedView) {
+      if (d.defaultView) {
+        defaultView = defaultView === v.id ? "" : v.id;
+        openViews();
+        status(defaultView ? `New steps start from “${v.name}”. Kept with the project's model when you click Done.` : `New steps no longer start from “${v.name}”.`);
+      } else if (d.namedView) {
         glideTo(structuredClone(v.camera), commit);
         viewsMenu.hidden = true;
         status(`Looking from “${v.name}”.`);
@@ -2517,6 +2530,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         status(`Updated the view “${v.name}”.`);
       } else if (d.deleteView) {
         views = views.filter(x => x !== v);
+        if (defaultView === v.id) defaultView = "";
         storeViews();
         openViews();
         status(`Deleted the view “${v.name}”.`);
@@ -2653,19 +2667,19 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       status("Drawing the picture…", false, true);
       try {
         const out = clone(scene);
-        const viewsChanged = shared && JSON.stringify(views) !== startViews;
+        const viewsChanged = shared && JSON.stringify([views, defaultView]) !== startViews;
         if (linked() && opts.saveModel && (scene.parts.length || projectModel) && (!projectModel || partsDiffer(projectModel.parts, scene.parts))) {
           // The parts or joints changed: a new version of the model, which
           // pictures drawn from the old one will say they're behind.
           status("Saving the project's model…", false, true);
           const stamp = Math.max(Date.now(), (opts.model?.stamp || 0) + 1);
-          await opts.saveModel({ ...modelOf(out, stamp), ...(views.length ? { views } : {}) });
+          await opts.saveModel({ ...modelOf(out, stamp), ...viewsOut() });
           out.model = { stamp };
         } else if (viewsChanged && opts.saveModel) {
           // Only the named views changed: the same version, so no picture is out of date.
           status("Saving the project's views…", false, true);
           const base = opts.model || modelOf(linked() ? out : { ...out, parts: [] }, 0);
-          await opts.saveModel({ ...base, ...(views.length ? { views } : { views: [] }) });
+          await opts.saveModel({ ...base, ...viewsOut() });
         }
         status("Drawing the picture…", false, true);
         const picture = await renderPicture(out, opts.store, opts.width, opts.height, opts.scale);
