@@ -31,6 +31,7 @@
   },
   "dependencies": {
     "fabric": "6.9.1",
+    "occt-import-js": "0.0.23",
     "three": "0.187.0"
   },
   "devDependencies": {

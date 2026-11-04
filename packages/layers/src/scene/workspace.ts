@@ -19,8 +19,9 @@ import {
   type Box3 as PlainBox, type SceneCamera, type SceneData, type ScenePart, type SceneStyle, type Vec3,
 } from "./model";
 import { applyJoint } from "./joint";
-import { frame, LineArt, modelFromStl, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
+import { frame, LineArt, modelFromPositions, modelFromStl, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
 import { MAX_EMBED, parseStl, toBase64, toBinaryStl } from "./stl";
+import { isStepFile, readStep, type StepBody } from "./step";
 import { toUrdf, zip } from "./urdf";
 import { MAX_SNAP_TRIANGLES, nearestSnap, Topology, type Face, type Snap } from "./snaps";
 
@@ -130,7 +131,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
             </div>
             <div class="lyr-scene-model"></div>
             <ul class="lyr-scene-list"></ul>
-            <p class="lyr-note">Add STL files, or drop them on the view. Click a part to place it.</p>
+            <p class="lyr-note">Add STL or STEP files, or drop them on the view. A STEP assembly comes in as one part per solid. Click a part to place it.</p>
           </aside>
           <div class="lyr-scene-stage">
             <div class="lyr-scene-tools" role="toolbar" aria-label="View">
@@ -149,11 +150,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
             </div>
             <div class="lyr-scene-frame"><canvas class="lyr-scene-canvas"></canvas></div>
             <div class="lyr-scene-help">Drag to look around, right-drag to pan, scroll to zoom. Hold Shift on a handle for 5 mm or 15° steps.</div>
-            <div class="lyr-drop" hidden>Drop STL files to add them</div>
+            <div class="lyr-drop" hidden>Drop STL or STEP files to add them</div>
           </div>
           <aside class="lyr-scene-side lyr-scene-props" aria-label="Part and style"></aside>
         </div>
-        <input type="file" class="lyr-file" accept=".stl,model/stl,application/sla" multiple hidden>
+        <input type="file" class="lyr-file" accept=".stl,.step,.stp,model/stl,application/sla,model/step" multiple hidden>
       </div>`;
     document.body.appendChild(overlay);
     document.documentElement.classList.add("lyr-open");
@@ -391,6 +392,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     }
 
     async function addModel(source: { url?: string; buffer?: ArrayBuffer; name: string; file?: string }): Promise<void> {
+      if (isStepFile(source.file || "") || isStepFile(source.url || "")) return addStep(source);
       status(`Adding ${source.name}…`, false, true);
       try {
         let model: Model;
@@ -429,10 +431,70 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       }
     }
 
+    /**
+     * A STEP file's solids, each as its own part, named from the CAD's tree
+     * and placed as the CAD has them (the lot moved over together if that
+     * spot is taken). An upload's solids are carried in the graphic as
+     * binary STL, with their CAD faces; a project file's are read from it.
+     */
+    async function addStep(source: { url?: string; buffer?: ArrayBuffer; name: string; file?: string }): Promise<void> {
+      status(`Reading ${source.name}… (the first STEP file takes a moment to set up)`, false, true);
+      try {
+        const bodies: StepBody[] = source.buffer ? await readStep(source.buffer) : await opts.store.stepBodies(source.url!);
+        if (closed) return;
+        if (!bodies.length) throw new Error(`${source.name} has no solids in it. If it is an assembly that links to other STEP files, export it from your CAD as one file.`);
+        const one = bodies.length === 1;
+        const items = bodies.map((b, i) => {
+          const data = source.buffer ? toBase64(toBinaryStl(b.positions, b.faces)) : undefined;
+          return { b, i, data, model: modelFromPositions(b.positions.slice(), b.faces), name: one ? source.name : b.name };
+        });
+        const embedded = items.reduce((n, it) => n + (it.data ? it.data.length * 0.75 : 0), 0);
+        if (embedded > MAX_EMBED) throw new Error(`${source.name} is ${(embedded / 1e6).toFixed(1)} MB as triangles. Models carried in a graphic can be up to ${MAX_EMBED / 1e6} MB: add it to your project's files and pick it from there, or simplify it.`);
+        // The box round the whole file, to keep its parts together.
+        const lo: Vec3 = [Infinity, Infinity, Infinity], hi: Vec3 = [-Infinity, -Infinity, -Infinity];
+        for (const { model } of items) {
+          for (let k = 0; k < 3; k++) {
+            lo[k] = Math.min(lo[k], model.centre[k] - model.size[k] / 2);
+            hi[k] = Math.max(hi[k], model.centre[k] + model.size[k] / 2);
+          }
+        }
+        const mid = lo.map((v, k) => (v + hi[k]) / 2) as Vec3;
+        const boxes = partBoxes();
+        const first = !scene.parts.length;
+        const at = placeBeside(boxes, mid, hi.map((v, k) => v - lo[k]) as Vec3);
+        const added: ScenePart[] = [];
+        let triangles = 0;
+        for (const it of items) {
+          const part: ScenePart = {
+            id: newPartId(scene.parts),
+            name: it.name.slice(0, 120),
+            position: it.model.centre.map((c, k) => round(c + at[k] - mid[k])) as Vec3,
+            rotation: [0, 0, 0],
+            file: `${it.name}.stl`.slice(0, 200),
+            ...(source.url ? { url: source.url, body: it.i } : { data: it.data }),
+          };
+          opts.store.put(part, it.model);
+          models.set(part.id, it.model);
+          scene.parts.push(part);
+          added.push(part);
+          triangles += it.model.triangles;
+        }
+        selectedId = added[0].id;
+        rebuild();
+        if (first || boxes.length === 0) fitView();
+        commit();
+        renderProps();
+        const what = one ? `${added[0].name} added` : `${added.length} parts added from ${source.name}`;
+        status(triangles > 1_500_000 ? `${what}. It's a big model (${Math.round(triangles / 1000)}k triangles), so it may be slow.` : `${what}.`);
+      } catch (e) {
+        status(e instanceof Error && e.message ? e.message : "That STEP file couldn't be added.", true, true);
+      }
+    }
+
     async function addFiles(files: Iterable<File>): Promise<void> {
       for (const f of files) {
-        if (!/\.stl$/i.test(f.name)) {
-          status(`${f.name} isn't an STL file.`, true);
+        if (!/\.(stl|step|stp)$/i.test(f.name)) {
+          status(`${f.name} isn't an STL or STEP file.`, true);
           continue;
         }
         await addModel({ buffer: await f.arrayBuffer(), name: partName(f.name), file: f.name });
@@ -1208,7 +1270,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     function topologyOf(m: Model): Topology | null {
       if (topologies.has(m)) return topologies.get(m)!;
       const pos = m.geometry.getAttribute("position");
-      const t = m.triangles <= MAX_SNAP_TRIANGLES && pos ? new Topology(pos.array as ArrayLike<number>) : null;
+      const t = m.triangles <= MAX_SNAP_TRIANGLES && pos ? new Topology(pos.array as ArrayLike<number>, m.faces) : null;
       topologies.set(m, t);
       return t;
     }
@@ -2093,11 +2155,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     async function openMenu(): Promise<void> {
       menu.hidden = false;
       menu.innerHTML = `
-        <button type="button" class="lyr-scene-menu-item" role="menuitem" data-act="upload">${icon("upload", 16)}<span>Upload an STL file…</span></button>
+        <button type="button" class="lyr-scene-menu-item" role="menuitem" data-act="upload">${icon("upload", 16)}<span>Upload an STL or STEP file…</span></button>
         ${opts.listModels ? `<div class="lyr-panel-title">Your project's models</div><div class="lyr-scene-models"><span class="lyr-note">Loading…</span></div>` : ""}`;
       if (!opts.listModels) return;
       try {
-        const found = (await opts.listModels()).filter(m => /\.stl(\?|#|$)/i.test(m.url) || /\.stl$/i.test(m.title || ""));
+        const found = (await opts.listModels()).filter(m => /\.(stl|step|stp)(\?|#|$)/i.test(m.url) || /\.(stl|step|stp)$/i.test(m.title || ""));
         const box = menu.querySelector(".lyr-scene-models");
         if (!box || menu.hidden) return;
         box.classList.toggle("lyr-scene-tiles", found.length > 0);
@@ -2106,7 +2168,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
               const name = esc(m.title || partName(m.url));
               return `<button type="button" class="lyr-scene-tile" role="menuitem" data-model="${i}" title="${name}"><span class="lyr-scene-thumb">${icon("cube", 24)}</span><span class="lyr-scene-tile-name">${name}</span></button>`;
             }).join("")
-          : `<span class="lyr-note">No STL files in this project yet.</span>`;
+          : `<span class="lyr-note">No STL or STEP files in this project yet.</span>`;
         box.querySelectorAll<HTMLElement>("[data-model]").forEach(b => {
           const m = found[Number(b.dataset.model)];
           b.addEventListener("click", () => {
@@ -2158,6 +2220,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     }
 
     function drawnThumb(m: SceneModel): Promise<string | null> {
+      // A STEP file is drawn only once it is added: reading one sets up OpenCascade, too much for a menu.
+      if (isStepFile(m.url) || isStepFile(m.title || "")) return Promise.resolve(null);
       const job = thumbQueue.then(async () => {
         const model = await opts.store.get({ id: "", url: m.url });
         if (closed) return null;

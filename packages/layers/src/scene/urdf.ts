@@ -21,9 +21,12 @@ const xyz = (v: Vec3 | Vector3) => (Array.isArray(v) ? v : [v.x, v.y, v.z]).map(
 const rpy = (deg: Vec3) => deg.map(rad).join(" ");
 const esc = (s: string) => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
+/** The model a part draws: its file (and which solid in it), or its own upload. */
+const meshKey = (p: ScenePart) => (p.url ? `u:${p.url}#${p.body ?? ""}` : `p:${p.id}`);
+
 /** A name safe for URDF links, joints and file names. */
 export function urdfName(s: string): string {
-  return s.toLowerCase().replace(/\.stl$/i, "").replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "") || "part";
+  return s.toLowerCase().replace(/\.(stl|step|stp)$/i, "").replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "") || "part";
 }
 
 const quat = (r: Vec3) => new Quaternion().setFromEuler(new Euler(r[0] * DEG, r[1] * DEG, r[2] * DEG, "ZYX"));
@@ -49,7 +52,7 @@ export function toUrdf(robot: string, parts: ScenePart[]): UrdfResult {
   const meshOf = new Map<string, string>();
   const files = new Set<string>();
   for (const p of parts) {
-    const key = p.url ? `u:${p.url}` : `p:${p.id}`;
+    const key = meshKey(p);
     if (meshOf.has(key)) continue;
     let name = urdfName(p.file || p.name);
     for (let i = 2; files.has(name); i++) name = `${urdfName(p.file || p.name)}_${i}`;
@@ -69,7 +72,7 @@ export function toUrdf(robot: string, parts: ScenePart[]): UrdfResult {
       `  <link name="${link.get(p.id)}">`,
       `    <visual>`,
       `      <origin xyz="${xyz([-o[0], -o[1], -o[2]])}" rpy="0 0 0"/>`,
-      `      <geometry><mesh filename="${meshOf.get(p.url ? `u:${p.url}` : `p:${p.id}`)}" scale="0.001 0.001 0.001"/></geometry>`,
+      `      <geometry><mesh filename="${meshOf.get(meshKey(p))}" scale="0.001 0.001 0.001"/></geometry>`,
       `      <material name="part"/>`,
       `    </visual>`,
       `  </link>`,

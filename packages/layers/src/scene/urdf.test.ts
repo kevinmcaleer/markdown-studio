@@ -33,6 +33,15 @@ describe("toUrdf", () => {
     expect(meshes).toEqual([{ path: "meshes/base.stl", partId: "a" }]);
   });
 
+  it("gives each solid of one STEP file its own mesh", () => {
+    const { meshes } = toUrdf("r", [
+      part({ id: "a", name: "Plate", url: "/m/arm.step", body: 0, file: "Plate.stl" }),
+      part({ id: "b", name: "Bracket", url: "/m/arm.step", body: 1, file: "Bracket.stl" }),
+      part({ id: "c", name: "Bracket 2", url: "/m/arm.step", body: 1, file: "Bracket.stl" }),
+    ]);
+    expect(meshes).toEqual([{ path: "meshes/plate.stl", partId: "a" }, { path: "meshes/bracket.stl", partId: "b" }]);
+  });
+
   it("shares one mesh between copies and keeps names unique", () => {
     const { urdf, meshes } = toUrdf("r", [part({ id: "a", name: "Screw" }), part({ id: "b", name: "Screw" })]);
     expect(meshes).toHaveLength(1);

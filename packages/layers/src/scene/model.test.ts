@@ -7,6 +7,12 @@ describe("normalizeScene", () => {
     expect(normalizeScene("x").parts).toEqual([]);
   });
 
+  it("keeps which solid of a STEP file a part is", () => {
+    const s = normalizeScene({ parts: [{ id: "a", name: "Arm", url: "/m/arm.step", body: 3 }, { id: "b", name: "Up", data: "AAAA", body: 2 }, { id: "c", name: "Bad", url: "/m/arm.step", body: -1 }] });
+    expect(s.parts.map(p => p.body)).toEqual([3, undefined, undefined]);
+    expect(partName("left_arm.STEP")).toBe("left arm");
+  });
+
   it("keeps parts and puts out-of-range values right", () => {
     const s = normalizeScene({
       parts: [{ id: "a", name: "Base", url: "/m/base.stl", position: [1, 2, "x"], rotation: [190, -540, 45], highlight: 1 }],
