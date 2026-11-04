@@ -178,6 +178,15 @@ export interface Template {
 
 const tb = (text: string, o: Record<string, unknown>) => named(new Textbox(text, { fontFamily: FONTS[0][1], fill: INK, ...o }), text);
 
+/** A step number, a bold heading and a line of text, at the top left of a `w`×`h` page. */
+function stepHeading(w: number, h: number): FabricObject[] {
+  return [
+    badge(1, { x: w * 0.05, y: h * 0.08 }, INK),
+    tb("ASSEMBLY", { left: w * 0.05, top: h * 0.08 + 110, width: w * 0.3, fontSize: Math.round(h * 0.09), fontWeight: "800" }),
+    tb("Fit the parts together as shown", { left: w * 0.05, top: h * 0.08 + 110 + h * 0.12, width: w * 0.26, fontSize: Math.round(h * 0.035), fill: "#495057" }),
+  ];
+}
+
 export const TEMPLATES: Template[] = [
   {
     id: "assembly",
@@ -187,10 +196,14 @@ export const TEMPLATES: Template[] = [
     scene: { left: 0.3, top: 0.06, width: 0.66, height: 0.88 },
     build: (w, h) => [
       named(new Polygon([{ x: 0, y: h * 0.55 }, { x: w, y: h * 0.38 }, { x: w, y: h }, { x: 0, y: h }], { fill: "#d6d6d6", strokeWidth: 0, objectCaching: false }), "Floor"),
-      badge(1, { x: w * 0.05, y: h * 0.08 }, INK),
-      tb("ASSEMBLY", { left: w * 0.05, top: h * 0.08 + 110, width: w * 0.3, fontSize: Math.round(h * 0.09), fontWeight: "800" }),
-      tb("Fit the parts together as shown", { left: w * 0.05, top: h * 0.08 + 110 + h * 0.12, width: w * 0.26, fontSize: Math.round(h * 0.035), fill: "#495057" }),
+      ...stepHeading(w, h),
     ],
+  },
+  {
+    id: "step-heading",
+    label: "Step heading",
+    detail: "A step number, a bold heading and a line of text, top left",
+    build: (w, h) => stepHeading(w, h),
   },
   {
     id: "title",
