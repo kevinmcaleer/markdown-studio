@@ -18,8 +18,7 @@ import {
   type JointType, type NamedView, type PartJoint, type ProjectModel,
   type Box3 as PlainBox, type SceneCamera, type SceneData, type ScenePart, type SceneStyle, type Vec3,
   explodeOf,
-  highlightedParts,
-} from "./model";
+  highlightedParts, ARROW_FROM, ARROW_TO } from "./model";
 import { applyJoint } from "./joint";
 import { frame, LineArt, modelFromPositions, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
 import { MAX_EMBED, parseStl, stlFaces, toBinaryStl, tooBigToCarry } from "./stl";
@@ -249,6 +248,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       drawQueued = requestAnimationFrame(() => {
         drawQueued = 0;
         if (closed) return;
+        art.arrows = !!scene.arrows;
         art.setSelected(shownJoint ? "" : selectedId);
         art.draw(camera, viewW, viewH, Math.min(2, window.devicePixelRatio || 1));
         placeSnaps();
@@ -1230,6 +1230,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         case "distance": return p?.joint?.distance || 0;
         case "lower": return p?.joint?.lower ?? 0;
         case "upper": return p?.joint?.upper ?? 0;
+        case "arrowFrom": return Math.round((p?.arrow?.from ?? ARROW_FROM) * 100);
+        case "arrowTo": return Math.round((p?.arrow?.to ?? ARROW_TO) * 100);
       }
       return 0;
     }
@@ -1276,6 +1278,17 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         syncFields();
       } else if (key === "distance" && p?.joint) {
         p.joint.distance = round(Math.max(0, Math.min(100_000, value)));
+        follow();
+      } else if ((key === "arrowFrom" || key === "arrowTo") && p?.joint) {
+        // Where the arrow runs, as a share of the gap from the part to where it fits.
+        const v = Math.max(0, Math.min(100, Math.round(value))) / 100;
+        const a = { ...(p.arrow || {}) };
+        if (key === "arrowFrom") a.from = v;
+        else a.to = v;
+        if (a.from === ARROW_FROM) delete a.from;
+        if (a.to === ARROW_TO) delete a.to;
+        if (Object.keys(a).length) p.arrow = a;
+        else delete p.arrow;
         follow();
       } else if (key === "lineWidth" || key === "outline" || key === "crease") {
         const lim = { lineWidth: [0, 10], outline: [0, 20], crease: [1, 180] }[key];
@@ -2599,6 +2612,12 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           ${field("gap", slides ? "Slide" : "Gap", "mm", p.joint?.gap || 0, 0.1, slides ? "How far it's slid out in this picture, between From and To" : "How far it stands off the face")}
           ${field("distance", "Explode", "mm", p.joint?.distance || 0, 1, "How far it slides out in the exploded view")}
         </div>` : `<div class="lyr-scene-fields">${field("distance", "Explode", "mm", p.joint?.distance || 0, 1, "How far it slides out in the exploded view")}</div>`}
+        ${scene.arrows ? `<div class="lyr-scene-sub">Arrow</div>
+        <label class="lyr-scene-check" title="An arrow in the picture along this part's gap when it's drawn apart"><input type="checkbox" data-arrow${p.arrow?.off ? "" : " checked"}> Arrow when exploded</label>
+        ${p.arrow?.off ? "" : `<div class="lyr-scene-fields">
+          ${field("arrowFrom", "From", "%", fieldValue("arrowFrom", p), 5, "Where the arrow starts: 0 at the part, 100 where it fits")}
+          ${field("arrowTo", "To", "%", fieldValue("arrowTo", p), 5, "Where the arrow's head is: 0 at the part, 100 where it fits")}
+        </div>`}` : ""}
         <div class="lyr-scene-quick">
           <button type="button" class="lyr-btn" data-act="join" title="Pick the two faces again">Re-join</button>
           <button type="button" class="lyr-btn" data-act="unjoin" title="Stand on its own again, where it is now">Unjoin</button>
@@ -2695,6 +2714,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           </div>
           <label class="lyr-scene-check" title="In an exploded view, a line from each part back to where it fits"><input type="checkbox" data-draft${scene.style.draft === false ? "" : " checked"}> Draft lines when exploded</label>
           ${scene.style.draft === false ? "" : `<label class="lyr-scene-check" title="Thin solid lines, as on a flat-pack sheet, instead of dashed ones"><input type="checkbox" data-draft-solid${scene.style.draftSolid ? " checked" : ""}> Solid draft lines</label>`}
+          <label class="lyr-scene-check" title="Solid arrows in the picture along each exploded part's gap, from the part to where it fits, as on a flat-pack sheet"><input type="checkbox" data-arrows${scene.arrows ? " checked" : ""}> Arrows when exploded</label>
           <p class="lyr-note">The background is the page's colour: change it in Layers.</p>
         </section>`;
       syncPresets();
@@ -2713,6 +2733,23 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         if (t.checked) scene.style.draftSolid = true;
         else delete scene.style.draftSolid;
         rebuild();
+        commit();
+      } else if (t.dataset.arrows !== undefined) {
+        if (t.checked) scene.arrows = true;
+        else delete scene.arrows;
+        renderProps();
+        draw();
+        commit();
+      } else if (t.dataset.arrow !== undefined) {
+        const p = partById(selectedId);
+        if (!p) return;
+        const a = { ...(p.arrow || {}) };
+        if (t.checked) delete a.off;
+        else a.off = true;
+        if (Object.keys(a).length) p.arrow = a;
+        else delete p.arrow;
+        renderProps();
+        follow();
         commit();
       } else if (t.dataset.ghost !== undefined) {
         const p = partById(selectedId);

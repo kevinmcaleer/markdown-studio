@@ -19,7 +19,8 @@ import {
   ShaderMaterial, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget, NearestFilter, NoBlending, type Object3D,
 } from "three";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
-import { BufferGeometry as CutGeometry, DoubleSide, Float32BufferAttribute, GreaterDepth, LessEqualDepth, Texture } from "three";
+import { BufferGeometry as CutGeometry, DoubleSide, Float32BufferAttribute, LessEqualDepth, Texture } from "three";
+import { ARROW_FROM, ARROW_TO } from "./model";
 import {
   AlwaysStencilFunc, BackSide, DecrementWrapStencilOp, FrontSide, IncrementWrapStencilOp, NotEqualStencilFunc, Plane, Quaternion, ZeroStencilOp, type Material, type Side,
 } from "three";
@@ -305,12 +306,15 @@ export class LineArt {
   /** A band under each draft line painted with the fills alone, so the lines it crosses break round it as on a flat-pack sheet. */
   private draftHalo: LineSegments2 | null = null;
   private draftHaloMaterial: LineMaterial | null = null;
-  /** The draft lines where they pass behind or inside a part: drawn without a halo, so the outline there stays whole. */
-  private draftHidden: LineSegments2 | null = null;
-  private draftHiddenMaterial: LineMaterial | null = null;
   /** The draft lines, drawn against the parts' depth after the outlines (unlike the overlay, which is drawn over everything). */
   private draftScene = new Scene();
   private haloFill = { value: null as Texture | null };
+  /** Each exploded part's gap: from its leading end to where it fits, in the world (the draft lines' and the arrows' line). */
+  private axes: { part: ScenePart; from: Vector3; to: Vector3 }[] = [];
+  /** Solid arrows along the gaps, as in printed assembly steps, when on. */
+  arrows = false;
+  private arrowMesh: Mesh | null = null;
+  private arrowMaterial: MeshBasicMaterial | null = null;
   /** Spots cut back to the fills alone (a detail circle's tail tip): the outline breaks round what the tail points at. */
   cuts: Cut[] = [];
   private cutMaterial: ShaderMaterial | null = null;
@@ -523,12 +527,9 @@ export class LineArt {
       this.draftScene.remove(this.draftHalo);
       this.draftHalo = null;
     }
-    if (this.draftHidden) {
-      this.draftScene.remove(this.draftHidden);
-      this.draftHidden = null;
-    }
     const style = this.style;
-    if (!style || style.draft === false || style.lineWidth <= 0) return;
+    this.axes = [];
+    if (!style) return;
     const pts: number[] = [];
     const byId = new Map(this.objects.map(o => [o.part.id, o]));
     for (const o of this.objects) {
@@ -556,26 +557,23 @@ export class LineArt {
       if (lead >= slide.length() - 1e-3) continue;
       const to = from.clone().sub(slide);
       from.addScaledVector(back, lead);
+      this.axes.push({ part: p, from, to });
       pts.push(from.x, from.y, from.z, to.x, to.y, to.z);
     }
-    if (!pts.length) return;
+    if (!pts.length || style.draft === false || style.lineWidth <= 0) return;
     const dashed = !style.draftSolid;
     if (this.draftMaterial && this.draftMaterial.dashed !== dashed) {
       this.draftMaterial.dispose();
       this.draftMaterial = null;
-      this.draftHiddenMaterial?.dispose();
-      this.draftHiddenMaterial = null;
     }
-    // The lines are tested against the parts' depth: where a line is in front
-    // of a part it's drawn with its halo, where it's behind or inside one it's
-    // drawn alone, so only an outline it really crosses breaks. Nudged a
-    // little towards the camera, so a line along a part's face counts as in
-    // front of it. Transparent only so the three sort by renderOrder.
+    // The lines are tested against the parts' depth: a line shows only where
+    // it's in front of the parts (a part in front hides it, as it hides the
+    // arrows), with its halo, so only an outline it really crosses breaks.
+    // Nudged a little towards the camera, so a line along a part's face
+    // counts as in front of it. Transparent only so the two sort by renderOrder.
     const depth = { depthTest: true, depthWrite: false, transparent: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 };
     this.draftMaterial ??= new LineMaterial({ color: 0, linewidth: 1, worldUnits: false, dashed, dashSize: 3, gapSize: 2, ...depth, depthFunc: LessEqualDepth });
     this.draftMaterial.color.set(style.line);
-    this.draftHiddenMaterial ??= new LineMaterial({ color: 0, linewidth: 1, worldUnits: false, dashed, dashSize: 3, gapSize: 2, ...depth, depthFunc: GreaterDepth });
-    this.draftHiddenMaterial.color.set(style.line);
     if (!this.draftHaloMaterial) {
       // The halo paints the picture's fills (drawn without any lines) back over
       // a band round the line: the lines and outlines it crosses break, the
@@ -591,11 +589,6 @@ export class LineArt {
     }
     const geo = new LineSegmentsGeometry().setPositions(pts);
     // Drawn after the parts and their outlines, as the lines on a sheet run over the drawing.
-    this.draftHidden = new LineSegments2(geo, this.draftHiddenMaterial);
-    this.draftHidden.computeLineDistances();
-    this.draftHidden.raycast = () => {};
-    this.draftHidden.renderOrder = 0;
-    this.draftScene.add(this.draftHidden);
     this.draftHalo = new LineSegments2(geo, this.draftHaloMaterial);
     this.draftHalo.raycast = () => {};
     this.draftHalo.renderOrder = 1;
@@ -631,14 +624,81 @@ export class LineArt {
   /** Follows the parts' new places without rebuilding the scene. */
   move(parts: ScenePart[], explode = 0): void {
     const world = worldMatrices(parts, explode);
+    const byId = new Map(parts.map(p => [p.id, p]));
     for (const o of this.objects) {
       const m = world.get(o.part.id);
       if (!m) continue;
+      // The part as it is now, so its arrow settings are read live.
+      o.part = byId.get(o.part.id) || o.part;
       place(o.group, m);
       place(o.idGroup, m);
     }
     this.placeCaps();
     this.drawDraft(world, explode);
+  }
+
+  /**
+   * Solid arrows along the gaps, as on a flat-pack sheet: each a flat
+   * shape facing the camera, drawn in the picture against the parts'
+   * depth, so an arrow passes behind a part rather than over it, and a
+   * screw's arrow stops at the hole. Sized from the picture, not the parts.
+   */
+  private drawArrows(camera: OrthographicCamera, h: number): void {
+    if (this.arrowMesh) {
+      this.draftScene.remove(this.arrowMesh);
+      this.arrowMesh.geometry.dispose();
+      this.arrowMesh = null;
+    }
+    const style = this.style;
+    if (!style || !this.arrows || !this.axes.length) return;
+    const mmPerPx = (camera.top - camera.bottom) / camera.zoom / h;
+    const shaft = Math.max(1.5, h * 0.004) * mmPerPx;
+    const headLen = Math.max(8, h * 0.038) * mmPerPx;
+    const headHalf = Math.max(4, h * 0.019) * mmPerPx;
+    const view = new Vector3();
+    camera.getWorldDirection(view);
+    const verts: number[] = [];
+    const quad = (a: Vector3, b: Vector3, c: Vector3, d: Vector3) => verts.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, a.x, a.y, a.z, c.x, c.y, c.z, d.x, d.y, d.z);
+    for (const { part, from, to } of this.axes) {
+      const a = part.arrow;
+      if (a?.off) continue;
+      const f0 = Math.min(a?.from ?? ARROW_FROM, a?.to ?? ARROW_TO);
+      const f1 = Math.max(a?.from ?? ARROW_FROM, a?.to ?? ARROW_TO);
+      const axis = to.clone().sub(from);
+      const len = axis.length() * (f1 - f0);
+      if (len < 1e-3) continue;
+      axis.normalize();
+      // Flat on to the camera: across the axis and the line of sight.
+      const side = new Vector3().crossVectors(axis, view);
+      if (side.lengthSq() < 1e-6) continue;
+      side.normalize();
+      const start = from.clone().addScaledVector(axis, axis.dot(to.clone().sub(from)) * f0);
+      const end = start.clone().addScaledVector(axis, len);
+      // A short arrow keeps its proportions: the head shrinks with it.
+      const k = Math.min(1, len / (headLen * 1.6));
+      const hl = headLen * k;
+      const hw = headHalf * k;
+      const sw = shaft * Math.max(0.6, k);
+      const neck = end.clone().addScaledVector(axis, -hl);
+      quad(
+        start.clone().addScaledVector(side, -sw),
+        neck.clone().addScaledVector(side, -sw),
+        neck.clone().addScaledVector(side, sw),
+        start.clone().addScaledVector(side, sw),
+      );
+      const l = neck.clone().addScaledVector(side, -hw);
+      const r2 = neck.clone().addScaledVector(side, hw);
+      verts.push(l.x, l.y, l.z, end.x, end.y, end.z, r2.x, r2.y, r2.z);
+    }
+    if (!verts.length) return;
+    this.arrowMaterial ??= new MeshBasicMaterial({ color: 0, side: DoubleSide, depthTest: true, depthWrite: false, transparent: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+    this.arrowMaterial.color.set(style.line);
+    const geo = new BufferGeometry();
+    geo.setAttribute("position", new Float32BufferAttribute(verts, 3));
+    this.arrowMesh = new Mesh(geo, this.arrowMaterial);
+    this.arrowMesh.raycast = () => {};
+    this.arrowMesh.renderOrder = 3;
+    this.draftScene.add(this.arrowMesh);
   }
 
   /** A part's place in the world as drawn now. */
@@ -702,7 +762,7 @@ export class LineArt {
       m.linewidth = style.lineWidth * ratio;
       m.resolution.set(pw, ph);
     }
-    for (const m of [this.draftMaterial, this.draftHiddenMaterial]) {
+    for (const m of [this.draftMaterial]) {
       if (!m) continue;
       // Dashes a steady size on the picture, whatever the zoom: mm per pixel.
       const mmPerPx = (camera.top - camera.bottom) / camera.zoom / h;
@@ -749,6 +809,7 @@ export class LineArt {
       r.autoClear = true;
     }
     if (this.cuts.length && this.fillTarget) this.drawCuts(pw, ph);
+    this.drawArrows(camera, h);
     if (this.draftScene.children.length) {
       // Against the depth the parts left, so a line behind a part is known to be.
       r.autoClear = false;
@@ -821,7 +882,6 @@ export class LineArt {
     this.draft?.geometry.dispose();
     this.draftMaterial?.dispose();
     this.draftHaloMaterial?.dispose();
-    this.draftHiddenMaterial?.dispose();
     this.cutMaterial?.dispose();
     this.fillTarget?.dispose();
     this.lineMaterials.forEach(m => m.dispose());
@@ -897,6 +957,7 @@ export async function renderPicture(data: SceneData, store: ModelStore, w: numbe
     const ss = Math.max(1, Math.min(2, max / Math.max(ow, oh)));
     art.setSection(data.section);
     art.setParts(list, data.style, data.explode);
+    art.arrows = !!data.arrows;
     art.cuts = cuts;
     const camera = cameraFor(data.camera, w / h, radiusOf(art.bounds()) + Math.hypot(...data.camera.target));
     art.draw(camera, w, h, scale * ss);
@@ -965,70 +1026,6 @@ export function pagePoints(scene: SceneData, points: Vec3[], aspect: number): { 
  * `dx`,`dy` the way back along the tail (unit, in pixels).
  */
 export interface Cut { x: number; y: number; dx: number; dy: number; len: number; r: number }
-
-export interface StepArrow {
-  /** The part the arrow belongs to. */
-  id: string;
-  name: string;
-  /** From the exploded part towards where it fits, as fractions of the picture. */
-  from: { x: number; y: number };
-  to: { x: number; y: number };
-  /** A Turns joint: the part turns about its joint as well. */
-  turns: boolean;
-}
-
-/**
- * An arrow for each part drawn apart from its parent in this scene: along
- * its joint, from where it is drawn to where it fits, as fractions of the
- * picture. Parts that aren't exploded, are hidden or ghosts, or whose move
- * is too small to see get none.
- */
-export function stepArrows(scene: SceneData, aspect: number, boxes?: Map<string, Box3>): StepArrow[] {
-  const world = worldMatrices(scene.parts, scene.explode);
-  const out: StepArrow[] = [];
-  const byId = new Map(scene.parts.map(p => [p.id, p]));
-  for (const p of scene.parts) {
-    const f = explodeOf(p, scene.explode);
-    if (!p.parent || !p.joint || p.hidden || p.ghost || p.joint.distance <= 0 || f <= 0) continue;
-    const parent = byId.get(p.parent);
-    const m = world.get(p.id);
-    const pm = world.get(p.parent);
-    if (!parent || parent.hidden || !m || !pm) continue;
-    const from = new Vector3(...(p.joint.childPoint || [0, 0, 0])).applyMatrix4(m);
-    const slide = new Vector3(...p.joint.normal).transformDirection(pm).multiplyScalar(p.joint.distance * f);
-    if (slide.lengthSq() < 1e-6) continue;
-    const to = from.clone().sub(slide);
-    // With the part's size known, the arrow's line is the draft line: from the part's leading end (a screw's tip).
-    const bb = boxes?.get(p.id);
-    if (bb) {
-      const back = slide.clone().normalize().negate();
-      let lead = 0;
-      for (let k = 0; k < 8; k++) {
-        const c = new Vector3(k & 1 ? bb.max.x : bb.min.x, k & 2 ? bb.max.y : bb.min.y, k & 4 ? bb.max.z : bb.min.z).applyMatrix4(m);
-        lead = Math.max(lead, c.sub(from).dot(back));
-      }
-      if (lead < slide.length() - 1e-3) from.addScaledVector(back, lead);
-    }
-    const [a, b] = pagePoints(scene, [[from.x, from.y, from.z], [to.x, to.y, to.z]], aspect);
-    if (Math.hypot((b.x - a.x) * aspect, b.y - a.y) < 0.04) continue;
-    out.push({ id: p.id, name: p.name, from: a, to: b, turns: p.joint.type === "revolute" });
-  }
-  return out;
-}
-
-/** `stepArrows` along the draft lines themselves: each from its part's leading end, with the parts' sizes from the store. */
-export async function stepRails(scene: SceneData, aspect: number, store: ModelStore): Promise<StepArrow[]> {
-  const boxes = new Map<string, Box3>();
-  for (const part of scene.parts) {
-    try {
-      const bb = (await store.get(part)).geometry.boundingBox;
-      if (bb) boxes.set(part.id, bb);
-    } catch {
-      // Its model can't be loaded: its arrow starts at its joint.
-    }
-  }
-  return stepArrows(scene, aspect, boxes);
-}
 
 // ------------------------------------------------------------ detail circles
 

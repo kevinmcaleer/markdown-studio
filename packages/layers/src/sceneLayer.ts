@@ -11,7 +11,10 @@ export interface DetailInfo {
   part?: string;
   spot?: { x: number; y: number };
   zoom?: number;
-  label?: boolean;
+  /** The words in the box on the ring: how many times the step is done ("x1" to start; false or "" for none). An older `true` means "x1". */
+  label?: string | boolean;
+  /** How it's joined to its spot: a flared tail, a thin line, or nothing (see detailTail.ts). */
+  look?: "tail" | "line" | "none";
 }
 
 export class SceneLayer extends FabricImage {

@@ -53,7 +53,23 @@ export interface ScenePart {
   ghost?: boolean;
   /** A screw made by the screw tool (its model is made from this, and carried in `data`). */
   screw?: ScrewSpec;
+  /**
+   * This part's assembly arrow (drawn when the scene's `arrows` is on): how
+   * far along the gap from the part's leading end (0) to where it fits (1)
+   * the arrow runs, and whether it's left out.
+   */
+  arrow?: PartArrow;
 }
+
+export interface PartArrow {
+  from?: number;
+  to?: number;
+  off?: boolean;
+}
+
+/** Where a part's assembly arrow runs by default, as fractions of the gap from the part to where it fits. */
+export const ARROW_FROM = 0.1;
+export const ARROW_TO = 0.92;
 
 export interface PartJoint {
   normal: Vec3;
@@ -129,6 +145,8 @@ export interface SceneData {
   views?: NamedView[];
   /** A section view: the parts cut away on one side of a plane, the cut faces filled and hatched. */
   section?: SectionPlane;
+  /** Solid arrows drawn in the picture along each exploded part's gap, from the part to where it fits (an assembly step). */
+  arrows?: boolean;
 }
 
 /**
@@ -250,6 +268,14 @@ export function normalizeScene(value: unknown): SceneData {
         if (p.ghost) part.ghost = true;
         const screw = normalizeScrew(p.screw);
         if (screw) part.screw = screw;
+        if (p.arrow && typeof p.arrow === "object") {
+          const a = p.arrow as { from?: unknown; to?: unknown; off?: unknown };
+          const arrow: PartArrow = {};
+          if (typeof a.from === "number" && Number.isFinite(a.from)) arrow.from = num(a.from, ARROW_FROM, 0, 1);
+          if (typeof a.to === "number" && Number.isFinite(a.to)) arrow.to = num(a.to, ARROW_TO, 0, 1);
+          if (a.off === true) arrow.off = true;
+          if (Object.keys(arrow).length) part.arrow = arrow;
+        }
         if (p.joint && typeof p.joint === "object") {
           const j = p.joint;
           const unit = (v: unknown) => {
@@ -319,6 +345,7 @@ export function normalizeScene(value: unknown): SceneData {
   if (views.length) out.views = views;
   const section = normalizeSection(v.section);
   if (section) out.section = section;
+  if (v.arrows === true) out.arrows = true;
   return out;
 }
 

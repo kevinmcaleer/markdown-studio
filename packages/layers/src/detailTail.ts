@@ -9,12 +9,21 @@
 import { classRegistry } from "fabric";
 import { Connector } from "./connector";
 
+/** How a detail circle is joined to its spot: a flared tail (flat-pack sheets), a thin straight line (brick sets), or nothing. */
+export type TailLook = "tail" | "line" | "none";
+export const TAIL_LOOKS: { id: TailLook; label: string; detail: string }[] = [
+  { id: "tail", label: "Tail", detail: "A flared tail from the ring to the spot, as on a flat-pack sheet" },
+  { id: "line", label: "Line", detail: "A thin straight line from the ring to the spot, as in a brick set" },
+  { id: "none", label: "None", detail: "The circle alone" },
+];
+
 export class DetailTail extends Connector {
   static type = "DetailTail";
-  static customProperties = [...Connector.customProperties, "radius", "detailOf"];
+  static customProperties = [...Connector.customProperties, "radius", "detailOf", "look"];
 
   declare radius?: number;
   declare detailOf?: string;
+  declare look?: TailLook;
 
   _render(ctx: CanvasRenderingContext2D): void {
     const p = this.calcLinePoints();
@@ -23,8 +32,21 @@ export class DetailTail extends Connector {
     const dy = p.y2 - p.y1;
     const len = Math.hypot(dx, dy);
     const sw = Number(this.strokeWidth) || 1;
-    if (!r || len <= r + sw * 2) return;
+    if (!r || len <= r + sw * 2 || this.look === "none") return;
     const a = Math.atan2(dy, dx);
+    if (this.look === "line") {
+      // A thin line from the ring's edge to the spot.
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(p.x1 + r * Math.cos(a), p.y1 + r * Math.sin(a));
+      ctx.lineTo(p.x2, p.y2);
+      ctx.lineWidth = Math.max(1, sw * 0.5);
+      ctx.lineCap = "round";
+      ctx.strokeStyle = typeof this.stroke === "string" ? this.stroke : "#000";
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
     // How wide the tail is where it leaves the ring, and how far it curves out before heading in.
     const th = Math.min(0.3, Math.max(0.12, (r * 0.2) / Math.max(1, len - r)));
     const A = { x: p.x1 + r * Math.cos(a - th), y: p.y1 + r * Math.sin(a - th) };
