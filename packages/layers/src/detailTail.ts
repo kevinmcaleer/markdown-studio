@@ -3,7 +3,8 @@
 // circle magnifies. It's a connector, so its tip is dragged like a line's
 // end; its start is kept at the circle's middle by the editor, which also
 // sets `radius` (the ring's, on the page). Drawn over the circle, its white
-// fill breaks the ring where it leaves.
+// fill breaks the ring where it leaves. (The outline its tip touches is
+// broken in the picture itself: the editor cuts the spot back to the fills.)
 
 import { classRegistry } from "fabric";
 import { Connector } from "./connector";

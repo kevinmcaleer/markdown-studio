@@ -8,7 +8,7 @@
 // with the document stored inside it.
 
 import {
-  ActiveSelection, Canvas, Control, FabricImage, FabricObject, Group, Point, Polygon, Rect, Textbox, util, type TPointerEventInfo, type TPointerEvent,
+  ActiveSelection, BaseFabricObject, Canvas, Control, FabricImage, FabricObject, Group, Point, Polygon, Rect, Textbox, util, type TPointerEventInfo, type TPointerEvent,
 } from "fabric";
 import { alignBoxes, distributeBoxes, type AlignHow, type DistributeHow } from "./align";
 import { Connector, type ConnectorEnd } from "./connector";
@@ -28,7 +28,10 @@ import { snap, type Box, type Guide } from "./snap";
 import { inventoryOf, isFastener, partsInStep, TURNED_DEGREES, turnedFromDefault } from "./stepFrame";
 import css from "./layers.css?inline";
 
-FabricObject.customProperties = ["name", "layerId", "layerLocked", "badge", "badgePinned", "boundTo", "partsStrip", "stepArrow", "turnMark", "detailOf"];
+// Saved with every layer. Set on the base class: Fabric's toObject reads them
+// from there, and a subclass with its own list (a scene, a line) would
+// otherwise lose its name, id and links when the graphic is saved.
+BaseFabricObject.customProperties = FabricObject.customProperties = ["name", "layerId", "layerLocked", "badge", "badgePinned", "boundTo", "partsStrip", "stepArrow", "turnMark", "detailOf", "rail"];
 // Corner handles that are easier to grab, and a selection colour that reads on any picture.
 Object.assign(FabricObject.ownDefaults, {
   borderColor: "#8b3dff",
@@ -443,6 +446,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     for (const o of objects()) {
       if (o.group) continue;
       if (isTail(o)) syncTail(o);
+      else if (isRailed(o)) syncArrow(o);
       else if (o instanceof Connector) syncConnector(o);
       else if (boundTo(o)) syncText(o as Textbox);
     }
@@ -484,6 +488,18 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       if (!i) return;
       c.setEnds(other, pointer);
       return;
+    }
+    if (isRailed(c)) {
+      // A step arrow's end slides along its draft line; Alt takes it off the line.
+      if (e.altKey) (c as RailedArrow).rail = undefined;
+      else {
+        const r = railOnPage(c);
+        if (r) {
+          const p = onRail(r, pointer);
+          c.setEnds(i ? other : p, i ? p : other);
+          return;
+        }
+      }
     }
     const hit = e.altKey ? null : findSnap(pointer, [c, ...exclude], other);
     const p = hit ? hit.at : e.shiftKey ? snapAngle(other, pointer) : pointer;
@@ -1004,11 +1020,33 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
   async function drawLayer(layer: SceneLayer, scene: SceneData, w: number, h: number, scale: number): Promise<HTMLCanvasElement> {
     const t = await sceneTools();
     if (isDetail(layer)) return t.renderDetail(scene, t.store, w, h, scale, detailLook(layer));
-    return t.renderPicture(scene, t.store, w, h, scale);
+    return t.renderPicture(scene, t.store, w, h, scale, cutsOf(layer));
   }
 
-  /** After a scene layer is stretched, its picture is drawn again at the new shape, so lines stay sharp. */
-  async function redrawScene(layer: SceneLayer): Promise<void> {
+  /**
+   * Where a picture's detail circles point: a spot cut back to the parts'
+   * fills round each tail's tip, so the outline there breaks as on a flat-pack
+   * sheet. As fractions of the picture, the way the renderer takes them.
+   */
+  function cutsOf(layer: SceneLayer): import("./scene/render").Cut[] {
+    const box = layer.getBoundingRect();
+    if (!box.width || !box.height) return [];
+    const out: import("./scene/render").Cut[] = [];
+    for (const d of detailsOf(layer)) {
+      const spot = d.detail.spot;
+      if (!spot || !tailOf(d)) continue;
+      const tip = { x: box.left + spot.x * box.width, y: box.top + spot.y * box.height };
+      const c = d.getCenterPoint();
+      const len = dist(c, tip);
+      if (len < 1) continue;
+      const r = (ringWidth() * 2.5) / box.height;
+      out.push({ x: spot.x, y: spot.y, dx: (c.x - tip.x) / len, dy: (c.y - tip.y) / len, len: r * 3, r });
+    }
+    return out;
+  }
+
+  /** After a scene layer is stretched, its picture is drawn again at the new shape, so lines stay sharp (`force`: drawn again whatever its shape). */
+  async function redrawScene(layer: SceneLayer, force = false): Promise<void> {
     if (isDetail(layer)) return redrawDetail(layer);
     const { w, h } = layer.pageSize();
     const scale = sceneScale(w, h);
@@ -1019,7 +1057,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       return;
     }
     const same = Math.abs((layer.width || 0) - w * scale) < 2 && Math.abs((layer.height || 0) - h * scale) < 2;
-    if (same) return;
+    if (same && !force) return;
     try {
       const picture = await drawLayer(layer, normalizeScene(layer.scene), Math.round(w), Math.round(h), scale);
       if (destroyed || !canvas.contains(layer)) return;
@@ -1053,27 +1091,51 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     try {
       const t = await sceneTools();
       const thumbnailer = new t.Thumbnailer();
-      const unit = Math.round(Math.min(W, H) * 0.13);
+      // A box with the parts in it, left to right, each with its count under
+      // it, as on a LEGO sheet. The cells are sized so every part fits inside
+      // the box, and the box fits beside the picture: more parts, more rows.
+      const unit = Math.round(Math.min(W, H) * 0.11);
+      const pad = Math.round(unit * 0.3);
+      const gap = Math.round(unit * 0.25);
+      const labelH = Math.round(unit * 0.36);
+      const roomW = Math.max(unit + pad * 2, Math.round(W * 0.25));
+      const cols = Math.max(1, Math.min(list.length, Math.floor((roomW - pad * 2 + gap) / (unit + gap))));
+      const rows = Math.ceil(list.length / cols);
+      const boxW = pad * 2 + cols * unit + (cols - 1) * gap;
+      const boxH = pad * 2 + rows * (unit + labelH) + (rows - 1) * gap;
+      const sw = Math.max(2, Math.round(unit * 0.035));
       const items: FabricObject[] = [];
-      let y = 0;
+      const box = new Rect({ left: 0, top: 0, width: boxW, height: boxH, rx: sw * 2, ry: sw * 2, fill: "", stroke: INK, strokeWidth: sw, objectCaching: false });
+      Object.assign(box, { name: "Box", layerId: newId() });
+      items.push(box);
       try {
-        for (const g of list) {
+        for (let i = 0; i < list.length; i++) {
+          const g = list[i];
           const model = await t.store.get(g.part);
           if (destroyed) return;
           const pic = thumbnailer.draw(model, scene.style, scene.camera.direction, unit * 2);
           const img = await FabricImage.fromURL(pic);
+          // Square pictures, so the part fills its cell and never leaves it.
           img.scaleToWidth(unit);
-          img.set({ left: 0, top: y });
+          if (img.getScaledHeight() > unit) img.scaleToHeight(unit);
+          const x = pad + (i % cols) * (unit + gap);
+          const y = pad + Math.floor(i / cols) * (unit + labelH + gap);
+          img.set({ left: x + (unit - img.getScaledWidth()) / 2, top: y + (unit - img.getScaledHeight()) / 2 });
           Object.assign(img, { name: g.part.name || "Part", layerId: newId() });
-          const label = new Textbox(`${g.count}x`, { left: unit + unit * 0.12, top: y + unit * 0.3, width: unit * 0.9, fontFamily: FONTS[0][1], fontSize: Math.round(unit * 0.34), fontWeight: "700", fill: INK });
+          const label = new Textbox(`${g.count}x`, { left: x, top: y + unit + labelH * 0.1, width: unit, fontFamily: FONTS[0][1], fontSize: Math.round(labelH * 0.7), fontWeight: "700", fill: INK });
           Object.assign(label, { name: `${g.count}x ${g.part.name || "part"}`, layerId: newId() });
           items.push(img, label);
-          y += unit + unit * 0.14;
         }
       } finally {
         thumbnailer.dispose();
       }
-      const at = old.length ? { left: old[0].left || 0, top: old[0].top || 0 } : { left: Math.round(W * 0.05), top: Math.round(badges().length ? H * 0.46 : H * 0.06) };
+      // Where the old strip was; or under the step number, else at the top left.
+      const under = badges().map(b => b.getBoundingRect()).sort((p, q) => p.top - q.top)[0];
+      const at = old.length
+        ? { left: old[0].left || 0, top: old[0].top || 0 }
+        : under
+          ? { left: Math.round(under.left), top: Math.round(under.top + under.height + Math.min(W, H) * 0.03) }
+          : { left: Math.round(W * 0.05), top: Math.round(H * 0.06) };
       old.forEach(o => canvas.remove(o));
       const g = new Group(items, at);
       Object.assign(g, { name: "Parts in this step", layerId: newId(), partsStrip: idOf(layer) });
@@ -1087,10 +1149,87 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     }
   }
 
+  /** Where a step arrow sits: along its part's draft line (as fractions of the scene's picture), from `t[0]` to `t[1]` of the way along it. */
+  interface Rail { part: string; from: { x: number; y: number }; to: { x: number; y: number }; t: [number, number] }
+  type RailedArrow = Connector & { stepArrow?: string; rail?: Rail };
+  const isRailed = (o: unknown): o is RailedArrow & { rail: Rail } => o instanceof Connector && !!(o as RailedArrow).rail && !!(o as RailedArrow).stepArrow;
+
+  /** A step arrow's rail on the page: its scene's picture box maps the fractions. */
+  function railOnPage(a: RailedArrow): { from: Pt; to: Pt } | null {
+    const layer = byId(a.stepArrow || "");
+    if (!a.rail || !layer || !isScene(layer)) return null;
+    const box = layer.getBoundingRect();
+    const page = (p: { x: number; y: number }) => ({ x: box.left + p.x * box.width, y: box.top + p.y * box.height });
+    return { from: page(a.rail.from), to: page(a.rail.to) };
+  }
+
+  /** How far along the rail (0 at its start, 1 at its end) `p` falls, by its nearest point. */
+  function alongRail(r: { from: Pt; to: Pt }, p: Pt): number {
+    const dx = r.to.x - r.from.x;
+    const dy = r.to.y - r.from.y;
+    const d2 = dx * dx + dy * dy;
+    return d2 < 1e-6 ? 0 : ((p.x - r.from.x) * dx + (p.y - r.from.y) * dy) / d2;
+  }
+
+  const atRail = (r: { from: Pt; to: Pt }, t: number): Pt => ({ x: r.from.x + (r.to.x - r.from.x) * t, y: r.from.y + (r.to.y - r.from.y) * t });
+  /** The point on the rail nearest `p`, kept on the line. */
+  const onRail = (r: { from: Pt; to: Pt }, p: Pt) => atRail(r, Math.min(1, Math.max(0, alongRail(r, p))));
+
+  /** Puts a step arrow where its rail says. */
+  function syncArrow(a: RailedArrow): void {
+    const r = railOnPage(a);
+    if (!r || !a.rail) return;
+    const [na, nb] = [atRail(r, a.rail.t[0]), atRail(r, a.rail.t[1])];
+    const [ca, cb] = a.ends();
+    if (dist(na, ca) > 0.01 || dist(nb, cb) > 0.01) a.setEnds(na, nb);
+  }
+
+  /** After a step arrow was moved: it drops onto its rail where it was put, the same length, and no further than the rail's ends. */
+  function settleArrow(a: RailedArrow): void {
+    const r = railOnPage(a);
+    if (!r || !a.rail || a.group) return;
+    const [ca, cb] = a.ends();
+    let t0 = alongRail(r, ca);
+    let t1 = alongRail(r, cb);
+    const span = Math.min(1, Math.abs(t1 - t0));
+    const lo = Math.min(t0, t1);
+    const shift = lo < 0 ? -lo : lo + span > 1 ? 1 - span - lo : 0;
+    t0 += shift;
+    t1 += shift;
+    a.rail.t = [t0, t1];
+    syncArrow(a);
+  }
+
+  /** The step arrows of a scene drawn again: each follows its part's draft line, and one whose part is no longer drawn apart goes. */
+  async function followArrows(layer: SceneLayer): Promise<void> {
+    const arrows = ownedBy("stepArrow", layer).filter(isRailed);
+    if (!arrows.length || !layer.scene) return;
+    try {
+      const t = await sceneTools();
+      const box = layer.getBoundingRect();
+      const list = await t.stepRails(normalizeScene(layer.scene), box.width / box.height, t.store);
+      for (const a of arrows) {
+        const now = list.find(x => x.id === a.rail.part);
+        if (!now) {
+          canvas.remove(a);
+          continue;
+        }
+        a.rail.from = now.from;
+        a.rail.to = now.to;
+        syncArrow(a);
+      }
+      canvas.requestRenderAll();
+    } catch {
+      // The scene can't be worked out here: the arrows stay put.
+    }
+  }
+
   /**
    * Solid arrows along the joints of the parts drawn apart in the scene,
    * from each part towards where it fits, plus a turn arrow on a part that
-   * turns. Ordinary arrows afterwards, so they can be moved or deleted.
+   * turns. Each arrow stays on its draft line: it slides along it, and
+   * follows it when the scene is drawn again or moved. Its size follows the
+   * line's length, so it suits the drawing.
    */
   async function stepArrows(layer: SceneLayer): Promise<void> {
     if (!layer.scene?.parts.length) return status("Add parts and explode the scene first.", true);
@@ -1099,28 +1238,31 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       const t = await sceneTools();
       const scene = normalizeScene(layer.scene);
       const box = layer.getBoundingRect();
-      const list = t.stepArrows(scene, box.width / box.height);
+      const list = await t.stepRails(scene, box.width / box.height, t.store);
       if (!list.length) return status("No part is drawn apart from where it fits: slide Explode up in the 3D scene, then add arrows.", true);
       ownedBy("stepArrow", layer).forEach(o => canvas.remove(o));
       const page = (p: { x: number; y: number }) => ({ x: box.left + p.x * box.width, y: box.top + p.y * box.height });
       const made: FabricObject[] = [];
-      const sw = Math.max(6, Math.round(Math.min(W, H) * 0.014));
+      const unit = Math.min(W, H);
       for (const a of list) {
         const from = page(a.from);
         const to = page(a.to);
+        const len = dist(from, to);
+        // A thin shaft in keeping with the line art: never heavier than the drawing warrants.
+        const sw = Math.max(2, Math.min(Math.round(unit * 0.007), Math.round(len * 0.05)));
         // The arrow sits in the gap: it starts clear of the part and stops short of where it fits.
-        const start = { x: from.x + (to.x - from.x) * 0.3, y: from.y + (to.y - from.y) * 0.3 };
-        const end = { x: from.x + (to.x - from.x) * 0.92, y: from.y + (to.y - from.y) * 0.92 };
-        const arrow = makeShape("solid-arrow", { x: 0, y: 0 }, INK) as Connector;
+        const t0 = 0.3;
+        const t1 = 0.92;
+        const arrow = makeShape("solid-arrow", { x: 0, y: 0 }, INK) as RailedArrow;
         arrow.set({ strokeWidth: sw });
-        arrow.setEnds(start, end);
-        Object.assign(arrow, { name: `Arrow: ${a.name}`, stepArrow: idOf(layer) });
+        arrow.setEnds(atRail({ from, to }, t0), atRail({ from, to }, t1));
+        Object.assign(arrow, { name: `Arrow: ${a.name}`, stepArrow: idOf(layer), rail: { part: a.id, from: a.from, to: a.to, t: [t0, t1] } });
         prepare(arrow);
         canvas.add(arrow);
         made.push(arrow);
         if (a.turns) {
           const turn = makeShape("rotate", { x: 0, y: 0 }, INK)!;
-          const size = Math.min(W, H) * 0.1;
+          const size = Math.max(24, Math.min(unit * 0.1, len * 0.5));
           turn.scale(size / 200);
           turn.set({ left: from.x - size * 1.2, top: from.y - size * 1.2 });
           Object.assign(turn, { name: `Turns: ${a.name}`, stepArrow: idOf(layer) });
@@ -1131,7 +1273,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       }
       selectAll(made);
       canvas.requestRenderAll();
-      status(`${made.length === 1 ? "One arrow" : `${made.length} arrows`} added. Move or delete them like any arrow.`);
+      status(`${made.length === 1 ? "One arrow" : `${made.length} arrows`} added. Slide an arrow along its line, or delete it; Alt-drag an end to take it off the line.`);
       changed();
     } catch (e) {
       status(e instanceof Error && e.message ? `Arrows couldn't be worked out: ${e.message}` : "Arrows couldn't be worked out.", true);
@@ -1225,6 +1367,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       canvas.requestRenderAll();
       status(`A close-up of ${part.name}. Drag the tail's tip to the spot to magnify; set its zoom in the bar.`);
       changed();
+      await redrawScene(layer, true);
     } catch (e) {
       status(e instanceof Error && e.message ? `The close-up couldn't be drawn: ${e.message}` : "The close-up couldn't be drawn.", true);
     }
@@ -1288,6 +1431,8 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       if (destroyed) return;
       renderContext();
       changed();
+      // The picture's outline opens round the new spot.
+      await redrawScene(layer, true);
     } catch {
       aimTail(detail, tail);
     }
@@ -1575,12 +1720,8 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
         Object.assign(floor, { name: "Floor", layerId: newId() });
         const b = badge(step.n, { x: W * 0.05, y: H * 0.06 }, STEP_RED);
         Object.assign(b, { badgePinned: true });
-        addAll([
-          floor,
-          b,
-          text(g.stepTitle(step), { left: W * 0.05, top: H * 0.06 + 100, width: W * 0.22, fontSize: Math.round(unit * 0.045), fontWeight: "800" }),
-          text(step.fixings.length ? "Fit the highlighted parts and fixings as shown." : "Fit the highlighted parts as shown.", { left: W * 0.05, top: H * 0.06 + 100 + unit * 0.12, width: W * 0.22, fontSize: Math.round(unit * 0.028), fill: "#495057" }),
-        ]);
+        // No words on a step, as on a flat-pack sheet: the number, the parts box and the picture say it.
+        addAll([floor, b]);
         const layer = await place(scenes[step.n], SCENE);
         if (destroyed) return;
         await partsStrip(layer, true);
@@ -1596,6 +1737,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     if (destroyed || !canvas.contains(layer) || isDetail(layer)) return;
     turnMark(layer);
     await followDetails(layer);
+    await followArrows(layer);
     const has = ownedBy("partsStrip", layer).length > 0;
     // An assembly step (one with a step number) lists its parts by itself the first time its scene is drawn.
     if (has || (firstDone && badges().length && layer.scene && partsInStep(normalizeScene(layer.scene)).length)) await partsStrip(layer, true);
@@ -1861,7 +2003,8 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
   });
   // Lines and shape text keep up while things move. Moving a line itself unfastens it.
   canvas.on("object:moving", e => {
-    if (e.target instanceof Connector) {
+    if (isRailed(e.target)) settleArrow(e.target);
+    else if (e.target instanceof Connector) {
       e.target.connFrom = null;
       e.target.connTo = null;
     }
@@ -1886,6 +2029,12 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
   canvas.on("object:modified", e => {
     const o = e.target;
     if (isTail(o)) void tailMoved(o);
+    if (isDetail(o) && !isTail(o)) {
+      // Its tail now comes in from elsewhere: the cut in the picture follows.
+      const src = sourceOf(o);
+      if (src) void redrawScene(src, true);
+    }
+    if (isRailed(o)) settleArrow(o);
     if (stretching && o === stretching.o) {
       bakeScale(o as Rect, stretching.r);
       stretching = null;
@@ -3098,6 +3247,12 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
   const onChange = () => changed();
   canvas.on("object:added", onChange);
   canvas.on("object:removed", onChange);
+  canvas.on("object:removed", e => {
+    const o = (e as { target?: FabricObject }).target;
+    if (!isDetail(o) || restoring || destroyed) return;
+    const src = sourceOf(o);
+    if (src && canvas.contains(src)) void redrawScene(src, true);
+  });
   canvas.on("object:modified", onChange);
   canvas.on("object:modified", e => {
     const t = (e as { target?: FabricObject }).target;
@@ -3112,7 +3267,9 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
   };
   canvas.on("selection:created", onSelect);
   canvas.on("selection:updated", onSelect);
-  canvas.on("selection:cleared", () => {
+  canvas.on("selection:cleared", e => {
+    // Step arrows moved as part of a selection drop back onto their lines.
+    (e as { deselected?: FabricObject[] }).deselected?.forEach(o => isRailed(o) && settleArrow(o));
     follow();
     onSelect();
   });

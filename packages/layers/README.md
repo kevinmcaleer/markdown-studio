@@ -53,7 +53,8 @@ const editor = mount(el, {
   bottoms, and spaces three or more evenly across or up and down. Lines
   fastened to the shapes follow them.
 - **3D scenes** for assembly instructions: Elements → *3D scene from STL
-  files*, or the *Assembly step* template. Double-click a scene to open its
+  files*, or the *Assembly step* template (a step number, a grey floor and
+  the scene; no words, as on a flat-pack sheet). Double-click a scene to open its
   3D workspace: add STL files (the host's `listModels`, an upload, or a
   drop), move and turn each part with handles or exact X/Y/Z (mm) and
   Roll/Pitch/Yaw (°) boxes (arrow keys step, Shift ×10, Alt ×0.1, or drag a
@@ -75,17 +76,25 @@ const editor = mount(el, {
   back to where it fits (Style: *Draft lines when exploded*). **Ghost**
   draws a part faint, for parts fitted in an earlier step.
 - **The step frame**, as on a flat-pack sheet, from a 3D scene's bar:
-  *Parts strip* lists the parts the step uses beside the picture (a small
-  drawing of each kind with its count, "2x"): the highlighted parts, or
-  every shown part when none is highlighted. An assembly step (one with a
-  step number) gets its strip the first time its scene is drawn, and a
-  strip is drawn again whenever its scene is. *Arrows* adds a solid arrow
-  along each exploded joint, from the part towards where it fits, and a
-  turn arrow on a part that turns; they're ordinary arrows afterwards.
-  Under Views, the star marks the project's **default view**: new steps
-  start from it, and a step that looks from more than 30° off it gets a
-  "turn it" mark at the picture's top right (removed when it looks from
-  the default view again).
+  *Parts strip* boxes the parts the step uses beside the picture, as on a
+  LEGO sheet: an outlined box with a small drawing of each kind, left to
+  right, its count under it ("2x"), in as many rows as it takes so every
+  part sits inside the box (the highlighted parts, or every shown part when
+  none is highlighted). An assembly step (one with a step number) gets its
+  strip the first time its scene is drawn, under the number, and a strip is
+  drawn again whenever its scene is. *Arrows* adds a solid arrow along
+  each exploded joint, from the part towards where it fits, sized to the
+  drawing, and a turn arrow on a part that turns. An arrow stays on its
+  draft line: drag it and it slides along the line, drag an end and the
+  end slides too, and it follows the line when the scene is drawn again or
+  moved (Alt-drag an end to take it off the line). Under Views, the star
+  marks the project's **default view**: new steps start from it, and a step
+  that looks from more than 30° off it gets a "turn it" mark at the
+  picture's top right (removed when it looks from the default view again).
+- **Draft lines break the lines they cross**: a dashed (or solid) draft
+  line runs over the parts, and the outlines and fold lines it crosses open
+  either side of it, as on a printed sheet, with the parts' fills left
+  whole.
 - **Parts list** (Templates): every kind of part in the project's model
   (or the first 3D scene's parts) drawn at one scale with its name and
   count, and the **fixings** together in a box at the bottom, each with
@@ -98,8 +107,8 @@ const editor = mount(el, {
   then one step per part. The first step fits the second part onto the
   first; each step's fixings go with the part they're joined to, the
   parts of earlier steps are ghosts, the new ones are highlighted and
-  drawn apart along their joints with arrows, a parts strip and a pinned
-  step number. Every page looks from the project's default view (or the
+  drawn apart along their joints with arrows, a parts box and a pinned
+  step number, and no words, as on a flat-pack sheet. Every page looks from the project's default view (or the
   usual one), framed round the whole assembly. It draws on the editor's
   own page, so mount one out of sight for it. Every page is an ordinary
   graphic afterwards, to open and tidy.
@@ -112,9 +121,11 @@ const editor = mount(el, {
   written in a white box on the ring ("2x"; *Label* turns it off), and a
   small part under the tip (a screw, not a panel) is drawn whole over the
   ring, so both break its line as on IKEA's sheets; the bar's part list
-  picks which part, or none. It's drawn again whenever its scene is, and
-  moving the circle moves the tail's start with it. A circle whose part is
-  hidden or gone is removed with its scene's next drawing.
+  picks which part, or none. Where the tail's tip touches, the picture's
+  outline opens round it (the spot is cut back to the parts' fills), so
+  it's clear what the circle shows. It's drawn again whenever its scene is,
+  and moving the circle moves the tail's start with it. A circle whose part
+  is hidden or gone is removed with its scene's next drawing.
 - **Join snaps**, as in Snakie's Build workspace: while joining, the face
   under the pointer is tinted and its snap points shown: its middle,
   corners and edge middles, the centre of each round hole in it, or, on a
