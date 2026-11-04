@@ -363,14 +363,23 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       draw();
     }
 
+    /** Which file each loaded model came from (ModelStore.key), by part id. */
+    const modelKeys = new Map<string, string>();
+    function keepModel(part: ScenePart, model: Model | Error): void {
+      models.set(part.id, model);
+      modelKeys.set(part.id, ModelStore.key(part));
+    }
+
     async function loadModels(): Promise<void> {
       const missing: string[] = [];
       await Promise.all(scene.parts.map(async part => {
-        if (models.has(part.id)) return;
+        // Kept only while the part still comes from the same file: a part
+        // can take another's id (a scene switched to the project model).
+        if (models.has(part.id) && modelKeys.get(part.id) === ModelStore.key(part)) return;
         try {
-          models.set(part.id, await opts.store.get(part));
+          keepModel(part, await opts.store.get(part));
         } catch (e) {
-          models.set(part.id, e instanceof Error ? e : new Error(String(e)));
+          keepModel(part, e instanceof Error ? e : new Error(String(e)));
           missing.push(part.name);
         }
       }));
@@ -446,7 +455,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           ...(source.url ? { url: source.url } : { data }),
         };
         opts.store.put(part, model);
-        models.set(part.id, model);
+        keepModel(part, model);
         scene.parts.push(part);
         selectedId = part.id;
         rebuild();
@@ -502,7 +511,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
             ...(source.url ? { url: source.url, body: it.i } : { data: it.data }),
           };
           opts.store.put(part, it.model);
-          models.set(part.id, it.model);
+          keepModel(part, it.model);
           scene.parts.push(part);
           added.push(part);
           triangles += it.model.triangles;
@@ -986,7 +995,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const shift = new Matrix4().makeTranslation(model.size[0] + 10, 0, 0);
       setLocalFromWorld(copy, shift.multiply(world), null);
       opts.store.put(copy, model);
-      models.set(copy.id, model);
+      keepModel(copy, model);
       scene.parts.push(copy);
       selectedId = copy.id;
       shownJoint = "";
