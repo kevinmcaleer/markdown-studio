@@ -7,14 +7,15 @@
 //
 // This module and three.js load only when a scene is opened.
 
-import { BufferAttribute, BufferGeometry, DoubleSide, Euler, Line, LineBasicMaterial, Matrix4, Mesh, MeshBasicMaterial, Object3D, OrthographicCamera, Quaternion, Raycaster, Vector2, Vector3 } from "three";
+import { Box3 as Bounds, BufferAttribute, BufferGeometry, DoubleSide, Euler, Line, LineBasicMaterial, Matrix4, Mesh, MeshBasicMaterial, Object3D, OrthographicCamera, Quaternion, Raycaster, Vector2, Vector3 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { icon } from "../icons";
 import {
   applyPreset, DEFAULT_LIMITS, JOINT_TYPES, normalizeScene, newPartId, partName, placeBeside, STYLE_PRESETS, VIEWS, wrapAngle,
   followModel, modelOf, partsDiffer,
-  type JointType, type PartJoint, type ProjectModel,
+  normalizeViews,
+  type JointType, type NamedView, type PartJoint, type ProjectModel,
   type Box3 as PlainBox, type SceneData, type ScenePart, type SceneStyle, type Vec3,
 } from "./model";
 import { applyJoint } from "./joint";
@@ -136,6 +137,10 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
               <span class="lyr-sep"></span>
               ${VIEWS.map(v => `<button type="button" class="lyr-btn" data-view="${v.id}" title="Look from the ${esc(v.label.toLowerCase())}">${esc(v.label)}</button>`).join("")}
               <span class="lyr-sep"></span>
+              <span class="lyr-scene-views">
+                <button type="button" class="lyr-btn" data-act="views" aria-haspopup="menu" title="Named views: save this camera under a name, to give other pictures the same view">${icon("camera", 16)}<span>Views</span></button>
+                <div class="lyr-scene-views-menu" role="menu" hidden></div>
+              </span>
               <button type="button" class="lyr-btn" data-act="fit" title="Fit the parts in the picture (F)">${icon("frame", 16)}<span>Fit</span></button>
               <span class="lyr-sep"></span>
               <label class="lyr-scene-explode" title="Slide joined parts apart along their joints, to show how they fit">${icon("expand", 16)}<span>Explode</span><input type="range" min="0" max="100" step="1" data-explode value="0" aria-label="Explode"></label>
@@ -503,6 +508,51 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       draw();
     }
 
+    /** Turns the camera to show `box` (zooming in or out), keeping the direction it looks from. */
+    function frameOn(box: Bounds): void {
+      if (box.isEmpty()) return;
+      scene.camera = frame(scene.camera, box, aspect, 1.35);
+      applyCamera();
+      draw();
+      commit();
+    }
+    /** Where a part is drawn now, as a box. */
+    function partBounds(id: string): Bounds {
+      const g = art.groupOf(id);
+      const box = new Bounds();
+      if (!g) return box;
+      art.scene.updateMatrixWorld(true);
+      const m = models.get(id);
+      if (m && !(m instanceof Error)) {
+        m.geometry.computeBoundingBox();
+        if (m.geometry.boundingBox) box.copy(m.geometry.boundingBox).applyMatrix4(g.matrixWorld);
+      }
+      return box;
+    }
+    /** Zooms to a part, or to a joint's two faces with a little of each part round them. */
+    function zoomTo(id: string, joint: boolean): void {
+      if (!joint) return frameOn(partBounds(id));
+      const box = new Bounds();
+      art.scene.updateMatrixWorld(true);
+      let reach = 0;
+      for (const jf of jointFaces) {
+        const g = art.groupOf(jf.id);
+        const m = models.get(jf.id);
+        if (!g || !m || m instanceof Error) continue;
+        reach = Math.max(reach, ...m.size);
+        if (jf.face) {
+          const fg = faceGeometry(m, jf.face);
+          fg.computeBoundingBox();
+          if (fg.boundingBox) box.union(fg.boundingBox.clone().applyMatrix4(g.matrixWorld));
+        }
+        box.expandByPoint(new Vector3(...jf.point).applyMatrix4(g.matrixWorld));
+      }
+      if (box.isEmpty()) return frameOn(partBounds(id).union(partBounds(partById(id)?.parent || "")));
+      // Some room round the faces, so the joint reads in its parts.
+      box.expandByScalar(Math.max(4, reach * 0.15));
+      frameOn(box);
+    }
+
     function setView(id: string): void {
       const v = VIEWS.find(x => x.id === id);
       if (!v) return;
@@ -640,8 +690,16 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const b = (e.target as HTMLElement).closest("button");
       if (!b) return;
       const d = b.dataset;
-      if (d.pick) select(d.pick === selectedId && !shownJoint ? "" : d.pick);
-      else if (d.joint) showJoint(shownJoint === d.joint ? "" : d.joint);
+      // Picked in the list: the view zooms to it (Fit shows everything again).
+      if (d.pick) {
+        const off = d.pick === selectedId && !shownJoint;
+        select(off ? "" : d.pick);
+        if (!off) zoomTo(d.pick, false);
+      } else if (d.joint) {
+        const off = shownJoint === d.joint;
+        showJoint(off ? "" : d.joint);
+        if (!off) zoomTo(d.joint, true);
+      }
       else if (d.rejoin) {
         select(d.rejoin);
         startJoin(d.rejoin);
@@ -930,7 +988,12 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         const findFace = (partId: string, point?: Vec3, normal?: Vec3) => {
           const m = models.get(partId);
           if (!point || !normal || !m || m instanceof Error) return null;
-          return topologyOf(m)?.faceNear(point, normal) ?? null;
+          try {
+            return topologyOf(m)?.faceNear(point, normal) ?? null;
+          } catch (e) {
+            console.warn("Layers: the joint's face couldn't be found", e);
+            return null;
+          }
         };
         // A joint from before faces were picked has only its direction: its parts' middles stand in.
         jointFaces = [
@@ -1037,6 +1100,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           const g = art.groupOf(jf.id);
           const m = models.get(jf.id);
           if (!g) return;
+          try {
           g.updateMatrixWorld(true);
           const tint = jointTints[i];
           if (jf.face && m && !(m instanceof Error)) {
@@ -1051,6 +1115,9 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           }
           const at = project(jf.point, g.matrixWorld);
           marks.push(`<i class="lyr-snap ${i ? "lyr-snap-picked" : "lyr-snap-joined"}" style="left:${at.x}px;top:${at.y}px"></i>`);
+          } catch (e) {
+            console.warn("Layers: the joint couldn't be shown", e);
+          }
         });
       }
       if (joining?.childPoint) {
@@ -1528,11 +1595,95 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       void addFiles([...(e.dataTransfer?.files || [])]);
     });
 
+    // ------------------------------------------------------------ named views
+
+    // A camera saved under a name, so other pictures can use the same view.
+    // With the host's project model they're the project's (saved with it on
+    // Done, without making pictures out of date); otherwise the scene's own.
+    let views: NamedView[] = structuredClone(shared ? opts.model?.views || [] : scene.views || []);
+    const startViews = JSON.stringify(views);
+    const viewsMenu = $(".lyr-scene-views-menu");
+    const sameCamera = (a: NamedView["camera"], b: NamedView["camera"]) =>
+      a.direction.every((x, i) => Math.abs(x - b.direction[i]) < 1e-6) && a.target.every((x, i) => Math.abs(x - b.target[i]) < 1e-3) && Math.abs(a.size - b.size) < 1e-3;
+    function storeViews(): void {
+      if (!shared) {
+        if (views.length) scene.views = structuredClone(views);
+        else delete scene.views;
+        commit();
+      }
+    }
+    function openViews(): void {
+      viewsMenu.innerHTML = `
+        <div class="lyr-panel-title">Named views</div>
+        ${views.length
+          ? views.map(v => `<div class="lyr-scene-view-row${sameCamera(v.camera, scene.camera) ? " lyr-on" : ""}">
+              <button type="button" class="lyr-scene-menu-item" role="menuitem" data-named-view="${esc(v.id)}" title="Look from this view"><span>${esc(v.name)}</span></button>
+              <button type="button" class="lyr-btn lyr-icon-btn" data-update-view="${esc(v.id)}" title="Save the camera as it is now under this name" aria-label="Update ${esc(v.name)}">${icon("pencil", 16)}</button>
+              <button type="button" class="lyr-btn lyr-icon-btn" data-delete-view="${esc(v.id)}" title="Delete this view" aria-label="Delete ${esc(v.name)}">${icon("trash", 16)}</button>
+            </div>`).join("")
+          : `<p class="lyr-note">None yet. Set up the camera, then save it here: every picture ${shared ? "in this project " : ""}can use it, so they match.</p>`}
+        <form class="lyr-scene-view-save">
+          <input type="text" maxlength="60" placeholder="Name this view, e.g. Front left" aria-label="View name" data-view-name>
+          <button type="submit" class="lyr-btn lyr-primary-btn">Save view</button>
+        </form>`;
+      viewsMenu.hidden = false;
+      viewsMenu.querySelector<HTMLInputElement>("[data-view-name]")!.focus();
+    }
+    viewsMenu.addEventListener("submit", e => {
+      e.preventDefault();
+      const input = viewsMenu.querySelector<HTMLInputElement>("[data-view-name]")!;
+      const name = input.value.trim().slice(0, 60);
+      if (!name) return input.focus();
+      const same = views.find(v => v.name.toLowerCase() === name.toLowerCase());
+      if (same) same.camera = structuredClone(scene.camera);
+      else {
+        let n = views.length + 1;
+        while (views.some(v => v.id === `v${n}`)) n++;
+        views.push({ id: `v${n}`, name, camera: structuredClone(scene.camera) });
+      }
+      views = normalizeViews(views);
+      storeViews();
+      openViews();
+      status(`${same ? "Updated" : "Saved"} the view “${name}”.${shared ? " It's kept with the project's model when you click Done." : ""}`);
+    });
+    viewsMenu.addEventListener("click", e => {
+      const b = (e.target as HTMLElement).closest("button");
+      if (!b) return;
+      const d = b.dataset;
+      const v = views.find(x => x.id === (d.namedView || d.updateView || d.deleteView));
+      if (!v) return;
+      if (d.namedView) {
+        scene.camera = structuredClone(v.camera);
+        applyCamera();
+        draw();
+        commit();
+        viewsMenu.hidden = true;
+        status(`Looking from “${v.name}”.`);
+      } else if (d.updateView) {
+        v.camera = structuredClone(scene.camera);
+        storeViews();
+        openViews();
+        status(`Updated the view “${v.name}”.`);
+      } else if (d.deleteView) {
+        views = views.filter(x => x !== v);
+        storeViews();
+        openViews();
+        status(`Deleted the view “${v.name}”.`);
+      }
+    });
+    viewsMenu.addEventListener("keydown", e => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        viewsMenu.hidden = true;
+      }
+    });
+
     // ------------------------------------------------------------ actions
 
     root.addEventListener("click", e => {
       const b = (e.target as HTMLElement).closest("button");
       if (!menu.hidden && !menu.contains(e.target as Node) && b?.dataset.act !== "add") closeMenu();
+      if (!viewsMenu.hidden && !viewsMenu.contains(e.target as Node) && b?.dataset.act !== "views") viewsMenu.hidden = true;
       if (!b) return;
       if (b.dataset.tool) {
         tool = b.dataset.tool as typeof tool;
@@ -1543,6 +1694,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         case "add": if (menu.hidden) void openMenu(); else closeMenu(); break;
         case "upload": closeMenu(); fileInput.click(); break;
         case "fit": fitView(); commit(); break;
+        case "views": if (viewsMenu.hidden) openViews(); else viewsMenu.hidden = true; break;
         case "urdf": exportUrdf(); break;
         case "undo": undo(); break;
         case "redo": redo(); break;
@@ -1643,13 +1795,19 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       status("Drawing the picture…", false, true);
       try {
         const out = clone(scene);
+        const viewsChanged = shared && JSON.stringify(views) !== startViews;
         if (linked() && opts.saveModel && (scene.parts.length || projectModel) && (!projectModel || partsDiffer(projectModel.parts, scene.parts))) {
           // The parts or joints changed: a new version of the model, which
           // pictures drawn from the old one will say they're behind.
           status("Saving the project's model…", false, true);
           const stamp = Math.max(Date.now(), (opts.model?.stamp || 0) + 1);
-          await opts.saveModel(modelOf(out, stamp));
+          await opts.saveModel({ ...modelOf(out, stamp), ...(views.length ? { views } : {}) });
           out.model = { stamp };
+        } else if (viewsChanged && opts.saveModel) {
+          // Only the named views changed: the same version, so no picture is out of date.
+          status("Saving the project's views…", false, true);
+          const base = opts.model || modelOf(linked() ? out : { ...out, parts: [] }, 0);
+          await opts.saveModel({ ...base, ...(views.length ? { views } : { views: [] }) });
         }
         status("Drawing the picture…", false, true);
         const picture = await renderPicture(out, opts.store, opts.width, opts.height, opts.scale);
