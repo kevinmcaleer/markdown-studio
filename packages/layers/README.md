@@ -103,12 +103,18 @@ const editor = mount(el, {
   usual one), framed round the whole assembly. It draws on the editor's
   own page, so mount one out of sight for it. Every page is an ordinary
   graphic afterwards, to open and tidy.
-- **Detail circles**: from a scene's bar, *Detail circle…* picks one part
-  and adds a close-up of it on a white disc with a bold ring, and a line
-  from the disc to the part on the picture. It's drawn again whenever its
-  scene is (the same style and view, framed round the part); stretch or
-  move it and the line follows. A circle whose part is hidden or gone is
-  removed with its scene's next drawing.
+- **Detail circles**, as on a flat-pack sheet: from a scene's bar, *Detail
+  circle…* picks a part and adds a magnifier: a white disc with a bold ring
+  and a **tail** that curves in to the spot it magnifies (the part's middle
+  to start). Drag the tail's tip to magnify somewhere else; the circle
+  shows that spot at **zoom** times the picture's own scale (2x to start,
+  set in the bar), whatever size the circle is stretched to. The zoom is
+  written in a white box on the ring ("2x"; *Label* turns it off), and a
+  small part under the tip (a screw, not a panel) is drawn whole over the
+  ring, so both break its line as on IKEA's sheets; the bar's part list
+  picks which part, or none. It's drawn again whenever its scene is, and
+  moving the circle moves the tail's start with it. A circle whose part is
+  hidden or gone is removed with its scene's next drawing.
 - **Join snaps**, as in Snakie's Build workspace: while joining, the face
   under the pointer is tinted and its snap points shown: its middle,
   corners and edge middles, the centre of each round hole in it, or, on a

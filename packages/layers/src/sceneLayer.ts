@@ -6,14 +6,28 @@
 import { classRegistry, FabricImage } from "fabric";
 import type { SceneData } from "./scene/model";
 
+export interface DetailInfo {
+  of: string;
+  part?: string;
+  spot?: { x: number; y: number };
+  zoom?: number;
+  label?: boolean;
+}
+
 export class SceneLayer extends FabricImage {
   static type = "SceneLayer";
   static customProperties = ["scene", "pictureScale", "detail"];
 
   declare scene?: SceneData;
   declare pictureScale?: number;
-  /** A detail circle: a close-up of one part of another scene layer (`of` is its layerId), drawn on a white disc. */
-  declare detail?: { of: string; part: string };
+  /**
+   * A detail circle: a magnifier on another scene layer (`of` is its
+   * layerId), centred on `spot` (fractions across and down that picture)
+   * at `zoom` times its scale, drawn on a white disc with a ring. `part` is
+   * drawn whole over the ring (the part under the spot, or one chosen);
+   * `label` false hides the "2x" box on the ring.
+   */
+  declare detail?: DetailInfo;
 
   /** The layer's size on the page. */
   pageSize(): { w: number; h: number } {
@@ -26,7 +40,7 @@ classRegistry.setClass(SceneLayer, "scenelayer");
 
 export const isScene = (o: unknown): o is SceneLayer => o instanceof SceneLayer;
 /** A detail circle (a close-up of one part of another scene). */
-export const isDetail = (o: unknown): o is SceneLayer & { detail: { of: string; part: string } } => o instanceof SceneLayer && !!o.detail;
+export const isDetail = (o: unknown): o is SceneLayer & { detail: DetailInfo } => o instanceof SceneLayer && !!o.detail;
 
 /** A see-through stand-in picture for a scene not drawn yet. */
 export function placeholderPicture(w: number, h: number): HTMLCanvasElement {
