@@ -222,6 +222,9 @@ export class LineArt {
   private objects: PartObjects[] = [];
   private lineMaterials = new Map<string, LineMaterial>();
   private style: SceneStyle | null = null;
+  /** Dashed draft lines: each exploded part's path back to where it fits. */
+  private draft: LineSegments2 | null = null;
+  private draftMaterial: LineMaterial | null = null;
 
   constructor(canvas?: HTMLCanvasElement) {
     this.renderer = new WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
@@ -266,6 +269,58 @@ export class LineArt {
       this.idScene.add(idGroup);
       this.objects.push({ part, model, group, fill, lines, idGroup });
     });
+    this.drawDraft(world, explode);
+  }
+
+  /**
+   * Draft lines, as in printed instructions: a dashed line from each
+   * exploded part (from its picked face, or its middle) back along its joint
+   * to where it fits on its parent.
+   */
+  private drawDraft(world: Map<string, Matrix4>, explode: number): void {
+    if (this.draft) {
+      this.scene.remove(this.draft);
+      this.draft.geometry.dispose();
+      this.draft = null;
+    }
+    const style = this.style;
+    if (!style || explode <= 0 || style.draft === false || style.lineWidth <= 0) return;
+    const pts: number[] = [];
+    const byId = new Map(this.objects.map(o => [o.part.id, o]));
+    for (const o of this.objects) {
+      const p = o.part;
+      if (!p.parent || !p.joint || p.hidden || p.ghost || p.joint.distance <= 0) continue;
+      const parent = byId.get(p.parent);
+      const m = world.get(p.id);
+      const pm = world.get(p.parent);
+      if (!parent || parent.part.hidden || !m || !pm) continue;
+      const from = new Vector3(...(p.joint.childPoint || [0, 0, 0])).applyMatrix4(m);
+      // The slide, turned into the world by the parent's frame.
+      const slide = new Vector3(...p.joint.normal).transformDirection(pm).multiplyScalar(p.joint.distance * explode);
+      if (slide.lengthSq() < 1e-6) continue;
+      // Start at the part's leading end (a screw's tip, not its neck), so
+      // the line isn't hidden inside the part.
+      const back = slide.clone().normalize().negate();
+      const bb = o.model.geometry.boundingBox;
+      let lead = 0;
+      if (bb) for (let k = 0; k < 8; k++) {
+        const c = new Vector3(k & 1 ? bb.max.x : bb.min.x, k & 2 ? bb.max.y : bb.min.y, k & 4 ? bb.max.z : bb.min.z).applyMatrix4(m);
+        lead = Math.max(lead, c.sub(from).dot(back));
+      }
+      // Still overlapping where it fits: no gap for a line to show.
+      if (lead >= slide.length() - 1e-3) continue;
+      const to = from.clone().sub(slide);
+      from.addScaledVector(back, lead);
+      pts.push(from.x, from.y, from.z, to.x, to.y, to.z);
+    }
+    if (!pts.length) return;
+    this.draftMaterial ??= new LineMaterial({ color: 0, linewidth: 1, worldUnits: false, dashed: true, dashSize: 3, gapSize: 2 });
+    this.draftMaterial.color.set(style.line);
+    const geo = new LineSegmentsGeometry().setPositions(pts);
+    this.draft = new LineSegments2(geo, this.draftMaterial);
+    this.draft.computeLineDistances();
+    this.draft.raycast = () => {};
+    this.scene.add(this.draft);
   }
 
   /** Follows the parts' new places without rebuilding the scene. */
@@ -277,6 +332,7 @@ export class LineArt {
       place(o.group, m);
       place(o.idGroup, m);
     }
+    this.drawDraft(world, explode);
   }
 
   /** A part's place in the world as drawn now. */
@@ -333,6 +389,14 @@ export class LineArt {
       m.linewidth = style.lineWidth * ratio;
       m.resolution.set(pw, ph);
     }
+    if (this.draftMaterial) {
+      // Dashes a steady size on the picture, whatever the zoom: mm per pixel.
+      const mmPerPx = (camera.top - camera.bottom) / camera.zoom / h;
+      this.draftMaterial.linewidth = style.lineWidth * ratio;
+      this.draftMaterial.resolution.set(pw, ph);
+      this.draftMaterial.dashSize = 7 * mmPerPx;
+      this.draftMaterial.gapSize = 5 * mmPerPx;
+    }
     r.autoClear = true;
     r.setRenderTarget(this.target);
     r.setClearColor(0x000000, 0);
@@ -373,6 +437,8 @@ export class LineArt {
 
   dispose(): void {
     this.clear();
+    this.draft?.geometry.dispose();
+    this.draftMaterial?.dispose();
     this.lineMaterials.forEach(m => m.dispose());
     this.outline.dispose();
     this.target?.dispose();

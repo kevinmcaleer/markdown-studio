@@ -7,7 +7,7 @@
 //
 // This module and three.js load only when a scene is opened.
 
-import { Euler, Matrix4, Object3D, OrthographicCamera, Quaternion, Raycaster, Vector2, Vector3 } from "three";
+import { BufferAttribute, BufferGeometry, DoubleSide, Euler, Line, LineBasicMaterial, Matrix4, Mesh, MeshBasicMaterial, Object3D, OrthographicCamera, Quaternion, Raycaster, Vector2, Vector3 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { icon } from "../icons";
@@ -18,6 +18,7 @@ import {
 import { applyJoint } from "./joint";
 import { frame, LineArt, modelFromStl, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
 import { MAX_EMBED, parseStl, toBase64, toBinaryStl } from "./stl";
+import { MAX_SNAP_TRIANGLES, nearestSnap, Topology, type Face, type Snap } from "./snaps";
 
 export interface SceneModel {
   url: string;
@@ -205,6 +206,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         drawQueued = 0;
         if (closed) return;
         art.draw(camera, viewW, viewH, Math.min(2, window.devicePixelRatio || 1));
+        placeSnaps();
       });
     }
 
@@ -419,13 +421,14 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       if (!d || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 4 || gizmo.dragging || (gizmo as unknown as { axis: string | null }).axis) return;
       const r = canvasEl.getBoundingClientRect();
       const ndc = new Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+      if (joining) {
+        hoverAt(e);
+        pickFace(hoverPick());
+        return;
+      }
       art.scene.updateMatrixWorld(true);
       raycaster.setFromCamera(ndc, camera);
       const hit = raycaster.intersectObjects(art.meshes(), false)[0];
-      if (joining) {
-        pickFace(hit);
-        return;
-      }
       select(hit ? String(hit.object.userData.partId || "") : "");
     });
 
@@ -643,29 +646,28 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       joining = { childId: id };
       canvasEl.classList.add("lyr-scene-picking");
       gizmo.detach();
-      status(`Click the face of “${partById(id)?.name}” that fits against the other part. Esc to stop.`, false, true);
+      status(`Click where “${partById(id)?.name}” fits against the other part: a face, a corner, an edge, a hole or a round rim. Esc to stop.`, false, true);
       draw();
     }
 
     function stopJoin(message = ""): void {
       joining = null;
+      clearHover();
       canvasEl.classList.remove("lyr-scene-picking");
       attachGizmo();
       status(message);
       draw();
     }
 
-    /** A clicked face, in its part's own frame. */
-    function faceAt(hit: { object: Object3D; point: Vector3; face?: { normal: Vector3 } | null }): { id: string; point: Vec3; normal: Vec3 } | null {
-      if (!hit.face) return null;
-      const local = hit.object.worldToLocal(hit.point.clone());
-      const n = hit.face.normal.clone().normalize();
-      return { id: String(hit.object.userData.partId || ""), point: [round(local.x, 3), round(local.y, 3), round(local.z, 3)], normal: [round(n.x, 5), round(n.y, 5), round(n.z, 5)] };
+    /** A point picked on a part, in its own frame, with the way its face looks there. */
+    interface Pick {
+      id: string;
+      point: Vec3;
+      normal: Vec3;
     }
 
-    function pickFace(hit: { object: Object3D; point: Vector3; face?: { normal: Vector3 } | null } | undefined): void {
+    function pickFace(f: Pick | null): void {
       if (!joining) return;
-      const f = hit ? faceAt(hit) : null;
       if (!joining.childPoint) {
         if (!f || f.id !== joining.childId) {
           status(`Click a face on “${partById(joining.childId)?.name}” itself. Esc to stop.`, true, true);
@@ -673,7 +675,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         }
         joining.childPoint = f.point;
         joining.childNormal = f.normal;
-        status(`Now click the face it fits against, on another part. Esc to stop.`, false, true);
+        clearHover();
+        status(`Now click where it goes on another part: a face, a corner, an edge or a hole. Esc to stop.`, false, true);
         return;
       }
       if (!f || branch(joining.childId).has(f.id)) {
@@ -685,10 +688,20 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const model = child ? models.get(child.id) : undefined;
       if (!child || !parent) return stopJoin();
       const size = model && !(model instanceof Error) ? Math.max(...model.size) : 20;
+      // How far the part reaches past its picked face into the other (a
+      // screw's shank), so exploding pulls it clear with room to spare.
+      let reach = 0;
+      if (model && !(model instanceof Error)) {
+        const cp = joining.childPoint, cn = joining.childNormal!;
+        for (let k = 0; k < 8; k++) {
+          const c = [k & 1 ? 1 : -1, k & 2 ? 1 : -1, k & 4 ? 1 : -1].map((sgn, i) => (sgn * model.size[i]) / 2);
+          reach = Math.max(reach, (c[0] - cp[0]) * cn[0] + (c[1] - cp[1]) * cn[1] + (c[2] - cp[2]) * cn[2]);
+        }
+      }
       child.parent = parent.id;
       child.joint = {
         normal: f.normal,
-        distance: Math.max(10, Math.round(size * 1.2)),
+        distance: Math.max(10, Math.round(reach + Math.max(size * 0.6, 8))),
         point: f.point,
         childPoint: joining.childPoint,
         childNormal: joining.childNormal!,
@@ -704,6 +717,186 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       syncExplode();
       commit();
     }
+
+    // ------------------------------------------------------------ join snaps
+
+    // While joining, the face under the pointer is tinted and its snap
+    // points shown: its middle, corners and edge middles, the centres of
+    // round holes in it, or the round rims at the ends of a curved face (a
+    // screw's neck, a peg's end, the inside of a hole). A click takes the
+    // snap nearest the pointer, or the point itself when none is near.
+    const topologies = new WeakMap<Model, Topology | null>();
+    function topologyOf(m: Model): Topology | null {
+      if (topologies.has(m)) return topologies.get(m)!;
+      const pos = m.geometry.getAttribute("position");
+      const t = m.triangles <= MAX_SNAP_TRIANGLES && pos ? new Topology(pos.array as ArrayLike<number>) : null;
+      topologies.set(m, t);
+      return t;
+    }
+    const faceGeometries = new WeakMap<Face, BufferGeometry>();
+    function faceGeometry(m: Model, face: Face): BufferGeometry {
+      let g = faceGeometries.get(face);
+      if (!g) {
+        const src = m.geometry.getAttribute("position").array as ArrayLike<number>;
+        const out = new Float32Array(face.tris.length * 9);
+        face.tris.forEach((t, i) => {
+          for (let k = 0; k < 9; k++) out[i * 9 + k] = src[t * 9 + k];
+        });
+        g = new BufferGeometry();
+        g.setAttribute("position", new BufferAttribute(out, 3));
+        faceGeometries.set(face, g);
+      }
+      return g;
+    }
+
+    const faceTint = new Mesh(new BufferGeometry(), new MeshBasicMaterial({ color: 0x4ea1ff, transparent: true, opacity: 0.32, depthTest: false, depthWrite: false, side: DoubleSide }));
+    faceTint.matrixAutoUpdate = false;
+    faceTint.visible = false;
+    faceTint.raycast = () => {};
+    const ringGeometry = new BufferGeometry();
+    const ring = new Line(ringGeometry, new LineBasicMaterial({ color: 0x1f6fe0, depthTest: false }));
+    ring.matrixAutoUpdate = false;
+    ring.visible = false;
+    ring.raycast = () => {};
+    art.overlay.add(faceTint, ring);
+    const snapLayer = document.createElement("div");
+    snapLayer.className = "lyr-scene-snaps";
+    frameEl.appendChild(snapLayer);
+
+    interface Hover {
+      id: string;
+      mesh: Mesh;
+      face: Face | null;
+      /** The point under the pointer and its triangle's normal, in the part's frame. */
+      point: Vec3;
+      normal: Vec3;
+      snap: number;
+    }
+    let hover: Hover | null = null;
+    let pointer = { x: 0, y: 0 };
+
+    const ROLE_LABEL: Record<Snap["role"], string> = { centre: "middle of the face", corner: "corner", edge: "middle of the edge", hole: "centre of the hole", rim: "centre of the rim", pocket: "middle of the recess" };
+
+    /** The meshes a join may pick now: the part being joined, then any part not on its branch. */
+    function pickable(): Mesh[] {
+      if (!joining) return [];
+      const branchIds = joining.childPoint ? branch(joining.childId) : null;
+      return art.meshes().filter(m => {
+        const id = String(m.userData.partId || "");
+        return branchIds ? !branchIds.has(id) : id === joining!.childId;
+      });
+    }
+
+    function hoverAt(e: { clientX: number; clientY: number }): void {
+      const r = canvasEl.getBoundingClientRect();
+      pointer = { x: e.clientX - r.left, y: e.clientY - r.top };
+      art.scene.updateMatrixWorld(true);
+      raycaster.setFromCamera(new Vector2((pointer.x / r.width) * 2 - 1, -(pointer.y / r.height) * 2 + 1), camera);
+      const hit = raycaster.intersectObjects(pickable(), false).find(h => h.face && h.faceIndex !== undefined);
+      if (!hit) {
+        // Off the part, a snap still near the pointer (a hole's centre is
+        // over empty space) stays catchable.
+        if (hover) placeSnaps();
+        if (hover && hover.snap < 0) clearHover();
+        else draw();
+        return;
+      }
+      const mesh = hit.object as Mesh;
+      const id = String(mesh.userData.partId || "");
+      const model = models.get(id);
+      const face = model && !(model instanceof Error) ? topologyOf(model)?.faceAt(hit.faceIndex!) ?? null : null;
+      const local = mesh.worldToLocal(hit.point.clone());
+      const n = hit.face!.normal.clone().normalize();
+      const same = hover && hover.mesh === mesh && hover.face && hover.face === face;
+      hover = { id, mesh, face, point: [local.x, local.y, local.z], normal: [n.x, n.y, n.z], snap: -1 };
+      if (!same) {
+        if (face && model && !(model instanceof Error)) {
+          faceTint.geometry = faceGeometry(model, face);
+          faceTint.visible = true;
+        } else faceTint.visible = false;
+      }
+      faceTint.matrix.copy(mesh.matrixWorld);
+      faceTint.matrixWorldNeedsUpdate = true;
+      placeSnaps();
+      draw();
+    }
+
+    function clearHover(): void {
+      hover = null;
+      faceTint.visible = false;
+      ring.visible = false;
+      snapLayer.innerHTML = "";
+      draw();
+    }
+
+    /** Puts the snap dots over the view, and marks the one a click would take. */
+    function placeSnaps(): void {
+      const marks: string[] = [];
+      const project = (p: Vec3, m: Matrix4) => {
+        const v = new Vector3(...p).applyMatrix4(m).project(camera);
+        return { x: ((v.x + 1) / 2) * viewW, y: ((1 - v.y) / 2) * viewH };
+      };
+      if (joining?.childPoint) {
+        const g = art.groupOf(joining.childId);
+        if (g) {
+          const at = project(joining.childPoint, g.matrix);
+          marks.push(`<i class="lyr-snap lyr-snap-picked" style="left:${at.x}px;top:${at.y}px"></i>`);
+        }
+      }
+      if (hover) {
+        const snaps = hover.face?.snaps || [];
+        const m = hover.mesh.matrixWorld;
+        const screen = snaps.map(s => project(s.p, m));
+        hover.snap = nearestSnap(screen, snaps, pointer);
+        screen.forEach((p, i) => {
+          marks.push(`<i class="lyr-snap lyr-snap-${snaps[i].role}${i === hover!.snap ? " lyr-on" : ""}" style="left:${p.x}px;top:${p.y}px"></i>`);
+        });
+        const on = hover.snap >= 0 ? snaps[hover.snap] : null;
+        if (on) {
+          const p = screen[hover.snap];
+          marks.push(`<span class="lyr-snap-label" style="left:${p.x}px;top:${p.y}px">${esc(ROLE_LABEL[on.role])}</span>`);
+        }
+        if (on?.radius && (on.role === "hole" || on.role === "rim" || on.role === "centre")) {
+          const n = new Vector3(...on.n).normalize();
+          const u = new Vector3(1, 0, 0).cross(n);
+          if (u.lengthSq() < 1e-6) u.set(0, 1, 0).cross(n);
+          u.normalize();
+          const w = n.clone().cross(u);
+          const pts: number[] = [];
+          for (let k = 0; k <= 48; k++) {
+            const a = (k / 48) * Math.PI * 2;
+            const q = new Vector3(...on.p).addScaledVector(u, Math.cos(a) * on.radius).addScaledVector(w, Math.sin(a) * on.radius);
+            pts.push(q.x, q.y, q.z);
+          }
+          ringGeometry.setAttribute("position", new BufferAttribute(new Float32Array(pts), 3));
+          ring.matrix.copy(m);
+          ring.matrixWorldNeedsUpdate = true;
+          ring.visible = true;
+        } else ring.visible = false;
+      } else ring.visible = false;
+      snapLayer.innerHTML = marks.join("");
+    }
+
+    /** What a click picks now: the snap marked, or the point under the pointer. */
+    function hoverPick(): Pick | null {
+      if (!hover) return null;
+      const s = hover.snap >= 0 ? hover.face?.snaps[hover.snap] : undefined;
+      const p = s ? s.p : hover.point;
+      const n = s ? s.n : hover.normal;
+      return { id: hover.id, point: [round(p[0], 3), round(p[1], 3), round(p[2], 3)], normal: [round(n[0], 5), round(n[1], 5), round(n[2], 5)] };
+    }
+
+    let hoverQueued = 0;
+    canvasEl.addEventListener("pointermove", e => {
+      if (!joining || e.buttons) return;
+      const at = { clientX: e.clientX, clientY: e.clientY };
+      cancelAnimationFrame(hoverQueued);
+      hoverQueued = requestAnimationFrame(() => joining && hoverAt(at));
+    });
+    canvasEl.addEventListener("pointerleave", () => {
+      cancelAnimationFrame(hoverQueued);
+      if (joining) clearHover();
+    });
 
     /** Stops a part following its picked faces once it's placed by hand. Says whether it did. */
     function looseJoint(p: ScenePart): boolean {
@@ -812,6 +1005,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
             ${field("outline", "Outline", "px", scene.style.outline, 0.5, "The bold line round each part")}
             ${field("crease", "Folds", "°", scene.style.crease, 1, "How sharp a fold must be to get a line (180: none)")}
           </div>
+          <label class="lyr-scene-check" title="In an exploded view, a dashed line from each part back to where it fits"><input type="checkbox" data-draft${scene.style.draft === false ? "" : " checked"}> Draft lines when exploded</label>
           <p class="lyr-note">The background is the page's colour: change it in Layers.</p>
         </section>`;
       syncPresets();
@@ -820,7 +1014,12 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     props.addEventListener("input", e => {
       const t = e.target as HTMLInputElement;
       if (t.dataset.field) setField(t.dataset.field, Number(t.value));
-      else if (t.dataset.ghost !== undefined) {
+      else if (t.dataset.draft !== undefined) {
+        if (t.checked) delete scene.style.draft;
+        else scene.style.draft = false;
+        rebuild();
+        commit();
+      } else if (t.dataset.ghost !== undefined) {
         const p = partById(selectedId);
         if (!p) return;
         if (t.checked) p.ghost = true;

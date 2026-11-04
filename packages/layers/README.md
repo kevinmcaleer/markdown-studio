@@ -67,8 +67,15 @@ const editor = mount(el, {
   Snakie's Build-workspace joints, `src/scene/joint.ts`). Spin and Gap
   adjust it about and along the joint. The **Explode** slider slides every
   joined part out along its joint by its own Explode distance, so a joined
-  branch comes apart together. **Ghost** draws a part faint, for parts
-  fitted in an earlier step.
+  branch comes apart together, with dashed **draft lines** from each part
+  back to where it fits (Style: *Draft lines when exploded*). **Ghost**
+  draws a part faint, for parts fitted in an earlier step.
+- **Join snaps**, as in Snakie's Build workspace: while joining, the face
+  under the pointer is tinted and its snap points shown: its middle,
+  corners and edge middles, the centre of each round hole in it, or, on a
+  curved face, the round rims at its ends (a screw's neck, a peg's end, the
+  inside of a hole). A click takes the snap nearest the pointer, so a
+  screw's neck goes into a screw hole (`src/scene/snaps.ts`).
 - Shapes have **W** and **H** fields for exact sizes. Stretching a box keeps
   its corner size.
 - Smart guides snap to the page's and other layers' edges and middles
