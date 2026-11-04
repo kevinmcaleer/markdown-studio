@@ -54,3 +54,24 @@ export function turnedFromDefault(scene: SceneData, model: ProjectModel | null |
 
 /** A step is "turned" when it looks from more than this many degrees off the chosen view. */
 export const TURNED_DEGREES = 30;
+
+/** Parts no more than this many mm across (their middle dimension) count as fixings: screws, nuts, pegs. */
+export const FASTENER_MM = 12;
+
+/** Whether a part of this size (mm) is a fixing: its middle dimension is small, whatever its length. */
+export function isFastener(size: [number, number, number]): boolean {
+  const s = [...size].sort((a, b) => a - b);
+  return s[1] <= FASTENER_MM;
+}
+
+/** Every part, counted by kind, in model order: the parts list for a whole project. */
+export function inventoryOf(parts: ScenePart[]): PartCount[] {
+  const groups = new Map<string, PartCount>();
+  for (const p of parts) {
+    const key = partKey(p);
+    const g = groups.get(key);
+    if (g) g.count++;
+    else groups.set(key, { key, part: p, count: 1 });
+  }
+  return [...groups.values()];
+}

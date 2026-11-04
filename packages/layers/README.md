@@ -86,6 +86,11 @@ const editor = mount(el, {
   start from it, and a step that looks from more than 30° off it gets a
   "turn it" mark at the picture's top right (removed when it looks from
   the default view again).
+- **Parts list** (Templates): every kind of part in the project's model
+  (or the first 3D scene's parts) drawn at one scale with its name and
+  count, and the **fixings** together in a box at the bottom, each with
+  its count. A part no more than 12 mm across (its middle dimension,
+  whatever its length) counts as a fixing: screws, nuts, pegs, axles.
 - **Detail circles**: from a scene's bar, *Detail circle…* picks one part
   and adds a close-up of it on a white disc with a bold ring, and a line
   from the disc to the part on the picture. It's drawn again whenever its
