@@ -84,6 +84,38 @@ export function bodiesFromOcct(result: OcctResult): StepBody[] {
   return out;
 }
 
+/**
+ * A STEP file's solids as one model: a file is one part in a scene, as an
+ * STL is. Each solid's CAD faces keep their own numbers, so joints still
+ * catch on exact faces (unless the file has more faces than can be numbered).
+ */
+export function mergeBodies(bodies: StepBody[], name = "Part"): StepBody {
+  if (bodies.length === 1) return bodies[0];
+  let n = 0, faceCount = 0, faced = true;
+  for (const b of bodies) {
+    n += b.positions.length;
+    if (!b.faces) faced = false;
+    else faceCount += b.faces.reduce((m, f) => (f !== 0xffff && f + 1 > m ? f + 1 : m), 0);
+  }
+  if (faceCount >= 0xffff) faced = false;
+  const positions = new Float32Array(n);
+  const faces = faced ? new Uint16Array(n / 9) : null;
+  let at = 0, base = 0;
+  for (const b of bodies) {
+    positions.set(b.positions, at);
+    if (faces) {
+      let most = 0;
+      b.faces!.forEach((f, i) => {
+        faces[at / 9 + i] = f === 0xffff ? 0xffff : base + f;
+        if (f !== 0xffff && f + 1 > most) most = f + 1;
+      });
+      base += most;
+    }
+    at += b.positions.length;
+  }
+  return { name, positions, faces };
+}
+
 /** The worker's whole source: it loads OpenCascade from `base` and answers each file it is sent. */
 function workerSource(): string {
   return `
