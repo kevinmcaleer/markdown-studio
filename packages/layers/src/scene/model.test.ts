@@ -110,7 +110,13 @@ describe("helpers", () => {
   it("places a new part where its file has it unless that overlaps", () => {
     expect(placeBeside([], [5, 5, 5], [10, 10, 10])).toEqual([5, 5, 5]);
     const existing = [{ min: [-10, -10, 0], max: [10, 10, 20] } as never];
-    expect(placeBeside(existing, [100, 0, 0], [10, 10, 10])).toEqual([100, 0, 0]);
+    expect(placeBeside(existing, [18, 0, 5], [4, 4, 4])).toEqual([18, 0, 5]);
     expect(placeBeside(existing, [0, 0, 5], [20, 6, 10])).toEqual([10 + 10 + 10, 0, 5]);
+  });
+
+  it("puts a part whose file has it far away just beside the group", () => {
+    const existing = [{ min: [-10, -10, 0], max: [10, 10, 20] }, { min: [10, 20, 0], max: [30, 40, 10] }] as never[];
+    // The group spans x -10…30, y -10…40, z 0…20: beside it at x 30 + gap + half.
+    expect(placeBeside(existing, [500, -300, 200], [10, 10, 10])).toEqual([30 + 10 + 5, 15, 5]);
   });
 });

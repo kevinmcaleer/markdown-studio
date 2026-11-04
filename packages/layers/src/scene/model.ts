@@ -524,17 +524,26 @@ export interface Box3 {
 }
 
 /**
- * Where a new part goes, given the boxes of the parts already there and the
- * new part's own size: where its file put it, unless that overlaps another
- * part; then beside the others along X, with a gap.
+ * Where a new part goes, given the boxes of the parts already showing and
+ * the new part's own size. Its file's own spot is kept when that is close to
+ * the others without overlapping them (parts from one CAD assembly land where
+ * they belong). Otherwise it goes just beside the group of parts, along X,
+ * centred on the group front to back and standing on its floor, so it never
+ * lands far away (Kev, 2026-11-04).
  */
 export function placeBeside(existing: Box3[], at: Vec3, size: Vec3, gap = 10): Vec3 {
+  if (!existing.length) return [...at];
   const half = size.map(s => s / 2) as Vec3;
   const box: Box3 = { min: at.map((a, i) => a - half[i]) as Vec3, max: at.map((a, i) => a + half[i]) as Vec3 };
   const overlaps = (a: Box3, b: Box3) => a.min.every((m, i) => m < b.max[i] && a.max[i] > b.min[i]);
-  if (!existing.some(b => overlaps(box, b))) return [...at];
-  const maxX = Math.max(...existing.map(b => b.max[0]));
-  const ys = existing.map(b => (b.min[1] + b.max[1]) / 2);
-  const zMin = Math.min(...existing.map(b => b.min[2]));
-  return [maxX + gap + half[0], ys.reduce((a, b) => a + b, 0) / ys.length, zMin + half[2]];
+  const group: Box3 = {
+    min: [0, 1, 2].map(i => Math.min(...existing.map(b => b.min[i]))) as Vec3,
+    max: [0, 1, 2].map(i => Math.max(...existing.map(b => b.max[i]))) as Vec3,
+  };
+  const groupSize = group.max.map((m, i) => m - group.min[i]);
+  // "Close" is within a quarter of the group's own size (at least the gap).
+  const reach = Math.max(gap, 0.25 * Math.max(...groupSize, ...size));
+  const near = box.min.every((m, i) => m < group.max[i] + reach && box.max[i] > group.min[i] - reach);
+  if (near && !existing.some(b => overlaps(box, b))) return [...at];
+  return [group.max[0] + gap + half[0], (group.min[1] + group.max[1]) / 2, group.min[2] + half[2]];
 }
