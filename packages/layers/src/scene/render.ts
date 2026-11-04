@@ -19,7 +19,7 @@ import {
   ShaderMaterial, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget, NearestFilter, NoBlending, type Object3D,
 } from "three";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
-import { BufferGeometry as CutGeometry, DoubleSide, Float32BufferAttribute, GreaterDepth, LessEqualDepth, Texture } from "three";
+import { BufferGeometry as CutGeometry, DoubleSide, Float32BufferAttribute, LessEqualDepth, Texture } from "three";
 import { ARROW_FROM, ARROW_TO } from "./model";
 import {
   AlwaysStencilFunc, BackSide, DecrementWrapStencilOp, FrontSide, IncrementWrapStencilOp, NotEqualStencilFunc, Plane, Quaternion, ZeroStencilOp, type Material, type Side,
@@ -304,9 +304,6 @@ export class LineArt {
   /** A band under each draft line painted with the fills alone, so the lines it crosses break round it as on a flat-pack sheet. */
   private draftHalo: LineSegments2 | null = null;
   private draftHaloMaterial: LineMaterial | null = null;
-  /** The draft lines where they pass behind or inside a part: drawn without a halo, so the outline there stays whole. */
-  private draftHidden: LineSegments2 | null = null;
-  private draftHiddenMaterial: LineMaterial | null = null;
   /** The draft lines, drawn against the parts' depth after the outlines (unlike the overlay, which is drawn over everything). */
   private draftScene = new Scene();
   private haloFill = { value: null as Texture | null };
@@ -528,10 +525,6 @@ export class LineArt {
       this.draftScene.remove(this.draftHalo);
       this.draftHalo = null;
     }
-    if (this.draftHidden) {
-      this.draftScene.remove(this.draftHidden);
-      this.draftHidden = null;
-    }
     const style = this.style;
     this.axes = [];
     if (!style) return;
@@ -570,19 +563,15 @@ export class LineArt {
     if (this.draftMaterial && this.draftMaterial.dashed !== dashed) {
       this.draftMaterial.dispose();
       this.draftMaterial = null;
-      this.draftHiddenMaterial?.dispose();
-      this.draftHiddenMaterial = null;
     }
-    // The lines are tested against the parts' depth: where a line is in front
-    // of a part it's drawn with its halo, where it's behind or inside one it's
-    // drawn alone, so only an outline it really crosses breaks. Nudged a
-    // little towards the camera, so a line along a part's face counts as in
-    // front of it. Transparent only so the three sort by renderOrder.
+    // The lines are tested against the parts' depth: a line shows only where
+    // it's in front of the parts (a part in front hides it, as it hides the
+    // arrows), with its halo, so only an outline it really crosses breaks.
+    // Nudged a little towards the camera, so a line along a part's face
+    // counts as in front of it. Transparent only so the two sort by renderOrder.
     const depth = { depthTest: true, depthWrite: false, transparent: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 };
     this.draftMaterial ??= new LineMaterial({ color: 0, linewidth: 1, worldUnits: false, dashed, dashSize: 3, gapSize: 2, ...depth, depthFunc: LessEqualDepth });
     this.draftMaterial.color.set(style.line);
-    this.draftHiddenMaterial ??= new LineMaterial({ color: 0, linewidth: 1, worldUnits: false, dashed, dashSize: 3, gapSize: 2, ...depth, depthFunc: GreaterDepth });
-    this.draftHiddenMaterial.color.set(style.line);
     if (!this.draftHaloMaterial) {
       // The halo paints the picture's fills (drawn without any lines) back over
       // a band round the line: the lines and outlines it crosses break, the
@@ -598,11 +587,6 @@ export class LineArt {
     }
     const geo = new LineSegmentsGeometry().setPositions(pts);
     // Drawn after the parts and their outlines, as the lines on a sheet run over the drawing.
-    this.draftHidden = new LineSegments2(geo, this.draftHiddenMaterial);
-    this.draftHidden.computeLineDistances();
-    this.draftHidden.raycast = () => {};
-    this.draftHidden.renderOrder = 0;
-    this.draftScene.add(this.draftHidden);
     this.draftHalo = new LineSegments2(geo, this.draftHaloMaterial);
     this.draftHalo.raycast = () => {};
     this.draftHalo.renderOrder = 1;
@@ -755,7 +739,7 @@ export class LineArt {
       m.linewidth = style.lineWidth * ratio;
       m.resolution.set(pw, ph);
     }
-    for (const m of [this.draftMaterial, this.draftHiddenMaterial]) {
+    for (const m of [this.draftMaterial]) {
       if (!m) continue;
       // Dashes a steady size on the picture, whatever the zoom: mm per pixel.
       const mmPerPx = (camera.top - camera.bottom) / camera.zoom / h;
@@ -875,7 +859,6 @@ export class LineArt {
     this.draft?.geometry.dispose();
     this.draftMaterial?.dispose();
     this.draftHaloMaterial?.dispose();
-    this.draftHiddenMaterial?.dispose();
     this.cutMaterial?.dispose();
     this.fillTarget?.dispose();
     this.lineMaterials.forEach(m => m.dispose());

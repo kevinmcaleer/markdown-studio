@@ -97,8 +97,8 @@ const editor = mount(el, {
 - **Draft lines break the lines they cross**: where a dashed (or solid)
   draft line passes in front of a part, the outlines and fold lines it
   crosses open either side of it, as on a printed sheet, with the parts'
-  fills left whole. Where it passes behind or inside a part it's drawn
-  plain, and the outline stays whole.
+  fills left whole. Where it passes behind or inside a part it isn't
+  drawn at all: a part in front hides it, as it hides an arrow.
 - **Parts list** (Templates): every kind of part in the project's model
   (or the first 3D scene's parts) drawn at one scale with its name and
   count, and the **fixings** together in a box at the bottom, each with
