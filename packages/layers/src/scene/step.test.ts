@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import { bodiesFromOcct, isStepFile, type StepBody } from "./step";
+import { bodiesFromOcct, isStepFile, mergeBodies, type StepBody } from "./step";
 import { stlFaces, toBinaryStl, parseStl } from "./stl";
 import { Topology } from "./snaps";
 
@@ -36,6 +36,22 @@ describe("STEP files", () => {
       expect(b.faces?.length).toBe(b.positions.length / 9);
       expect([...b.faces!].every(f => f !== 0xffff)).toBe(true);
     }
+  });
+
+  it("makes one part of an assembly, each solid's faces still its own", () => {
+    const bodies = read("cax-if/as1_pe_203.stp");
+    const whole = mergeBodies(bodies, "as1");
+    const tris = bodies.reduce((n, b) => n + b.positions.length / 9, 0);
+    expect(whole.name).toBe("as1");
+    expect(whole.positions.length).toBe(tris * 9);
+    expect(whole.faces!.length).toBe(tris);
+    const faces = bodies.reduce((n, b) => n + new Set(b.faces).size, 0);
+    expect(new Set(whole.faces).size).toBe(faces);
+    // The plate's holes still offer their centres in the whole.
+    const topo = new Topology(whole.positions, whole.faces);
+    let holes = 0;
+    for (let t = 0; t < bodies[0].positions.length / 9; t++) holes = Math.max(holes, topo.faceAt(t)!.snaps.filter(s => s.role === "hole").length);
+    expect(holes).toBeGreaterThan(0);
   });
 
   it("gives millimetres whatever the file's units", () => {

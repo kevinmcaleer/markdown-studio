@@ -20,7 +20,7 @@ import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import type { SceneCamera, SceneData, ScenePart, SceneStyle, Vec3 } from "./model";
 import { explodeOf, highlightedParts } from "./model";
-import { readStep, isStepFile, type StepBody } from "./step";
+import { readStep, isStepFile, mergeBodies, type StepBody } from "./step";
 import { bounds, fromBase64, parseStl, stlFaces } from "./stl";
 
 const DEG = Math.PI / 180;
@@ -109,7 +109,8 @@ export class ModelStore {
         if (part.data) return modelFromStl(fromBase64(part.data));
         if (part.url && isStepFile(part.url)) {
           const bodies = await this.stepBodies(part.url);
-          const b = bodies[part.body || 0];
+          // The whole file as one part; `body` is one solid of it (scenes made before files came in whole).
+          const b = part.body === undefined ? mergeBodies(bodies) : bodies[part.body];
           if (!b) throw new Error("That part isn't in its STEP file any more.");
           // A copy: the solid is kept for the file's other parts, and a model is moved to its middle.
           return modelFromPositions(b.positions.slice(), b.faces);

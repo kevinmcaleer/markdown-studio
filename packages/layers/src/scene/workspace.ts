@@ -23,7 +23,7 @@ import {
 import { applyJoint } from "./joint";
 import { frame, LineArt, modelFromPositions, modelFromStl, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
 import { MAX_EMBED, parseStl, toBase64, toBinaryStl } from "./stl";
-import { isStepFile, readStep, type StepBody } from "./step";
+import { isStepFile, mergeBodies, readStep, type StepBody } from "./step";
 import { toUrdf, zip } from "./urdf";
 import { createViewCube } from "./viewcube";
 import { MAX_SNAP_TRIANGLES, nearestSnap, Topology, type Face, type Snap } from "./snaps";
@@ -134,7 +134,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
             </div>
             <div class="lyr-scene-model"></div>
             <ul class="lyr-scene-list"></ul>
-            <p class="lyr-note">Add STL or STEP files, or drop them on the view. A STEP assembly comes in as one part per solid. Click a part to place it.</p>
+            <p class="lyr-note">Add STL or STEP files, or drop them on the view. Click a part to place it.</p>
           </aside>
           <div class="lyr-scene-stage">
             <div class="lyr-scene-tools" role="toolbar" aria-label="View">
@@ -469,10 +469,10 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     }
 
     /**
-     * A STEP file's solids, each as its own part, named from the CAD's tree
-     * and placed as the CAD has them (the lot moved over together if that
-     * spot is taken). An upload's solids are carried in the graphic as
-     * binary STL, with their CAD faces; a project file's are read from it.
+     * A STEP file as one part, its solids together as the CAD has them, as
+     * an STL comes in (Kev, 2026-11-04: an assembly is one part, not one per
+     * solid). An upload is carried in the graphic as binary STL, with its CAD
+     * faces; a project file's is read from it.
      */
     async function addStep(source: { url?: string; buffer?: ArrayBuffer; name: string; file?: string }): Promise<void> {
       status(`Reading ${source.name}… (the first STEP file takes a moment to set up)`, false, true);
@@ -480,49 +480,33 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         const bodies: StepBody[] = source.buffer ? await readStep(source.buffer) : await opts.store.stepBodies(source.url!);
         if (closed) return;
         if (!bodies.length) throw new Error(`${source.name} has no solids in it. If it is an assembly that links to other STEP files, export it from your CAD as one file.`);
-        const one = bodies.length === 1;
-        const items = bodies.map((b, i) => {
-          const data = source.buffer ? toBase64(toBinaryStl(b.positions, b.faces)) : undefined;
-          return { b, i, data, model: modelFromPositions(b.positions.slice(), b.faces), name: one ? source.name : b.name };
-        });
-        const embedded = items.reduce((n, it) => n + (it.data ? it.data.length * 0.75 : 0), 0);
-        if (embedded > MAX_EMBED) throw new Error(`${source.name} is ${(embedded / 1e6).toFixed(1)} MB as triangles. Models carried in a graphic can be up to ${MAX_EMBED / 1e6} MB: add it to your project's files and pick it from there, or simplify it.`);
-        // The box round the whole file, to keep its parts together.
-        const lo: Vec3 = [Infinity, Infinity, Infinity], hi: Vec3 = [-Infinity, -Infinity, -Infinity];
-        for (const { model } of items) {
-          for (let k = 0; k < 3; k++) {
-            lo[k] = Math.min(lo[k], model.centre[k] - model.size[k] / 2);
-            hi[k] = Math.max(hi[k], model.centre[k] + model.size[k] / 2);
-          }
+        const whole = mergeBodies(bodies, source.name);
+        let data: string | undefined;
+        if (source.buffer) {
+          const bin = toBinaryStl(whole.positions, whole.faces);
+          if (bin.byteLength > MAX_EMBED) throw new Error(`${source.name} is ${(bin.byteLength / 1e6).toFixed(1)} MB as triangles. Models carried in a graphic can be up to ${MAX_EMBED / 1e6} MB: add it to your project's files and pick it from there, or simplify it.`);
+          data = toBase64(bin);
         }
-        const mid = lo.map((v, k) => (v + hi[k]) / 2) as Vec3;
+        const model = modelFromPositions(whole.positions.slice(), whole.faces);
         const boxes = partBoxes();
         const first = !scene.parts.length;
-        const at = placeBeside(boxes, mid, hi.map((v, k) => v - lo[k]) as Vec3);
-        const added: ScenePart[] = [];
-        let triangles = 0;
-        for (const it of items) {
-          const part: ScenePart = {
-            id: newPartId(scene.parts),
-            name: it.name.slice(0, 120),
-            position: it.model.centre.map((c, k) => round(c + at[k] - mid[k])) as Vec3,
-            rotation: [0, 0, 0],
-            file: `${it.name}.stl`.slice(0, 200),
-            ...(source.url ? { url: source.url, body: it.i } : { data: it.data }),
-          };
-          opts.store.put(part, it.model);
-          keepModel(part, it.model);
-          scene.parts.push(part);
-          added.push(part);
-          triangles += it.model.triangles;
-        }
-        selectedId = added[0].id;
+        const part: ScenePart = {
+          id: newPartId(scene.parts),
+          name: source.name.slice(0, 120),
+          position: placeBeside(boxes, model.centre, model.size).map(n => round(n)) as Vec3,
+          rotation: [0, 0, 0],
+          file: `${source.name}.stl`.slice(0, 200),
+          ...(source.url ? { url: source.url } : { data }),
+        };
+        opts.store.put(part, model);
+        keepModel(part, model);
+        scene.parts.push(part);
+        selectedId = part.id;
         rebuild();
         if (first || boxes.length === 0) fitView();
         commit();
         renderProps();
-        const what = one ? `${added[0].name} added` : `${added.length} parts added from ${source.name}`;
-        status(triangles > 1_500_000 ? `${what}. It's a big model (${Math.round(triangles / 1000)}k triangles), so it may be slow.` : `${what}.`);
+        status(model.triangles > 1_500_000 ? `${part.name} added. It's a big model (${Math.round(model.triangles / 1000)}k triangles), so it may be slow.` : `${part.name} added.`);
       } catch (e) {
         status(e instanceof Error && e.message ? e.message : "That STEP file couldn't be added.", true, true);
       }
