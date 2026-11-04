@@ -16,7 +16,7 @@ import { galleryField, galleryTheme, openGalleryBlocks } from "./galleryWidget";
 import { videosField, videosTheme } from "./videosWidget";
 import { tableCursor, tableField } from "./tableWidget";
 import { sizePicture } from "./steadyScroll";
-import { isLayersUrl, layersOpener } from "./layersFacet";
+import { isLayersUrl, LAYERS_MODEL_EVENT, layersOpener } from "./layersFacet";
 import { imagePopover, imagePopoverAt, openImagePopover } from "./imagePopover";
 import { imageCaption } from "./imageCaption";
 
@@ -291,7 +291,57 @@ class ImageWidget extends WidgetType {
         e.preventDefault();
         layers.open(view, view.posAtDOM(wrap));
       });
-      wrap.append(edit);
+      const tools = document.createElement("span");
+      tools.className = "cm-md-image-layers-bar";
+      tools.append(edit);
+      wrap.append(tools);
+      // A graphic with a 3D scene: "Next step" from it, and a mark when the
+      // project's model has changed since its pictures were drawn.
+      if (layers.status) {
+        const src = this.src;
+        let checked = false;
+        const check = async () => {
+          if (!wrap.isConnected && checked) {
+            removeEventListener(LAYERS_MODEL_EVENT, check);
+            return;
+          }
+          checked = true;
+          const st = await layers.status!(src).catch(() => null);
+          wrap.querySelector(".cm-md-image-stale")?.remove();
+          if (!st?.scene) return;
+          if (!tools.querySelector("[data-next-step]")) {
+            const next = document.createElement("button");
+            next.type = "button";
+            next.className = "cm-md-image-layers";
+            next.dataset.nextStep = "";
+            next.textContent = "Next step";
+            next.title = "A new graphic after this one: what this shows is drawn as fitted (ghost), and the step number goes up";
+            next.addEventListener("mousedown", (e) => e.preventDefault());
+            next.addEventListener("click", (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              layers.open(view, view.posAtDOM(wrap), undefined, { nextStep: true });
+            });
+            tools.prepend(next);
+          }
+          if (st.stale) {
+            const mark = document.createElement("button");
+            mark.type = "button";
+            mark.className = "cm-md-image-stale";
+            mark.textContent = "Out of date · Update";
+            mark.title = "The project's 3D model has changed since this was drawn. Opens it and draws its 3D pictures again; then Save.";
+            mark.addEventListener("mousedown", (e) => e.preventDefault());
+            mark.addEventListener("click", (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              layers.open(view, view.posAtDOM(wrap), undefined, { update: true });
+            });
+            wrap.append(mark);
+          }
+        };
+        addEventListener(LAYERS_MODEL_EVENT, check);
+        void check();
+      }
     }
 
     const bar = document.createElement("span");
@@ -318,7 +368,7 @@ class ImageWidget extends WidgetType {
   }
   ignoreEvent(event: Event) {
     if (!(event.target instanceof Element)) return false;
-    return !!event.target.closest(".cm-md-image-sizes, .cm-md-image-layers") || (!this.readOnly && event.target.classList.contains("cm-md-image"));
+    return !!event.target.closest(".cm-md-image-sizes, .cm-md-image-layers, .cm-md-image-stale") || (!this.readOnly && event.target.classList.contains("cm-md-image"));
   }
 }
 

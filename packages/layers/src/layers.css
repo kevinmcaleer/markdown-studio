@@ -626,3 +626,8 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 .lyr-snap-faint { opacity: 0.45; }
 .lyr-snap-faint.lyr-snap-hole::before, .lyr-snap-faint.lyr-snap-rim::before { background: #1f6fe0; }
 .lyr-snap-joined { width: 13px; height: 13px; margin: -6.5px 0 0 -6.5px; background: #1f6fe0; }
+.lyr-scene-banner { margin: 0 0 10px; padding: 10px; border-radius: 10px; background: #fff7e6; color: #8a5300; font-size: 13px; line-height: 1.4; }
+.lyr-scene-banner p { margin: 0 0 8px; }
+.lyr-scene-model .lyr-note { margin: 0 0 8px; }
+.lyr-btn.lyr-stale-btn { color: #b45309; }
+.lyr-hint.lyr-stale-hint { color: #b45309; }

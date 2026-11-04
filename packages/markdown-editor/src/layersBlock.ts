@@ -1,7 +1,7 @@
 import { StateEffect, StateField, type EditorState, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet } from "@codemirror/view";
 import { imageAt, imageMarkdown } from "./imagePopover";
-import { isLayersUrl, layersOpener, layersUrl } from "./layersFacet";
+import { isLayersUrl, LAYERS_MODEL_EVENT, layersOpener, layersUrl, type LayersOpenHow } from "./layersFacet";
 import type { SlashCommand } from "./slashMenu";
 
 // Layers graphics in the text (the `layers` option). A graphic is an ordinary
@@ -20,7 +20,14 @@ import type { SlashCommand } from "./slashMenu";
 export type LayersApi = {
   mount(el: HTMLElement, options: Record<string, unknown>): LayersEditor;
   readDoc(url: string, fetchImage?: (url: string) => Promise<Blob>): Promise<unknown | null>;
+  /** The next assembly step after a graphic (Layers 3D scenes). */
+  nextStepDoc?(doc: unknown): unknown;
+  staleScenes?(doc: unknown, stamp: number): number;
+  hasScene?(doc: unknown): boolean;
 };
+
+/** The project's 3D model, as Layers keeps it: `stamp` goes up with each change. */
+export type LayersProjectModel = { version: 1; stamp: number; parts: unknown[] };
 export type LayersEditor = {
   setMode(mode: "inline" | "full"): void;
   mode(): "inline" | "full";
@@ -38,6 +45,13 @@ export type LayersOptions = {
   listModels?: () => Promise<{ url: string; title?: string; thumbnail?: string | (() => Promise<Blob | string | null | undefined>) }[]>;
   /** Fetches a model's bytes for a 3D scene. Defaults to fetch with credentials. */
   fetchModel?: (url: string) => Promise<ArrayBuffer | Blob>;
+  /**
+   * The project's 3D model (null: none yet), which every 3D scene picks its
+   * parts from. With both, graphics drawn from an older version say so and
+   * offer to update, and graphics with a scene offer "Next step".
+   */
+  loadModel?: () => Promise<LayersProjectModel | null>;
+  saveModel?: (model: LayersProjectModel) => Promise<void>;
   /** Where "/Graphic" opens a new one: in the page (the default) or full screen. */
   mode?: "inline" | "full";
   /** After a graphic is saved: its old picture's link (to tidy up, say) and the new one. */
@@ -171,10 +185,45 @@ function closeSession(view: EditorView, extra: Parameters<EditorView["dispatch"]
  * (its graphic, or a new graphic drawn over the photo), or, with `pos` on a
  * line that isn't a picture, a new graphic there.
  */
-export function openLayers(view: EditorView, host: LayersHost, pos: number, mode: "inline" | "full" = "inline"): void {
+// The project's model, asked for at most every few seconds, and each
+// graphic's layers by its link (a saved graphic gets a new link).
+const modelCache = new WeakMap<LayersHost, { at: number; model: Promise<LayersProjectModel | null> }>();
+function projectModel(host: LayersHost): Promise<LayersProjectModel | null> {
+  const got = modelCache.get(host);
+  if (got && Date.now() - got.at < 5000) return got.model;
+  const model = host.loadModel ? host.loadModel().catch(() => null) : Promise.resolve(null);
+  modelCache.set(host, { at: Date.now(), model });
+  return model;
+}
+const docCache = new Map<string, Promise<unknown | null>>();
+function graphicDoc(api: LayersApi, url: string, fetchImage: (url: string) => Promise<Blob>): Promise<unknown | null> {
+  let doc = docCache.get(url);
+  if (!doc) {
+    doc = api.readDoc(url, fetchImage).catch(() => null);
+    docCache.set(url, doc);
+    if (docCache.size > 200) docCache.delete(docCache.keys().next().value!);
+  }
+  return doc;
+}
+
+/** Whether the graphic at `url` has 3D scenes, and how many are behind the project's model. */
+async function graphicStatus(host: LayersHost, url: string): Promise<{ scene: boolean; stale: number } | null> {
+  if (!host.loadModel || !host.saveModel || !isLayersUrl(url)) return null;
+  const api = await loadLayers(host.load);
+  if (!api.hasScene || !api.staleScenes) return null;
+  const doc = await graphicDoc(api, url, host.fetchImage ?? defaultFetch);
+  if (!doc || !api.hasScene(doc)) return { scene: false, stale: 0 };
+  const model = await projectModel(host);
+  return { scene: true, stale: model ? api.staleScenes(doc, model.stamp) : 0 };
+}
+
+export function openLayers(view: EditorView, host: LayersHost, pos: number, mode: "inline" | "full" = "inline", how: LayersOpenHow = {}): void {
   if (view.state.readOnly) return;
   if (sessions.has(view)) closeSession(view);
-  const image = imageAt(view.state, pos);
+  const at = imageAt(view.state, pos);
+  // "Next step" starts a new graphic after this one, from a copy of it.
+  const image = how.nextStep ? null : at;
+  const from = how.nextStep ? at : image;
   const id = nextId++;
   const container = document.createElement("div");
   container.className = "cm-layers-block";
@@ -188,7 +237,8 @@ export function openLayers(view: EditorView, host: LayersHost, pos: number, mode
   void (async () => {
     try {
       const api = await loadLayers(host.load);
-      const doc = image && isLayersUrl(image.url) ? await api.readDoc(image.url, fetchImage) : null;
+      let doc = from && isLayersUrl(from.url) ? await api.readDoc(from.url, fetchImage) : null;
+      if (how.nextStep && doc && api.nextStepDoc) doc = api.nextStepDoc(doc);
       if (session.closed) return;
       container.innerHTML = "";
       session.editor = api.mount(container, {
@@ -200,6 +250,18 @@ export function openLayers(view: EditorView, host: LayersHost, pos: number, mode
         listImages: host.listImages,
         listModels: host.listModels,
         fetchModel: host.fetchModel ?? (async (url: string) => (await defaultFetch(url)).arrayBuffer()),
+        ...(host.loadModel && host.saveModel
+          ? {
+              loadModel: () => projectModel(host),
+              saveModel: async (model: LayersProjectModel) => {
+                await host.saveModel!(model);
+                modelCache.set(host, { at: Date.now(), model: Promise.resolve(model) });
+                // Other graphics on the page check whether they're now behind.
+                dispatchEvent(new CustomEvent(LAYERS_MODEL_EVENT));
+              },
+            }
+          : {}),
+        updateScenes: !!(how.update || how.nextStep),
         doneLabel: "Save",
         onDone: async (result: LayersResult) => {
           const file = new File([result.png], graphicFileName(result.title), { type: "image/png" });
@@ -270,10 +332,8 @@ const theme = EditorView.theme({
     fontSize: "14px",
   },
   ".cm-layers-error": { color: "var(--danger, #b42318)" },
+  ".cm-md-image-layers-bar": { position: "absolute", top: "6px", right: "6px", display: "inline-flex", gap: "6px" },
   ".cm-md-image-layers": {
-    position: "absolute",
-    top: "6px",
-    right: "6px",
     display: "inline-flex",
     alignItems: "center",
     gap: "6px",
@@ -289,6 +349,20 @@ const theme = EditorView.theme({
     boxShadow: "0 2px 8px rgb(0 0 0 / 0.2)",
   },
   ".cm-md-image-wrap:hover .cm-md-image-layers, .cm-md-image-layers:focus-visible": { opacity: "1" },
+  ".cm-md-image-stale": {
+    position: "absolute",
+    bottom: "6px",
+    left: "6px",
+    padding: "5px 10px",
+    border: "0",
+    borderRadius: "8px",
+    background: "#d97706",
+    color: "#fff",
+    font: "600 13px/1.2 var(--font-sans, system-ui)",
+    cursor: "pointer",
+    boxShadow: "0 2px 8px rgb(0 0 0 / 0.2)",
+  },
+  ".cm-md-image-stale:hover": { background: "#b45309" },
   ".cm-md-image-layers:hover": { background: "rgb(109 40 217)" },
 });
 
@@ -298,7 +372,10 @@ export function layersBlocks(host: LayersHost): Extension {
     field,
     decorations,
     theme,
-    layersOpener.of({ open: (view, pos, mode) => openLayers(view, host, pos, mode ?? "inline") }),
+    layersOpener.of({
+      open: (view, pos, mode, how) => openLayers(view, host, pos, mode ?? "inline", how),
+      ...(host.loadModel && host.saveModel ? { status: (url: string) => graphicStatus(host, url) } : {}),
+    }),
     ViewPlugin.define((view) => ({
       destroy() {
         const s = sessions.get(view);

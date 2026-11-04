@@ -101,6 +101,23 @@ export interface SceneData {
   style: SceneStyle;
   /** How far apart joined parts are drawn: 0 assembled, 1 fully exploded. */
   explode: number;
+  /**
+   * Set when the scene's parts come from the project's model: the model's
+   * version (stamp) they were last taken from. Its parts are then a copy of
+   * the model's, each with this scene's own hidden / ghost / highlight.
+   */
+  model?: { stamp: number };
+}
+
+/**
+ * A project's model: the parts and joints every scene in the project picks
+ * from (the host stores it). `stamp` changes whenever the parts or joints
+ * do, so pictures drawn from an older one can say they're out of date.
+ */
+export interface ProjectModel {
+  version: 1;
+  stamp: number;
+  parts: ScenePart[];
 }
 
 export interface StylePreset {
@@ -241,7 +258,61 @@ export function normalizeScene(value: unknown): SceneData {
     ghost: colour(s.ghost, d.ghost),
   };
   if (s.draft === false) style.draft = false;
-  return { version: 1, parts, camera, style, explode: num(v.explode, 0, 0, 1) };
+  const out: SceneData = { version: 1, parts, camera, style, explode: num(v.explode, 0, 0, 1) };
+  if (v.model && typeof v.model === "object") out.model = { stamp: num((v.model as { stamp?: unknown }).stamp, 0, 0) };
+  return out;
+}
+
+// ------------------------------------------------------------ the project model
+
+/** What a scene shows of a part, as opposed to what the part is. */
+const SHOWING = ["hidden", "ghost", "highlight"] as const;
+
+/** A part as the model has it: without one scene's hidden / ghost / highlight. */
+export function modelPart(p: ScenePart): ScenePart {
+  const out = { ...p };
+  for (const k of SHOWING) delete out[k];
+  return out;
+}
+
+/** `value` as a project model, or null when it isn't one. */
+export function normalizeModel(value: unknown): ProjectModel | null {
+  if (!value || typeof value !== "object" || !Array.isArray((value as ProjectModel).parts)) return null;
+  const v = value as ProjectModel;
+  return { version: 1, stamp: num(v.stamp, 0, 0), parts: normalizeScene({ parts: v.parts }).parts.map(modelPart) };
+}
+
+/** The model a scene's parts make, at `stamp`. */
+export function modelOf(scene: SceneData, stamp: number): ProjectModel {
+  return { version: 1, stamp, parts: scene.parts.map(modelPart) };
+}
+
+/** Whether two lists of parts differ in what they are (not in what a scene shows of them). */
+export function partsDiffer(a: ScenePart[], b: ScenePart[]): boolean {
+  return JSON.stringify(a.map(modelPart)) !== JSON.stringify(b.map(modelPart));
+}
+
+/**
+ * The scene with its parts taken from `model`: each keeps what this scene
+ * showed of it, and parts new to the model start hidden (tick them to show
+ * them). Camera, explode and style stay the scene's own.
+ */
+export function followModel(scene: SceneData, model: ProjectModel): SceneData {
+  const had = new Map(scene.parts.map(p => [p.id, p]));
+  const fresh = !scene.model;
+  const parts = model.parts.map(m => {
+    const p: ScenePart = { ...structuredClone(m) };
+    const was = had.get(m.id);
+    if (was) for (const k of SHOWING) if (was[k]) p[k] = true;
+    if (!was && !fresh) p.hidden = true;
+    return p;
+  });
+  return { ...scene, parts, model: { stamp: model.stamp } };
+}
+
+/** Whether the scene was drawn from an older version of `model`. */
+export function behindModel(scene: SceneData | undefined, model: ProjectModel | { stamp: number } | null | undefined): boolean {
+  return !!(scene?.model && model && scene.model.stamp < model.stamp);
 }
 
 /** The style a preset gives, keeping the highlight colour already chosen. */

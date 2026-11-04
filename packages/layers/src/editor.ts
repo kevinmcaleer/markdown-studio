@@ -19,7 +19,7 @@ import {
 } from "./elements";
 import { boxSides, dist, distToSegment, facingSide, polygonSides, SIDES, snapAngle, type Pt, type Side } from "./geometry";
 import { icon } from "./icons";
-import { blankScene, normalizeScene } from "./scene/model";
+import { behindModel, blankScene, followModel, normalizeModel, normalizeScene, type ProjectModel } from "./scene/model";
 import type { ModelStore } from "./scene/render";
 import type { SceneModel } from "./scene/workspace";
 import { isScene, placeholderPicture, SceneLayer } from "./sceneLayer";
@@ -72,6 +72,15 @@ export interface LayersOptions {
   listModels?(): Promise<SceneModel[]>;
   /** Loads a model's bytes (the host's signed-in fetch); plain fetch when left out. */
   fetchModel?(url: string): Promise<ArrayBuffer | Blob>;
+  /**
+   * The project's model of joined parts, which every 3D scene picks its
+   * parts from (null: none yet). With both hooks, scenes share it, and a
+   * picture drawn from an older version is marked out of date.
+   */
+  loadModel?(): Promise<ProjectModel | null>;
+  saveModel?(model: ProjectModel): Promise<void>;
+  /** Draw every 3D scene's picture again once the graphic opens (a new step, or "Update picture" from the host). */
+  updateScenes?: boolean;
   doneLabel?: string;
   onDone?(result: LayersResult): void | Promise<void>;
   onCancel?(): void;
@@ -791,6 +800,55 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
   // ------------------------------------------------------------ 3D scenes
 
   let modelStore: ModelStore | null = null;
+
+  // The project's model (undefined until asked for), and the scenes whose
+  // pictures were drawn from an older version of it.
+  let projectModel: ProjectModel | null | undefined;
+  async function getProjectModel(): Promise<ProjectModel | null> {
+    if (!opts.loadModel || !opts.saveModel) return null;
+    if (projectModel === undefined) {
+      try {
+        projectModel = normalizeModel(await opts.loadModel());
+      } catch {
+        return null; // Not now: asked again next time.
+      }
+    }
+    return projectModel;
+  }
+  const staleScenes = () => objects().filter((o): o is SceneLayer => isScene(o) && behindModel(o.scene, projectModel));
+  function sayStale(): void {
+    const n = staleScenes().length;
+    if (n) status(`${n === 1 ? "A 3D picture is" : `${n} 3D pictures are`} out of date: the project's model has changed. Select ${n === 1 ? "it" : "one"} and click Update picture.`, false, true);
+  }
+
+  /** Draws scene pictures again from the project's model (all of them, or just `only`). Says how many it drew. */
+  async function updateScenes(only?: SceneLayer[], all = false): Promise<number> {
+    const model = await getProjectModel();
+    const layers = only || objects().filter((o): o is SceneLayer => isScene(o) && (all || behindModel(o.scene, model)));
+    if (!layers.length) return 0;
+    status(`Drawing ${layers.length === 1 ? "the picture" : `${layers.length} pictures`} again…`, false, true);
+    let done = 0;
+    try {
+      const t = await sceneTools();
+      for (const layer of layers) {
+        if (!layer.scene?.parts.length && !(model && layer.scene?.model)) continue;
+        const scene = model && layer.scene?.model ? followModel(normalizeScene(layer.scene), model) : normalizeScene(layer.scene);
+        const { w, h } = layer.pageSize();
+        const scale = sceneScale(w, h);
+        const picture = await t.renderPicture(scene, t.store, Math.round(w), Math.round(h), scale);
+        if (destroyed) return done;
+        await setScenePicture(layer, scene, picture, scale, w, h);
+        done++;
+      }
+      status(done ? `${done === 1 ? "Picture" : `${done} pictures`} drawn again.` : "");
+    } catch (e) {
+      status(e instanceof Error && e.message ? `The picture couldn't be drawn again: ${e.message}` : "The picture couldn't be drawn again.", true);
+    }
+    if (done) changed();
+    renderContext();
+    canvas.requestRenderAll();
+    return done;
+  }
   async function sceneTools() {
     const [workspace, render] = await Promise.all([import("./scene/workspace"), import("./scene/render")]);
     if (!modelStore) {
@@ -837,6 +895,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       status("");
       const { w, h } = layer.pageSize();
       const scale = sceneScale(w, h);
+      const model = await getProjectModel();
       const result = await t.openWorkspace({
         scene: layer.scene || blankScene(),
         width: Math.round(w),
@@ -845,12 +904,22 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
         background,
         store: t.store,
         listModels: opts.listModels,
+        ...(opts.loadModel && opts.saveModel
+          ? {
+              model,
+              saveModel: async (m: ProjectModel) => {
+                await opts.saveModel!(m);
+                projectModel = m;
+              },
+            }
+          : {}),
       });
       if (!result || destroyed) return;
       await setScenePicture(layer, result.scene, result.picture, scale, w, h);
       canvas.setActiveObject(layer);
       changed();
       renderContext();
+      sayStale();
     } catch (e) {
       status(e instanceof Error && e.message ? `The 3D scene couldn't be opened: ${e.message}` : "The 3D scene couldn't be opened.", true);
     } finally {
@@ -1199,6 +1268,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
   canvas.on("after:render", ({ ctx }) => {
     // Fabric also fires this for its top layer, which isn't cleared on every redraw: drawing there left old handles behind.
     if (!ctx || ctx !== canvas.getContext()) return;
+    drawStale(ctx);
     drawConnectHints(ctx);
     if (!guides.length) return;
     const r = canvas.getRetinaScaling();
@@ -1220,6 +1290,35 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     ctx.stroke();
     ctx.restore();
   });
+  /** An amber dashed frame and "Out of date" on scene pictures drawn from an older model (only on screen). */
+  function drawStale(ctx: CanvasRenderingContext2D): void {
+    const stale = projectModel ? staleScenes() : [];
+    if (!stale.length) return;
+    const r = canvas.getRetinaScaling();
+    ctx.save();
+    ctx.setTransform(r * zoom, 0, 0, r * zoom, 0, 0);
+    const u = 1 / zoom;
+    for (const o of stale) {
+      const b = o.getBoundingRect();
+      ctx.strokeStyle = "#d97706";
+      ctx.lineWidth = 2 * u;
+      ctx.setLineDash([8 * u, 5 * u]);
+      ctx.strokeRect(b.left, b.top, b.width, b.height);
+      ctx.setLineDash([]);
+      const label = "Out of date";
+      ctx.font = `600 ${12 * u}px system-ui, sans-serif`;
+      const w = ctx.measureText(label).width + 16 * u;
+      ctx.fillStyle = "#d97706";
+      ctx.beginPath();
+      ctx.roundRect(b.left + 8 * u, b.top + 8 * u, w, 22 * u, 6 * u);
+      ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.textBaseline = "middle";
+      ctx.fillText(label, b.left + 16 * u, b.top + 19 * u);
+    }
+    ctx.restore();
+  }
+
   /** The snap points near a line end being placed, and the + handles of the layer under the pointer. */
   function drawConnectHints(ctx: CanvasRenderingContext2D): void {
     const showHandles = hover && !drawing && !linking && objects().includes(hover) && !canvas._currentTransform;
@@ -1345,9 +1444,13 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
         </span>
         ${swatch("badgeFill", String(circle?.fill || ACCENT), "Colour")}`;
     } else if (isScene(o)) {
+      const stale = behindModel(o.scene, projectModel);
+      const shown = o.scene?.parts.filter(p => !p.hidden).length || 0;
       html += `
         <button type="button" class="lyr-btn" data-act="edit-scene" title="Add parts, place them and pick the style (or double-click it)">${icon("cube")}<span>Edit 3D scene</span></button>
-        <span class="lyr-hint">${o.scene?.parts.length ? `${o.scene.parts.length} part${o.scene.parts.length === 1 ? "" : "s"}` : "No parts yet"}. Stretch it to change the picture's shape.</span>`;
+        ${stale ? `<button type="button" class="lyr-btn lyr-stale-btn" data-act="update-scene" title="Draw it again from the project's model as it is now">${icon("rotate")}<span>Update picture</span></button>
+        <span class="lyr-hint lyr-stale-hint">Out of date: the project's model has changed since this was drawn.</span>`
+        : `<span class="lyr-hint">${o.scene?.parts.length ? `${o.scene.model ? `${shown} of the model's ${o.scene.parts.length} parts` : `${o.scene.parts.length} part${o.scene.parts.length === 1 ? "" : "s"}`}` : "No parts yet"}. Stretch it to change the picture's shape.</span>`}`;
     } else if (o.type === "image") {
       html += `
         <button type="button" class="lyr-btn" data-act="flip-x" title="Flip across">${icon("flipH")}<span>Flip</span></button>
@@ -2270,6 +2373,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
         break;
       case "shape-text": if (o && canHoldText(o)) editShapeText(o); break;
       case "edit-scene": if (isScene(o)) void editScene(o); break;
+      case "update-scene": if (isScene(o)) void updateScenes([o]); break;
       case "flip-y": if (o) apply({ flipY: !o.flipY }); break;
       case "fill-page":
         if (o) {
@@ -2466,6 +2570,15 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     setMode(mode);
     renderContext();
     syncHistoryButtons();
+    // Which 3D pictures the project's model has moved on from.
+    if (objects().some(isScene)) {
+      await getProjectModel();
+      if (destroyed) return;
+      if (opts.updateScenes) await updateScenes(undefined, true);
+      else sayStale();
+      renderContext();
+      canvas.requestRenderAll();
+    }
   })();
   return handle;
 }

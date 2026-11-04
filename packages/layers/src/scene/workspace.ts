@@ -13,7 +13,8 @@ import { TransformControls } from "three/examples/jsm/controls/TransformControls
 import { icon } from "../icons";
 import {
   applyPreset, DEFAULT_LIMITS, JOINT_TYPES, normalizeScene, newPartId, partName, placeBeside, STYLE_PRESETS, VIEWS, wrapAngle,
-  type JointType, type PartJoint,
+  followModel, modelOf, partsDiffer,
+  type JointType, type PartJoint, type ProjectModel,
   type Box3 as PlainBox, type SceneData, type ScenePart, type SceneStyle, type Vec3,
 } from "./model";
 import { applyJoint } from "./joint";
@@ -45,6 +46,13 @@ export interface WorkspaceOptions {
   store: ModelStore;
   /** The host's models, offered under Add a part. */
   listModels?(): Promise<SceneModel[]>;
+  /**
+   * The project's model, when the host keeps one (null: none yet). With
+   * `saveModel`, scenes share their parts and joints through it: Done saves
+   * any change to them, and each scene keeps only what it shows.
+   */
+  model?: ProjectModel | null;
+  saveModel?(model: ProjectModel): Promise<void>;
 }
 
 export interface WorkspaceResult {
@@ -75,6 +83,15 @@ const clone = (s: SceneData): SceneData => ({
 export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult | null> {
   return new Promise(resolve => {
     let scene = clone(normalizeScene(opts.scene));
+    // The project's model: a scene drawn from it follows it; a new one starts
+    // with all of it; a scene before there was one becomes it. A scene with
+    // its own parts, in a project that has a model, keeps them until asked.
+    const shared = !!opts.saveModel;
+    const projectModel = opts.model?.parts.length ? opts.model : null;
+    if (shared) {
+      if (projectModel && (scene.model || !scene.parts.length)) scene = followModel(scene, projectModel);
+      else if (!projectModel) scene.model = { stamp: opts.model?.stamp || 0 };
+    }
     const start = JSON.stringify(scene);
     const aspect = opts.width / opts.height;
     const models = new Map<string, Model | Error>();
@@ -107,7 +124,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
               <button type="button" class="lyr-wide-btn lyr-primary" data-act="add" aria-haspopup="menu">${icon("plus", 16)} Add a part</button>
               <div class="lyr-scene-menu" role="menu" hidden></div>
             </div>
-            <div class="lyr-panel-title">Parts</div>
+            <div class="lyr-panel-title lyr-scene-parts-title">Parts</div>
+            <div class="lyr-scene-model"></div>
             <ul class="lyr-scene-list"></ul>
             <p class="lyr-note">Add STL files, or drop them on the view. Click a part to place it.</p>
           </aside>
@@ -570,12 +588,53 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         return `${joint}<li class="lyr-scene-row${p.id === selectedId && !shownJoint ? " lyr-on" : ""}${p.hidden ? " lyr-off" : ""}" data-id="${esc(p.id)}" style="--depth:${depth}">
               <button type="button" class="lyr-scene-name" data-pick="${esc(p.id)}" title="${broken ? "Its model couldn't be loaded" : "Select"}">${icon("cube", 14)}<span>${esc(p.name)}</span>${broken ? `<em>missing</em>` : ""}</button>
               <button type="button" class="lyr-btn lyr-icon-btn${p.highlight ? " lyr-on" : ""}" data-highlight="${esc(p.id)}" title="${p.highlight ? "Stop highlighting" : "Highlight"}" aria-label="Highlight ${esc(p.name)}" aria-pressed="${!!p.highlight}">${icon("highlight", 16)}</button>
-              <button type="button" class="lyr-btn lyr-icon-btn" data-hide="${esc(p.id)}" title="${p.hidden ? "Show" : "Hide"}" aria-label="${p.hidden ? "Show" : "Hide"} ${esc(p.name)}">${icon(p.hidden ? "eyeOff" : "eye", 16)}</button>
-              <button type="button" class="lyr-btn lyr-icon-btn" data-remove="${esc(p.id)}" title="Remove" aria-label="Remove ${esc(p.name)}">${icon("trash", 16)}</button>
+              <button type="button" class="lyr-btn lyr-icon-btn${p.ghost ? " lyr-on" : ""}" data-ghost-part="${esc(p.id)}" title="${p.ghost ? "Draw it normally" : "Ghost: draw it faint, as fitted in an earlier step"}" aria-label="Ghost ${esc(p.name)}" aria-pressed="${!!p.ghost}">${icon("opacity", 16)}</button>
+              <button type="button" class="lyr-btn lyr-icon-btn" data-hide="${esc(p.id)}" title="${linked() ? (p.hidden ? "Show it in this scene" : "Leave it out of this scene (it stays in the model)") : p.hidden ? "Show" : "Hide"}" aria-label="${p.hidden ? "Show" : "Hide"} ${esc(p.name)}">${icon(p.hidden ? "eyeOff" : "eye", 16)}</button>
+              <button type="button" class="lyr-btn lyr-icon-btn" data-remove="${esc(p.id)}" title="${linked() ? "Remove it from the project's model (every scene)" : "Remove"}" aria-label="Remove ${esc(p.name)}">${icon("trash", 16)}</button>
             </li>${(byParent.get(p.id) || []).map(c => row(c, depth + 1)).join("")}`;
       };
+      renderModelNote();
       list.innerHTML = scene.parts.length ? (byParent.get("") || []).map(p => row(p, 0)).join("") : `<li class="lyr-note">No parts yet.</li>`;
     }
+
+    /** Whether this scene's parts are the project's model. */
+    function linked(): boolean {
+      return shared && !!scene.model;
+    }
+
+    const modelNote = $(".lyr-scene-model");
+    function renderModelNote(): void {
+      const title = $(".lyr-scene-parts-title");
+      if (!shared) {
+        modelNote.hidden = true;
+        return;
+      }
+      modelNote.hidden = false;
+      if (linked()) {
+        const shown = scene.parts.filter(p => !p.hidden).length;
+        title.textContent = "Project model";
+        modelNote.innerHTML = `<p class="lyr-note">${scene.parts.length ? `Parts and joints are shared by every scene in this project. This scene shows ${shown} of ${scene.parts.length}: the eye picks which.` : "The parts you add here are the project's model: every scene can show them."}</p>`;
+      } else {
+        title.textContent = "Parts";
+        modelNote.innerHTML = `<div class="lyr-scene-banner"><p>This scene has its own parts. The project has a model of ${projectModel?.parts.length || 0} part${projectModel?.parts.length === 1 ? "" : "s"}.</p>
+          <button type="button" class="lyr-wide-btn" data-act="use-model" title="Show the project's model here instead of these parts (camera and style stay)">${icon("cube", 16)} Use the project model</button></div>`;
+      }
+    }
+    modelNote.addEventListener("click", e => {
+      if (!(e.target as HTMLElement).closest("[data-act=use-model]") || !projectModel) return;
+      scene = followModel({ ...scene, parts: [] }, projectModel);
+      selectedId = "";
+      shownJoint = "";
+      void loadModels().then(() => {
+        rebuild();
+        fitView();
+        commit();
+      });
+      renderList();
+      renderProps();
+      syncExplode();
+      status("This scene now shows the project's model.");
+    });
 
     list.addEventListener("click", e => {
       const b = (e.target as HTMLElement).closest("button");
@@ -597,6 +656,15 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         rebuild();
         commit();
         renderProps();
+      } else if (d.ghostPart) {
+        const p = partById(d.ghostPart);
+        if (!p) return;
+        if (p.ghost) delete p.ghost;
+        else p.ghost = true;
+        rebuild();
+        commit();
+        renderList();
+        renderProps();
       } else if (d.hide) {
         const p = partById(d.hide);
         if (!p) return;
@@ -604,6 +672,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         else p.hidden = true;
         rebuild();
         commit();
+        renderModelNote();
       } else if (d.remove) removePart(d.remove);
     });
 
@@ -1574,10 +1643,19 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       status("Drawing the picture…", false, true);
       try {
         const out = clone(scene);
+        if (linked() && opts.saveModel && (scene.parts.length || projectModel) && (!projectModel || partsDiffer(projectModel.parts, scene.parts))) {
+          // The parts or joints changed: a new version of the model, which
+          // pictures drawn from the old one will say they're behind.
+          status("Saving the project's model…", false, true);
+          const stamp = Math.max(Date.now(), (opts.model?.stamp || 0) + 1);
+          await opts.saveModel(modelOf(out, stamp));
+          out.model = { stamp };
+        }
+        status("Drawing the picture…", false, true);
         const picture = await renderPicture(out, opts.store, opts.width, opts.height, opts.scale);
         close({ scene: out, picture });
       } catch (e) {
-        status(e instanceof Error && e.message ? `The picture couldn't be drawn: ${e.message}` : "The picture couldn't be drawn.", true, true);
+        status(e instanceof Error && e.message ? `That didn't work: ${e.message}` : "The picture couldn't be drawn.", true, true);
         btn.disabled = false;
         busy = false;
       }
