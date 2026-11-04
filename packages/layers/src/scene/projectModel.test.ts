@@ -64,7 +64,7 @@ describe("documents with scenes", () => {
   it("makes the next step: shown parts ghosted, numbers up", () => {
     const d = nextStepDoc(doc());
     const parts = (d.objects[0] as { scene: { parts: ScenePart[] } }).scene.parts;
-    expect(parts[0]).toMatchObject({ ghost: true });
+    expect(parts[0]).toMatchObject({ ghost: true, explode: 0 });
     expect(parts[0].highlight).toBeUndefined();
     expect(parts[1].ghost).toBeUndefined();
     const g = d.objects[1] as { badge: number; name: string; objects: { text?: string }[] };
