@@ -2180,7 +2180,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
             ${field("outline", "Outline", "px", scene.style.outline, 0.5, "The bold line round each part")}
             ${field("crease", "Folds", "°", scene.style.crease, 1, "How sharp a fold must be to get a line (180: none)")}
           </div>
-          <label class="lyr-scene-check" title="In an exploded view, a dashed line from each part back to where it fits"><input type="checkbox" data-draft${scene.style.draft === false ? "" : " checked"}> Draft lines when exploded</label>
+          <label class="lyr-scene-check" title="In an exploded view, a line from each part back to where it fits"><input type="checkbox" data-draft${scene.style.draft === false ? "" : " checked"}> Draft lines when exploded</label>
+          ${scene.style.draft === false ? "" : `<label class="lyr-scene-check" title="Thin solid lines, as on a flat-pack sheet, instead of dashed ones"><input type="checkbox" data-draft-solid${scene.style.draftSolid ? " checked" : ""}> Solid draft lines</label>`}
           <p class="lyr-note">The background is the page's colour: change it in Layers.</p>
         </section>`;
       syncPresets();
@@ -2192,6 +2193,12 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       else if (t.dataset.draft !== undefined) {
         if (t.checked) delete scene.style.draft;
         else scene.style.draft = false;
+        rebuild();
+        renderProps();
+        commit();
+      } else if (t.dataset.draftSolid !== undefined) {
+        if (t.checked) scene.style.draftSolid = true;
+        else delete scene.style.draftSolid;
         rebuild();
         commit();
       } else if (t.dataset.ghost !== undefined) {

@@ -14,7 +14,7 @@ import { alignBoxes, distributeBoxes, type AlignHow, type DistributeHow } from "
 import { Connector, type ConnectorEnd } from "./connector";
 import { blankDoc, clampSide, embedDoc, defaultFetch, exportScales, MAX_EXPORT_BYTES, MAX_SIDE, MIN_SIDE, normalizeDoc, SIZES, type LayersDoc } from "./doc";
 import {
-  ACCENT, badge, boundTo, canHoldText, FONTS, INK, isLine, isText, kindOf, LINES, makeShape, makeText, newId, PALETTE, SHAPES, SYMBOLS, shapeText, TEMPLATES, TEXT_STYLES,
+  ACCENT, badge, boundTo, canHoldText, FIGURES, FONTS, INK, INK_KINDS, isLine, isText, kindOf, LINES, makeShape, makeText, newId, PALETTE, SHAPES, SYMBOLS, shapeText, TEMPLATES, TEXT_STYLES, TOOLS,
   type Point as XY,
 } from "./elements";
 import { boxSides, dist, distToSegment, facingSide, polygonSides, SIDES, snapAngle, type Pt, type Side } from "./geometry";
@@ -788,7 +788,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       return;
     }
     // Instruction symbols start in black, like the line art they sit beside.
-    const color = SYMBOLS.some(s => s.id === kind) ? INK : isLineKind(kind) ? lastColor.line || INK : lastColor.shape || "#74c0fc";
+    const color = INK_KINDS.has(kind) ? INK : isLineKind(kind) ? lastColor.line || INK : lastColor.shape || "#74c0fc";
     const o = makeShape(kind, { x: 0, y: 0 }, color);
     if (o) add(o, at);
   }
@@ -1875,6 +1875,10 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
           <div class="lyr-tiles">${LINES.map(s => tile(s.id, s.label, s.svg)).join("")}</div>
           <div class="lyr-panel-title">Instruction symbols</div>
           <div class="lyr-tiles">${SYMBOLS.map(s => tile(s.id, s.label, s.svg)).join("")}</div>
+          <div class="lyr-panel-title">People and attention</div>
+          <div class="lyr-tiles">${FIGURES.map(s => tile(s.id, s.label, s.svg)).join("")}</div>
+          <div class="lyr-panel-title">Tools and fixings</div>
+          <div class="lyr-tiles">${TOOLS.map(s => tile(s.id, s.label, s.svg)).join("")}</div>
           <div class="lyr-panel-title">3D</div>
           <button type="button" class="lyr-wide-btn" data-add="scene" title="Bring in STL or STEP models and draw them as assembly-instruction line art">${icon("cube", 16)} 3D scene from STL or STEP files</button>
           <p class="lyr-note">Click to add, or drag onto the page.</p>`;
