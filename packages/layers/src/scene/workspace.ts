@@ -16,12 +16,18 @@ import {
   type Box3 as PlainBox, type SceneData, type ScenePart, type SceneStyle, type Vec3,
 } from "./model";
 import { applyJoint } from "./joint";
-import { frame, LineArt, modelFromStl, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
+import { frame, LineArt, modelFromStl, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
 import { MAX_EMBED, parseStl, toBase64, toBinaryStl } from "./stl";
 
 export interface SceneModel {
   url: string;
   title?: string;
+  /**
+   * A picture of the model for the Add a part menu: an image URL, or a
+   * function giving one (or an image Blob). Without one, or if it fails,
+   * the model is drawn here instead.
+   */
+  thumbnail?: string | (() => Promise<Blob | string | null | undefined>);
 }
 
 export interface WorkspaceOptions {
@@ -923,8 +929,12 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         const found = (await opts.listModels()).filter(m => /\.stl(\?|#|$)/i.test(m.url) || /\.stl$/i.test(m.title || ""));
         const box = menu.querySelector(".lyr-scene-models");
         if (!box || menu.hidden) return;
+        box.classList.toggle("lyr-scene-tiles", found.length > 0);
         box.innerHTML = found.length
-          ? found.map((m, i) => `<button type="button" class="lyr-scene-menu-item" role="menuitem" data-model="${i}">${icon("cube", 16)}<span>${esc(m.title || partName(m.url))}</span></button>`).join("")
+          ? found.map((m, i) => {
+              const name = esc(m.title || partName(m.url));
+              return `<button type="button" class="lyr-scene-tile" role="menuitem" data-model="${i}" title="${name}"><span class="lyr-scene-thumb">${icon("cube", 24)}</span><span class="lyr-scene-tile-name">${name}</span></button>`;
+            }).join("")
           : `<span class="lyr-note">No STL files in this project yet.</span>`;
         box.querySelectorAll<HTMLElement>("[data-model]").forEach(b => {
           const m = found[Number(b.dataset.model)];
@@ -932,6 +942,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
             closeMenu();
             void addModel({ url: m.url, name: partName(m.title || m.url) });
           });
+          showThumb(b.querySelector<HTMLElement>(".lyr-scene-thumb")!, m);
         });
       } catch {
         const box = menu.querySelector(".lyr-scene-models");
@@ -941,6 +952,85 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     function closeMenu(): void {
       menu.hidden = true;
       menu.innerHTML = "";
+      thumbWatch?.disconnect();
+      thumbWatch = null;
+    }
+
+    // Thumbnails: the host's picture if it has one, else the model drawn
+    // here, one at a time and only once its tile scrolls into view. Kept
+    // for the menu's next opening; a model read here is kept by the store,
+    // so adding it afterwards is quick.
+    const thumbs = new Map<string, Promise<string | null>>();
+    let thumbnailer: Thumbnailer | null = null;
+    let thumbQueue: Promise<unknown> = Promise.resolve();
+    let thumbWatch: IntersectionObserver | null = null;
+    const blobUrls: string[] = [];
+    const THUMB_PX = 112;
+
+    function hostThumb(m: SceneModel): Promise<string | null> {
+      const t = m.thumbnail;
+      if (!t) return Promise.resolve(null);
+      return (async () => {
+        const v = typeof t === "string" ? t : await t();
+        if (!v) return null;
+        const src = typeof v === "string" ? v : URL.createObjectURL(v);
+        if (typeof v !== "string") blobUrls.push(src);
+        // Only a picture that actually loads counts.
+        await new Promise<void>((ok, fail) => {
+          const img = new Image();
+          img.onload = () => (img.naturalWidth ? ok() : fail(new Error("empty")));
+          img.onerror = () => fail(new Error("no picture"));
+          img.src = src;
+        });
+        return src;
+      })().catch(() => null);
+    }
+
+    function drawnThumb(m: SceneModel): Promise<string | null> {
+      const job = thumbQueue.then(async () => {
+        const model = await opts.store.get({ id: "", url: m.url });
+        if (closed) return null;
+        thumbnailer ??= new Thumbnailer();
+        return thumbnailer.draw(model, scene.style, VIEWS[0].direction, THUMB_PX * 2);
+      });
+      thumbQueue = job.catch(() => null);
+      return job.catch(() => null);
+    }
+
+    function thumbOf(m: SceneModel): Promise<string | null> {
+      let t = thumbs.get(m.url);
+      if (!t) {
+        t = hostThumb(m).then(src => src ?? drawnThumb(m));
+        thumbs.set(m.url, t);
+      }
+      return t;
+    }
+
+    function showThumb(slot: HTMLElement, m: SceneModel): void {
+      const fill = (src: string | null) => {
+        if (src && slot.isConnected) slot.innerHTML = `<img src="${esc(src)}" alt="" draggable="false">`;
+      };
+      if (thumbs.has(m.url)) {
+        void thumbs.get(m.url)!.then(fill);
+        return;
+      }
+      slot.classList.add("lyr-loading");
+      if (!thumbWatch) {
+        thumbWatch = new IntersectionObserver(entries => {
+          for (const e of entries) {
+            if (!e.isIntersecting) continue;
+            thumbWatch?.unobserve(e.target);
+            const go = (e.target as HTMLElement & { lyrThumb?: () => void }).lyrThumb;
+            go?.();
+          }
+        }, { root: menu, rootMargin: "120px" });
+      }
+      (slot as HTMLElement & { lyrThumb?: () => void }).lyrThumb = () =>
+        void thumbOf(m).then(src => {
+          slot.classList.remove("lyr-loading");
+          fill(src);
+        });
+      thumbWatch.observe(slot);
     }
 
     fileInput.addEventListener("change", () => {
@@ -1063,6 +1153,9 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       gizmo.dispose();
       orbit.dispose();
       art.dispose();
+      thumbWatch?.disconnect();
+      thumbnailer?.dispose();
+      blobUrls.forEach(u => URL.revokeObjectURL(u));
       overlay.remove();
       // The editor underneath may be full screen too.
       if (!document.querySelector(".lyr-overlay")) document.documentElement.classList.remove("lyr-open");

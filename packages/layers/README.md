@@ -18,7 +18,7 @@ const editor = mount(el, {
   mode: "inline",                    // or "full"; the Full screen button switches
   fetchImage: url => fetch(url, { credentials: "include" }).then(r => r.blob()),
   listImages: async () => [{ url, title }],   // offered under Uploads
-  listModels: async () => [{ url, title }],   // STL files offered in a 3D scene
+  listModels: async () => [{ url, title, thumbnail }],   // STL files offered in a 3D scene; thumbnail (optional) is an image URL or () => Promise<Blob|URL>, else the model is drawn
   fetchModel: url => fetch(url, { credentials: "include" }).then(r => r.arrayBuffer()),
   onDone: async ({ png, doc, title }) => { /* upload png, put it in the page */ },
   onCancel: () => editor.destroy(),

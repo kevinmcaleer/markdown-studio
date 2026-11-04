@@ -35,7 +35,7 @@ export type LayersOptions = {
   /** Fetches a picture's bytes (to read a graphic's layers or draw on a photo). Defaults to fetch with credentials. */
   fetchImage?: (url: string) => Promise<Blob>;
   /** The host's 3D models (STL files), offered in a graphic's 3D scenes. */
-  listModels?: () => Promise<{ url: string; title?: string }[]>;
+  listModels?: () => Promise<{ url: string; title?: string; thumbnail?: string | (() => Promise<Blob | string | null | undefined>) }[]>;
   /** Fetches a model's bytes for a 3D scene. Defaults to fetch with credentials. */
   fetchModel?: (url: string) => Promise<ArrayBuffer | Blob>;
   /** Where "/Graphic" opens a new one: in the page (the default) or full screen. */
