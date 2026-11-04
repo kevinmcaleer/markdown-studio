@@ -184,15 +184,20 @@ export function hasScene(doc: LayersDoc | null): boolean {
 
 /**
  * The next assembly step after `doc`: its 3D scenes' shown parts become
- * ghosts (fitted already) with nothing highlighted, and its step numbers go
- * up by one. Its pictures need drawing again (mount with updateScenes).
+ * ghosts (fitted already) with nothing highlighted, drawn fitted (a screw
+ * drawn out of its hole in this step is in it in the next), and its step
+ * numbers go up by one. Its pictures need drawing again (mount with
+ * updateScenes).
  */
 export function nextStepDoc(doc: LayersDoc): LayersDoc {
   const out = structuredClone(doc);
   for (const o of sceneRecords(out.objects)) {
     for (const p of o.scene?.parts || []) {
       delete p.highlight;
-      if (!p.hidden) p.ghost = true;
+      if (!p.hidden) {
+        p.ghost = true;
+        p.explode = 0;
+      }
     }
   }
   const bump = (objects: Record<string, unknown>[]) => {

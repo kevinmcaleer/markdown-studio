@@ -8,6 +8,7 @@
 // roll first, then pitch, then yaw (the same as URDF's rpy).
 
 import { meshTable, restoreParts, type Meshes } from "./meshTable";
+import { normalizeScrew, type ScrewSpec } from "./screw";
 
 export type Vec3 = [number, number, number];
 
@@ -50,6 +51,8 @@ export interface ScenePart {
   joint?: PartJoint;
   /** Drawn faint: a part fitted in an earlier step. */
   ghost?: boolean;
+  /** A screw made by the screw tool (its model is made from this, and carried in `data`). */
+  screw?: ScrewSpec;
 }
 
 export interface PartJoint {
@@ -229,6 +232,8 @@ export function normalizeScene(value: unknown): SceneData {
         if (typeof p.explode === "number" && Number.isFinite(p.explode)) part.explode = num(p.explode, 0, 0, 1);
         if (typeof p.parent === "string" && p.parent) part.parent = p.parent;
         if (p.ghost) part.ghost = true;
+        const screw = normalizeScrew(p.screw);
+        if (screw) part.screw = screw;
         if (p.joint && typeof p.joint === "object") {
           const j = p.joint;
           const unit = (v: unknown) => {
