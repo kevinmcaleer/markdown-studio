@@ -21,8 +21,9 @@ import {
   highlightedParts,
 } from "./model";
 import { applyJoint } from "./joint";
-import { frame, LineArt, modelFromPositions, modelFromStl, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
-import { MAX_EMBED, parseStl, toBase64, toBinaryStl } from "./stl";
+import { frame, LineArt, modelFromPositions, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
+import { MAX_EMBED, parseStl, stlFaces, toBinaryStl, tooBigToCarry } from "./stl";
+import { isPacked, packMesh, packParts } from "./mesh";
 import { isStepFile, mergeBodies, readStep, type StepBody } from "./step";
 import { toUrdf, zip } from "./urdf";
 import { createViewCube } from "./viewcube";
@@ -441,11 +442,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         let data: string | undefined;
         if (source.buffer) {
           const pos = parseStl(source.buffer);
-          // Uploads are carried inside the graphic, as binary STL (a text STL is about five times bigger).
-          const bin = new Uint8Array(source.buffer, 0, 5).every((c, i) => c === "solid".charCodeAt(i)) && 84 + pos.length / 9 * 50 !== source.buffer.byteLength ? toBinaryStl(pos) : source.buffer;
-          if (bin.byteLength > MAX_EMBED) throw new Error(`${source.name} is ${(bin.byteLength / 1e6).toFixed(1)} MB. Models carried in a graphic can be up to ${MAX_EMBED / 1e6} MB: add it to your project's files and pick it from there, or simplify it.`);
-          data = toBase64(bin);
-          model = modelFromStl(bin);
+          const faces = stlFaces(source.buffer);
+          // Uploads are carried inside the graphic, packed small (see mesh.ts).
+          data = await packMesh(pos, faces);
+          if (data.length > MAX_EMBED) throw new Error(tooBigToCarry(source.name, data.length));
+          model = modelFromPositions(pos, faces);
         } else {
           model = await opts.store.get({ id: "", url: source.url });
         }
@@ -488,9 +489,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         const whole = mergeBodies(bodies, source.name);
         let data: string | undefined;
         if (source.buffer) {
-          const bin = toBinaryStl(whole.positions, whole.faces);
-          if (bin.byteLength > MAX_EMBED) throw new Error(`${source.name} is ${(bin.byteLength / 1e6).toFixed(1)} MB as triangles. Models carried in a graphic can be up to ${MAX_EMBED / 1e6} MB: add it to your project's files and pick it from there, or simplify it.`);
-          data = toBase64(bin);
+          data = await packMesh(whole.positions, whole.faces);
+          if (data.length > MAX_EMBED) throw new Error(tooBigToCarry(source.name, data.length));
         }
         const model = modelFromPositions(whole.positions.slice(), whole.faces);
         const boxes = partBoxes();
@@ -2651,7 +2651,17 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       status("Drawing the picture…", false, true);
       try {
         const out = clone(scene);
+        // Models carried from before they were packed small are packed now
+        // (the picture is drawn from the models already read, not read again).
+        if (await packParts(out.parts)) {
+          for (const p of out.parts) {
+            const m = models.get(p.id);
+            if (m && !(m instanceof Error)) opts.store.put(p, m);
+          }
+        }
         const viewsChanged = shared && JSON.stringify([views, defaultView]) !== startViews;
+        // The project's model still carrying unpacked models is saved again, packed, as the same version.
+        const repack = linked() && !!projectModel && projectModel.parts.some(p => p.data && !isPacked(p.data));
         if (linked() && opts.saveModel && (scene.parts.length || projectModel) && (!projectModel || partsDiffer(projectModel.parts, scene.parts))) {
           // The parts or joints changed: a new version of the model, which
           // pictures drawn from the old one will say they're behind.
@@ -2659,10 +2669,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           const stamp = Math.max(Date.now(), (opts.model?.stamp || 0) + 1);
           await opts.saveModel({ ...modelOf(out, stamp), ...viewsOut() });
           out.model = { stamp };
-        } else if (viewsChanged && opts.saveModel) {
-          // Only the named views changed: the same version, so no picture is out of date.
-          status("Saving the project's views…", false, true);
-          const base = opts.model || modelOf(linked() ? out : { ...out, parts: [] }, 0);
+        } else if ((viewsChanged || repack) && opts.saveModel) {
+          // Only the named views changed (or the models were packed): the same version, so no picture is out of date.
+          status(repack ? "Saving the project's model…" : "Saving the project's views…", false, true);
+          const was = opts.model || modelOf(linked() ? out : { ...out, parts: [] }, 0);
+          const base = repack ? { ...was, parts: modelOf(out, was.stamp).parts } : was;
           await opts.saveModel({ ...base, ...viewsOut() });
         }
         status("Drawing the picture…", false, true);
