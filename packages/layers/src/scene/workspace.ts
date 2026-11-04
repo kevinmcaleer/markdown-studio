@@ -527,7 +527,9 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     canvasEl.addEventListener("pointerup", e => {
       const d = downAt;
       downAt = null;
-      if (!d || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 4 || gizmo.dragging || (gizmo as unknown as { axis: string | null }).axis) return;
+      if (!d || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 4) return;
+      // A handle under the pointer is the gizmo's click, unless faces are being picked (the gizmo is put away then).
+      if (!joining && (gizmo.dragging || (gizmo as unknown as { axis: string | null }).axis)) return;
       const r = canvasEl.getBoundingClientRect();
       const ndc = new Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
       // A right-click (not a right-drag, which pans): the part's menu, or the view's.
@@ -857,7 +859,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       ctxItems = items;
       ctx.innerHTML = `<div class="lyr-scene-ctx-title">${esc(title)}</div>` + items.map((it, i) => it
         ? `<button type="button" class="lyr-scene-ctx-item${it.danger ? " lyr-danger" : ""}" role="${it.on === undefined ? "menuitem" : "menuitemcheckbox"}"${it.on === undefined ? "" : ` aria-checked="${it.on}"`} data-ctx="${i}">
-             <span class="lyr-scene-ctx-icon">${it.on ? icon("check", 16) : it.icon ? icon(it.icon, 16) : ""}</span><span>${esc(it.label)}</span>${it.keys ? `<kbd>${esc(it.keys)}</kbd>` : ""}</button>`
+             <span class="lyr-scene-ctx-icon">${it.on ? icon("check", 16) : it.icon ? icon(it.icon, 16) : ""}</span><span>${esc(it.label)}</span>${it.keys ? `<span class="lyr-scene-ctx-keys">${esc(it.keys)}</span>` : ""}</button>`
         : `<hr>`).join("");
       ctx.hidden = false;
       const r = ctx.getBoundingClientRect();
@@ -1640,7 +1642,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       };
       jointDialog.innerHTML = `
         <div class="lyr-joint-head">
-          ${icon("link", 16)}<strong>${j?.point ? "Edit joint" : "New joint"}</strong>
+          ${icon("link", 16)}<strong title="Drag here to move the dialog">${j?.point ? "Edit joint" : "New joint"}</strong>
           <span class="lyr-grow"></span>
           <button type="button" class="lyr-btn lyr-icon-btn" data-act="joint-cancel" title="Close without keeping the changes" aria-label="Close">${icon("close", 16)}</button>
         </div>
@@ -1677,6 +1679,63 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       jointDialog.hidden = false;
     }
 
+    /**
+     * Puts the part back where it stood when the dialog opened (as Cancel
+     * would) and clears the old joint's marks, so it doesn't hide the face
+     * about to be picked.
+     */
+    function putBack(): void {
+      if (!draft) return;
+      const id = draft.childId;
+      const p = partById(id);
+      const was = (JSON.parse(draft.before) as SceneData).parts.find(x => x.id === id);
+      if (!p || !was) return;
+      p.position = [...was.position];
+      p.rotation = [...was.rotation];
+      if (was.parent && was.joint && partById(was.parent)) {
+        p.parent = was.parent;
+        p.joint = structuredClone(was.joint);
+      } else {
+        delete p.parent;
+        delete p.joint;
+      }
+      shownJoint = "";
+      jointFaces = [];
+      follow();
+      renderList();
+      renderProps();
+      placeSnaps();
+    }
+
+    // The dialog moves by its title bar, so it needn't cover the parts.
+    jointDialog.addEventListener("pointerdown", e => {
+      const head = (e.target as HTMLElement).closest<HTMLElement>(".lyr-joint-head");
+      if (!head || (e.target as HTMLElement).closest("button") || e.button !== 0) return;
+      e.preventDefault();
+      const box = jointDialog.getBoundingClientRect();
+      const area = stage.getBoundingClientRect();
+      const dx = e.clientX - box.left, dy = e.clientY - box.top;
+      head.setPointerCapture(e.pointerId);
+      head.classList.add("lyr-dragging");
+      const move = (m: PointerEvent) => {
+        const x = Math.max(0, Math.min(m.clientX - dx - area.left, area.width - box.width));
+        const y = Math.max(0, Math.min(m.clientY - dy - area.top, area.height - 40));
+        jointDialog.style.left = `${Math.round(x)}px`;
+        jointDialog.style.top = `${Math.round(y)}px`;
+        jointDialog.style.right = "auto";
+        jointDialog.style.bottom = "auto";
+      };
+      const up = () => {
+        head.classList.remove("lyr-dragging");
+        head.removeEventListener("pointermove", move);
+        head.removeEventListener("pointerup", up);
+        head.removeEventListener("pointercancel", up);
+      };
+      head.addEventListener("pointermove", move);
+      head.addEventListener("pointerup", up);
+      head.addEventListener("pointercancel", up);
+    });
+
     jointDialog.addEventListener("change", e => {
       const t = e.target as HTMLSelectElement;
       if (!draft || !t.dataset.jointPart) return;
@@ -1684,8 +1743,9 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         draft.parentId = t.value;
         delete draft.point;
         delete draft.normal;
-        renderJointDialog();
-        if (draft.parentId) pickHalf("parent");
+        // Pick the face next: on that part, or on any part when none is chosen.
+        putBack();
+        pickHalf("parent");
       }
     });
     jointDialog.addEventListener("input", e => {
@@ -1709,13 +1769,16 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const d = b.dataset;
       if (d.pickHalf) pickHalf(d.pickHalf as "child" | "parent");
       else if (d.clearHalf === "child") {
+        // Forgetting a face goes straight on to picking another.
         delete draft.childPoint;
         delete draft.childNormal;
-        renderJointDialog();
+        putBack();
+        pickHalf("child");
       } else if (d.clearHalf === "parent") {
         delete draft.point;
         delete draft.normal;
-        renderJointDialog();
+        putBack();
+        pickHalf("parent");
       } else if (d.jtype && p) {
         setJointType(p, d.jtype as JointType);
         renderJointDialog();
