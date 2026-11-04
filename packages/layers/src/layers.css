@@ -755,3 +755,22 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
   filter: drop-shadow(0 4px 8px rgb(0 0 0 / 0.22));
   touch-action: none;
 }
+/* The angle dial round a joint, while the joint dialog is open. */
+.lyr-scene-dial { position: absolute; inset: 0; z-index: 3; pointer-events: none; overflow: hidden; }
+.lyr-scene-dial[hidden] { display: none; }
+.lyr-scene-dial svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.lyr-dial-ring { fill: none; stroke: #1f6fe0; stroke-width: 1.5; opacity: 0.7; }
+.lyr-dial-limits { fill: none; stroke: #1f6fe0; stroke-width: 6; opacity: 0.15; stroke-linecap: round; }
+.lyr-dial-sweep { fill: none; stroke: #1f6fe0; stroke-width: 3; stroke-linecap: round; }
+.lyr-dial-zero { stroke: #1f6fe0; stroke-width: 1; stroke-dasharray: 3 3; opacity: 0.7; }
+.lyr-dial-hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: grab; }
+.lyr-dial-handle { fill: #fff; stroke: #1f6fe0; stroke-width: 3; pointer-events: all; cursor: grab; }
+.lyr-scene-dial.lyr-dragging .lyr-dial-handle, .lyr-scene-dial.lyr-dragging .lyr-dial-hit { cursor: grabbing; }
+.lyr-dial-handle:hover { fill: #1f6fe0; }
+.lyr-dial-field { position: absolute; transform: translate(-50%, -50%); display: inline-flex; align-items: center; gap: 2px; padding: 2px 6px; border: 1px solid var(--lyr-line); border-radius: 6px; background: #fff; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); pointer-events: auto; font-size: 12px; }
+.lyr-dial-field input { width: 52px; border: 0; padding: 0; background: transparent; font: inherit; color: var(--lyr-ink); text-align: right; outline: none; }
+.lyr-dial-field em { font-style: normal; color: var(--lyr-muted); }
+/* Joints picked together for one explode slider. */
+.lyr-scene-list > li.lyr-scene-joint-row.lyr-picked { background: var(--lyr-hover); }
+.lyr-scene-joint-row.lyr-picked .lyr-scene-name { color: #1f6fe0; }
+.lyr-scene-list > li.lyr-scene-joint-explode-count { padding-left: calc(var(--depth, 0) * 18px + 28px); height: 22px; font-size: 11px; color: var(--lyr-muted); background: var(--lyr-hover); border-radius: 6px 6px 0 0; }
