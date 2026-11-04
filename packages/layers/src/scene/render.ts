@@ -655,6 +655,31 @@ export async function partBounds(scene: SceneData, partId: string, store: ModelS
   return { centre: [c.x, c.y, c.z], radius: radiusOf(box) };
 }
 
+/**
+ * The camera that frames every one of these scenes' shown parts, as drawn
+ * (apart along their joints), from `cam`'s direction: one view for a whole
+ * assembly guide, so the model doesn't jump between steps.
+ */
+export async function frameAll(cam: SceneCamera, scenes: SceneData[], store: ModelStore, aspect: number, margin = 1.2): Promise<SceneCamera> {
+  const box = new Box3();
+  for (const scene of scenes) {
+    const mats = worldMatrices(scene.parts, scene.explode);
+    for (const part of scene.parts) {
+      if (part.hidden) continue;
+      const m = mats.get(part.id);
+      let bb: Box3 | null | undefined;
+      try {
+        bb = (await store.get(part)).geometry.boundingBox;
+      } catch {
+        continue;
+      }
+      if (!m || !bb) continue;
+      for (let k = 0; k < 8; k++) box.expandByPoint(new Vector3(k & 1 ? bb.max.x : bb.min.x, k & 2 ? bb.max.y : bb.min.y, k & 4 ? bb.max.z : bb.min.z).applyMatrix4(m));
+    }
+  }
+  return frame(cam, box, aspect, margin);
+}
+
 /** The camera for a close-up of one part: the scene's own direction, centred on the part and framed round it. */
 export async function detailCamera(scene: SceneData, partId: string, store: ModelStore): Promise<SceneCamera | null> {
   const b = await partBounds(scene, partId, store);

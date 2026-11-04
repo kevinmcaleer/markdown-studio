@@ -29,7 +29,7 @@ import { sectionRemovers } from "../blockRemove";
 import { completeTodo, findTodos, todoMarks, type Todo } from "../todos";
 import { cardPicturePicker } from "../cardsWidget";
 import { hostBlocks } from "../hostBlock";
-import { layersBlocks, layersCommand, type LayersHost } from "../layersBlock";
+import { assemblyGuideCommand, layersBlocks, layersCommand, type LayersHost } from "../layersBlock";
 import { videoRenderers } from "../videosWidget";
 import { speechEditor } from "../speech/speechEditor";
 import { useDictation } from "../speech/useDictation";
@@ -256,7 +256,9 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
     if (layersHost) {
       const at = list.findIndex((c) => c.id === "image");
       const cmd = layersCommand(layersHost);
-      list = at < 0 ? [...list, cmd] : [...list.slice(0, at + 1), cmd, ...list.slice(at + 1)];
+      // With a project model to draw from, "/Assembly guide" follows it.
+      const cmds = layersHost.loadModel && layersHost.saveModel ? [cmd, assemblyGuideCommand(layersHost)] : [cmd];
+      list = at < 0 ? [...list, ...cmds] : [...list.slice(0, at + 1), ...cmds, ...list.slice(at + 1)];
     }
     // With somewhere to get images from, "/image" opens the picker.
     if (usePicker) list = list.map((c) => (c.id === "image" ? { ...c, insert: undefined, run: openPickerAtCursor } : c));

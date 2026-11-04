@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isLayersUrl, layersUrl } from "./layersFacet";
-import { graphicFileName, graphicsIn, newGraphicInsert } from "./layersBlock";
+import { graphicFileName, graphicsIn, guideSection, newGraphicInsert } from "./layersBlock";
 
 describe("layers links", () => {
   it("marks and recognises a graphic's link", () => {
@@ -34,5 +34,23 @@ describe("graphicsIn", () => {
       { url: "/a.png#layers", at: text.indexOf("![Step 1]") },
       { url: "/b.png#layers", at: text.indexOf("![Two]") },
     ]);
+  });
+});
+
+describe("guideSection", () => {
+  it("goes at the end when there is no Assembly guide section yet", () => {
+    const text = "# Robot\n\n## Step 3\n\n![Step 3](/c.png#layers)\n";
+    expect(guideSection(text)).toEqual({ from: text.length, to: text.length, heading: true });
+  });
+  it("replaces the body of an existing section, up to the next heading of its level", () => {
+    const text = "# Robot\n\n## Assembly guide\n\n![Old](/o.png#layers)\n\n### Note\n\nkept\n\n## Links\n\n- a\n";
+    const s = guideSection(text);
+    expect(s.heading).toBe(false);
+    expect(text.slice(s.from, s.to)).toBe("\n![Old](/o.png#layers)\n\n### Note\n\nkept\n\n");
+  });
+  it("takes a section at the end to the end", () => {
+    const text = "## Assembly guide\n\n![Old](/o.png#layers)";
+    const s = guideSection(text);
+    expect(text.slice(s.from, s.to)).toBe("\n![Old](/o.png#layers)");
   });
 });

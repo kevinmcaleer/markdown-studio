@@ -91,6 +91,18 @@ const editor = mount(el, {
   count, and the **fixings** together in a box at the bottom, each with
   its count. A part no more than 12 mm across (its middle dimension,
   whatever its length) counts as a fixing: screws, nuts, pegs, axles.
+- **Assembly guide**: `handle.assemblyGuide({ title, each })` draws a whole
+  flat-pack booklet from the project's model, a page at a time, handing
+  each page to `each` (to upload, say): a cover with the finished
+  assembly, a *Before you start* page of tips and tools, the parts list,
+  then one step per part. The first step fits the second part onto the
+  first; each step's fixings go with the part they're joined to, the
+  parts of earlier steps are ghosts, the new ones are highlighted and
+  drawn apart along their joints with arrows, a parts strip and a pinned
+  step number. Every page looks from the project's default view (or the
+  usual one), framed round the whole assembly. It draws on the editor's
+  own page, so mount one out of sight for it. Every page is an ordinary
+  graphic afterwards, to open and tidy.
 - **Detail circles**: from a scene's bar, *Detail circle…* picks one part
   and adds a close-up of it on a white disc with a bold ring, and a line
   from the disc to the part on the picture. It's drawn again whenever its
