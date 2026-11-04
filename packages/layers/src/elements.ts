@@ -3,6 +3,10 @@
 
 import { Circle, Ellipse, FabricObject, FabricText, Group, Path, Polygon, Rect, Textbox } from "fabric";
 import { Connector } from "./connector";
+import { measureTextAtRealSize } from "./textMeasure";
+
+// Letters are measured at the size they are drawn, so the caret and centring match (see textMeasure.ts).
+measureTextAtRealSize();
 
 export const INK = "#1f2328";
 export const ACCENT = "#e8590c";
