@@ -1679,6 +1679,34 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       jointDialog.hidden = false;
     }
 
+    /**
+     * Puts the part back where it stood when the dialog opened (as Cancel
+     * would) and clears the old joint's marks, so it doesn't hide the face
+     * about to be picked.
+     */
+    function putBack(): void {
+      if (!draft) return;
+      const id = draft.childId;
+      const p = partById(id);
+      const was = (JSON.parse(draft.before) as SceneData).parts.find(x => x.id === id);
+      if (!p || !was) return;
+      p.position = [...was.position];
+      p.rotation = [...was.rotation];
+      if (was.parent && was.joint && partById(was.parent)) {
+        p.parent = was.parent;
+        p.joint = structuredClone(was.joint);
+      } else {
+        delete p.parent;
+        delete p.joint;
+      }
+      shownJoint = "";
+      jointFaces = [];
+      follow();
+      renderList();
+      renderProps();
+      placeSnaps();
+    }
+
     // The dialog moves by its title bar, so it needn't cover the parts.
     jointDialog.addEventListener("pointerdown", e => {
       const head = (e.target as HTMLElement).closest<HTMLElement>(".lyr-joint-head");
@@ -1716,6 +1744,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         delete draft.point;
         delete draft.normal;
         // Pick the face next: on that part, or on any part when none is chosen.
+        putBack();
         pickHalf("parent");
       }
     });
@@ -1743,10 +1772,12 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         // Forgetting a face goes straight on to picking another.
         delete draft.childPoint;
         delete draft.childNormal;
+        putBack();
         pickHalf("child");
       } else if (d.clearHalf === "parent") {
         delete draft.point;
         delete draft.normal;
+        putBack();
         pickHalf("parent");
       } else if (d.jtype && p) {
         setJointType(p, d.jtype as JointType);
