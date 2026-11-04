@@ -661,3 +661,25 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 .lyr-scene-parts-head { margin: 12px 0 6px; }
 .lyr-scene-parts-head .lyr-panel-title { margin: 0; }
 .lyr-scene-parts-head .lyr-btn { display: inline-flex; align-items: center; gap: 4px; }
+.lyr-joint-dialog {
+  position: absolute;
+  bottom: 44px;
+  right: 16px;
+  z-index: 7;
+  width: 290px;
+  max-height: calc(100% - 120px);
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid var(--lyr-line);
+  border-radius: var(--lyr-radius);
+  box-shadow: 0 10px 32px rgb(0 0 0 / 0.2);
+}
+.lyr-joint-head { display: flex; align-items: center; gap: 6px; padding: 8px 8px 8px 12px; border-bottom: 1px solid var(--lyr-line); }
+.lyr-joint-body { overflow: auto; padding: 0 12px 10px; }
+.lyr-joint-body .lyr-panel-title { margin: 12px 0 6px; }
+.lyr-joint-half select { width: 100%; padding: 6px 8px; border: 1px solid var(--lyr-line); border-radius: 6px; font: inherit; background: #fff; }
+.lyr-joint-face { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
+.lyr-joint-face .lyr-wide-btn { flex: 1; min-width: 0; }
+.lyr-joint-face .lyr-wide-btn.lyr-on { border-color: var(--lyr-accent); background: var(--lyr-accent-soft); color: var(--lyr-accent); }
+.lyr-joint-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--lyr-line); }

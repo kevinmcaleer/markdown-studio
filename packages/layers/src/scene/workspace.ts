@@ -704,7 +704,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       }
       else if (d.rejoin) {
         select(d.rejoin);
-        startJoin(d.rejoin);
+        openJointDialog(d.rejoin);
       } else if (d.unjoin) {
         const p = partById(d.unjoin);
         if (p) unjoin(p);
@@ -834,7 +834,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     // ------------------------------------------------------------ joints
 
     /** Joining: the part being joined, and (after the first click) the face picked on it. */
-    let joining: { childId: string; childPoint?: Vec3; childNormal?: Vec3 } | null = null;
+    let joining: { childId: string; childPoint?: Vec3; childNormal?: Vec3; half?: "child" | "parent" } | null = null;
 
     /** The parts joined (directly or further down) to `id`, and itself. */
     function branch(id: string): Set<string> {
@@ -850,11 +850,16 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       return out;
     }
 
-    function startJoin(id: string): void {
-      joining = { childId: id };
+    /** Picks one half's face for the joint dialog: this part's, or the other part's. */
+    function pickHalf(half: "child" | "parent"): void {
+      if (!draft) return;
+      joining = { childId: draft.childId, half, ...(half === "parent" ? { childPoint: draft.childPoint, childNormal: draft.childNormal } : {}) };
       canvasEl.classList.add("lyr-scene-picking");
       gizmo.detach();
-      status(`Click where “${partById(id)?.name}” fits against the other part: a face, a corner, an edge, a hole or a round rim. Esc to stop.`, false, true);
+      renderJointDialog();
+      status(half === "child"
+        ? `Click the face on “${esc(partById(draft.childId)?.name)}” that meets the other part. Esc to stop.`
+        : "Click where it goes on another part: a face, a corner, an edge, a hole or a round rim. Esc to stop.", false, true);
       draw();
     }
 
@@ -876,6 +881,35 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
 
     function pickFace(f: Pick | null): void {
       if (!joining) return;
+      // Picking for one half of the joint dialog.
+      if (joining.half && draft) {
+        const half = joining.half;
+        if (half === "child") {
+          if (!f || f.id !== draft.childId) {
+            status(`Click a face on “${esc(partById(draft.childId)?.name)}” itself. Esc to stop.`, true, true);
+            return;
+          }
+          draft.childPoint = f.point;
+          draft.childNormal = f.normal;
+        } else {
+          if (!f || f.id === draft.childId || branch(draft.childId).has(f.id)) {
+            status("Click a face on another part (not this one, or one joined to it). Esc to stop.", true, true);
+            return;
+          }
+          draft.parentId = f.id;
+          draft.point = f.point;
+          draft.normal = f.normal;
+        }
+        stopJoin();
+        // The other half next, if it's still to pick.
+        if (half === "child" && !draft.point) pickHalf("parent");
+        else {
+          applyDraft();
+          renderJointDialog();
+          status(draft.point && draft.childPoint ? "" : "Pick the other face to finish the joint.");
+        }
+        return;
+      }
       if (!joining.childPoint) {
         if (!f || f.id !== joining.childId) {
           status(`Click a face on “${partById(joining.childId)?.name}” itself. Esc to stop.`, true, true);
@@ -1243,6 +1277,250 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       commit();
     }
 
+    // ------------------------------------------------------------ the joint dialog
+
+    /** The joint being made or changed in the floating dialog. */
+    interface JointDraft {
+      childId: string;
+      parentId: string;
+      childPoint?: Vec3;
+      childNormal?: Vec3;
+      point?: Vec3;
+      normal?: Vec3;
+      /** The scene before it was opened, for Cancel. */
+      before: string;
+    }
+    let draft: JointDraft | null = null;
+
+    const jointDialog = document.createElement("div");
+    jointDialog.className = "lyr-joint-dialog";
+    jointDialog.setAttribute("role", "dialog");
+    jointDialog.setAttribute("aria-label", "Edit joint");
+    jointDialog.hidden = true;
+    stage.appendChild(jointDialog);
+
+    const mm = (v?: Vec3) => (v ? v.map(n => round(n, 1)).join(", ") + " mm" : "");
+
+    function openJointDialog(childId: string): void {
+      const p = partById(childId);
+      if (!p) return;
+      const j = p.joint;
+      draft = {
+        childId,
+        parentId: (p.parent && partById(p.parent) ? p.parent : "") || "",
+        childPoint: j?.childPoint,
+        childNormal: j?.childNormal,
+        point: j?.point,
+        normal: j?.normal,
+        before: snap(),
+      };
+      selectedId = childId;
+      shownJoint = p.parent ? childId : "";
+      renderList();
+      renderProps();
+      renderJointDialog();
+      if (!draft.childPoint) pickHalf("child");
+      else {
+        placeSnaps();
+        draw();
+      }
+    }
+
+    function closeJointDialog(): void {
+      draft = null;
+      jointDialog.hidden = true;
+      if (joining?.half) stopJoin();
+      renderList();
+      renderProps();
+      draw();
+    }
+
+    /** Puts the draft on the part, once both faces are picked. */
+    function applyDraft(): void {
+      const p = draft && partById(draft.childId);
+      if (!draft || !p || !draft.parentId || !draft.point || !draft.normal || !draft.childPoint || !draft.childNormal) return;
+      const model = models.get(p.id);
+      const size = model && !(model instanceof Error) ? Math.max(...model.size) : 20;
+      let reach = 0;
+      if (model && !(model instanceof Error)) {
+        const cp = draft.childPoint, cn = draft.childNormal;
+        for (let k = 0; k < 8; k++) {
+          const c = [k & 1 ? 1 : -1, k & 2 ? 1 : -1, k & 4 ? 1 : -1].map((sgn, i) => (sgn * model.size[i]) / 2);
+          reach = Math.max(reach, (c[0] - cp[0]) * cn[0] + (c[1] - cp[1]) * cn[1] + (c[2] - cp[2]) * cn[2]);
+        }
+      }
+      const was = p.joint;
+      p.parent = draft.parentId;
+      p.joint = {
+        ...(was?.type ? { type: was.type, lower: was.lower, upper: was.upper } : {}),
+        normal: draft.normal,
+        distance: was?.distance || Math.max(10, Math.round(reach + Math.max(size * 0.6, 8))),
+        point: draft.point,
+        childPoint: draft.childPoint,
+        childNormal: draft.childNormal,
+        spin: was?.spin || 0,
+        gap: was?.gap || 0,
+      };
+      keepInLimits(p.joint);
+      applyJoint(p);
+      shownJoint = p.id;
+      showJoint(p.id);
+      follow();
+      renderList();
+      renderProps();
+      syncExplode();
+    }
+
+    /** The field rows in the dialog (its own, so the side panel's keep working). */
+    const jf = (key: string, label: string, unit: string, value: number, step: number, title: string) => `
+      <label class="lyr-scene-field" title="${esc(title)}">
+        <span>${esc(label)}</span>
+        <input class="lyr-num" type="number" step="${step}" data-joint-field="${key}" value="${value}">
+        <em>${esc(unit)}</em>
+      </label>`;
+
+    function renderJointDialog(): void {
+      if (!draft) {
+        jointDialog.hidden = true;
+        return;
+      }
+      const p = partById(draft.childId);
+      if (!p) return closeJointDialog();
+      const j = p.joint;
+      const ready = !!(draft.parentId && draft.point && draft.childPoint);
+      const type: JointType = (ready && j?.type) || "fixed";
+      const turns = type === "revolute";
+      const slides = type === "prismatic";
+      const others = scene.parts.filter(x => x.id !== draft!.childId && !branch(draft!.childId).has(x.id));
+      const half = (which: "child" | "parent") => {
+        const picked = which === "child" ? draft!.childPoint : draft!.point;
+        const picking = joining?.half === which;
+        return `
+          <div class="lyr-joint-half">
+            <select data-joint-part="${which}" aria-label="${which === "child" ? "This part" : "The part it joins"}">
+              ${which === "child"
+                ? `<option value="${esc(p.id)}">${esc(p.name)}</option>`
+                : `<option value=""${draft!.parentId ? "" : " selected"}>Choose a part…</option>${others.map(o => `<option value="${esc(o.id)}"${o.id === draft!.parentId ? " selected" : ""}>${esc(o.name)}</option>`).join("")}`}
+            </select>
+            <div class="lyr-joint-face">
+              <button type="button" class="lyr-wide-btn${picking ? " lyr-on" : ""}" data-pick-half="${which}" title="Click a face, corner, edge, hole or rim in the view">
+                ${icon(picked ? "check" : "plus", 14)} ${picking ? "Click the face in the view…" : picked ? `Face at ${esc(mm(picked))}` : "Pick a face…"}
+              </button>
+              ${picked ? `<button type="button" class="lyr-btn lyr-icon-btn" data-clear-half="${which}" title="Forget this face" aria-label="Forget this face">${icon("close", 14)}</button>` : ""}
+            </div>
+          </div>`;
+      };
+      jointDialog.innerHTML = `
+        <div class="lyr-joint-head">
+          ${icon("link", 16)}<strong>${j?.point ? "Edit joint" : "New joint"}</strong>
+          <span class="lyr-grow"></span>
+          <button type="button" class="lyr-btn lyr-icon-btn" data-act="joint-cancel" title="Close without keeping the changes" aria-label="Close">${icon("close", 16)}</button>
+        </div>
+        <div class="lyr-joint-body">
+          <div class="lyr-panel-title">This part</div>
+          ${half("child")}
+          <div class="lyr-panel-title">Fits against</div>
+          ${half("parent")}
+          ${ready ? `
+            <div class="lyr-panel-title">How it moves</div>
+            <div class="lyr-scene-jtypes" role="radiogroup" aria-label="How it moves">
+              ${JOINT_TYPES.map(t => `<button type="button" class="lyr-scene-preset${t.id === type ? " lyr-on" : ""}" role="radio" aria-checked="${t.id === type}" data-jtype="${t.id}" title="${esc(t.detail)}">${esc(t.label)}</button>`).join("")}
+            </div>
+            ${turns || slides ? `<div class="lyr-scene-fields">
+              ${jf("lower", "From", turns ? "°" : "mm", j?.lower ?? 0, turns ? 1 : 0.5, turns ? "How far it can turn one way" : "The nearest it slides in")}
+              ${jf("upper", "To", turns ? "°" : "mm", j?.upper ?? 0, turns ? 1 : 0.5, turns ? "How far it can turn the other way" : "The furthest it slides out")}
+            </div>` : ""}
+            <div class="lyr-panel-title">Line-up</div>
+            <div class="lyr-scene-fields">
+              ${jf("spin", turns ? "Angle" : "Spin", "°", j?.spin || 0, 1, "Turn it about the joint, keeping the faces together")}
+              ${jf("gap", slides ? "Slide" : "Gap", "mm", j?.gap || 0, 0.1, "How far it stands off the face")}
+              ${jf("distance", "Explode", "mm", j?.distance || 0, 1, "How far it slides out in the exploded view")}
+            </div>
+            <div class="lyr-scene-quick">
+              <button type="button" class="lyr-btn" data-act="joint-flip" title="Turn the part over, so it sits on the other side of the face">${icon("flipV", 16)}<span>Flip</span></button>
+              <button type="button" class="lyr-btn" data-act="joint-unjoin" title="Stand on its own again, where it is now">Remove joint</button>
+            </div>`
+          : `<p class="lyr-note">Pick a face on each part. They meet face to face, and you can then set how the joint moves.</p>`}
+        </div>
+        <div class="lyr-joint-foot">
+          <button type="button" class="lyr-btn" data-act="joint-cancel">Cancel</button>
+          <button type="button" class="lyr-btn lyr-done" data-act="joint-ok"${ready ? "" : " disabled"}>${icon("check", 16)}<span>OK</span></button>
+        </div>`;
+      jointDialog.hidden = false;
+    }
+
+    jointDialog.addEventListener("change", e => {
+      const t = e.target as HTMLSelectElement;
+      if (!draft || !t.dataset.jointPart) return;
+      if (t.dataset.jointPart === "parent") {
+        draft.parentId = t.value;
+        delete draft.point;
+        delete draft.normal;
+        renderJointDialog();
+        if (draft.parentId) pickHalf("parent");
+      }
+    });
+    jointDialog.addEventListener("input", e => {
+      const t = e.target as HTMLInputElement;
+      const p = draft && partById(draft.childId);
+      if (!t.dataset.jointField || !p?.joint) return;
+      setField(t.dataset.jointField, Number(t.value));
+      syncJointFields();
+    });
+    function syncJointFields(): void {
+      const p = draft && partById(draft.childId);
+      if (!p) return;
+      jointDialog.querySelectorAll<HTMLInputElement>("[data-joint-field]").forEach(inp => {
+        if (document.activeElement !== inp) inp.value = String(fieldValue(inp.dataset.jointField!, p));
+      });
+    }
+    jointDialog.addEventListener("click", e => {
+      const b = (e.target as HTMLElement).closest("button");
+      if (!b || !draft) return;
+      const p = partById(draft.childId);
+      const d = b.dataset;
+      if (d.pickHalf) pickHalf(d.pickHalf as "child" | "parent");
+      else if (d.clearHalf === "child") {
+        delete draft.childPoint;
+        delete draft.childNormal;
+        renderJointDialog();
+      } else if (d.clearHalf === "parent") {
+        delete draft.point;
+        delete draft.normal;
+        renderJointDialog();
+      } else if (d.jtype && p) {
+        setJointType(p, d.jtype as JointType);
+        renderJointDialog();
+      } else if (d.act === "joint-flip" && p?.joint?.childNormal) {
+        // Turn the part over, so it sits on the other side of the face. A
+        // half turn about the joint is the Angle instead, which a turning
+        // joint keeps within its limits.
+        const n = p.joint.childNormal.map(v => round(-v, 4)) as Vec3;
+        p.joint.childNormal = n;
+        draft.childNormal = n;
+        applyJoint(p);
+        follow();
+        showJoint(p.id);
+        renderProps();
+        renderJointDialog();
+      } else if (d.act === "joint-unjoin" && p) {
+        unjoin(p);
+        closeJointDialog();
+      } else if (d.act === "joint-ok") {
+        const name = p?.name || "The part";
+        const to = partById(draft.parentId)?.name || "";
+        closeJointDialog();
+        commit();
+        status(to ? `“${name}” is joined to “${to}”.` : "");
+      } else if (d.act === "joint-cancel") {
+        const before = draft.before;
+        closeJointDialog();
+        restore(before);
+        syncHistory();
+        status("");
+      }
+    });
+
     function jointSection(p: ScenePart, parent: ScenePart | undefined): string {
       const others = scene.parts.length > 1;
       if (!parent) {
@@ -1411,7 +1689,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         const p = partById(selectedId);
         if (p) setJointType(p, b.dataset.jtype as JointType);
       } else if (b.dataset.act === "join") {
-        if (selectedId) startJoin(selectedId);
+        if (selectedId) openJointDialog(selectedId);
       } else if (b.dataset.act === "unjoin") {
         const p = partById(selectedId);
         if (p) unjoin(p);

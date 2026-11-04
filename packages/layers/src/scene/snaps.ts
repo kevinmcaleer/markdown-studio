@@ -350,7 +350,7 @@ function flatSnaps(topo: Topology, tris: number[], n: V3): Snap[] {
     if (outer < 0 || rings[i].length > rings[outer].length) outer = i;
   });
   const sound = outer >= 0;
-  if (!sound) loops.forEach((l, i) => (outer = outer < 0 || rings[i].length > rings[outer].length ? i : outer));
+  if (!sound) loops.forEach((_, i) => (outer = outer < 0 || rings[i].length > rings[outer].length ? i : outer));
   const o = rings[outer];
   if (sound && o.round) {
     snaps[0] = { p: o.centre, n, role: "centre", radius: o.radius };
