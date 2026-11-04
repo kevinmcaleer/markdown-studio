@@ -253,6 +253,15 @@ export type MountOptions = {
    */
   pageBreaks?: boolean;
   /**
+   * Links within the text (default on): the link form lists the text's
+   * headings under its URL field, and its pages when `pageBreaks` is on, so a
+   * click links to `#heading-id` (or `#page-2`). Ids are made the way
+   * kevsrobots' project pages make them: lower case, spaces to dashes, other
+   * punctuation dropped, -2, -3 for repeats. A `#heading` link's card takes
+   * the caret to that heading. `false` turns the list off.
+   */
+  linkTargets?: boolean;
+  /**
    * `#todo` notes to self (default on): a `#todo what's left` line is marked
    * in the text and listed in a small "N to do" list at the top right, where
    * one click marks it done and takes it out of the text. The "/" menu gets a

@@ -28,6 +28,7 @@ const TEXT: GuideSection = {
     ["==marked==", "Highlight"],
     ["`code`", "Inline code, in the code font"],
     ["[text](https://…)", "Link"],
+    ["[text](#heading)", "Link to a heading in this text: in the link box (Ctrl/Cmd+K), leave the URL empty or type # and pick a heading (or a page) from the list"],
     ["- item", "Bulleted list"],
     ["1. item", "Numbered list"],
     ["- [ ] task", "Checklist"],

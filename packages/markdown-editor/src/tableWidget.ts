@@ -6,7 +6,8 @@ import { clearCellFormatting, cellMarkActive, toggleCellMark, type CellEdit } fr
 import type { Mark } from "./format/formatting";
 import type { FormatItem } from "./format/items";
 import { CELL_TOOLBAR, ITEMS, iconSvg, itemTitle } from "./format/items";
-import { hasLinkPopover, linkCard, linkForm, linkInText, type LinkAt } from "./format/linkPopover";
+import { hasLinkPopover, internalLink, linkCard, linkForm, linkInText, type LinkAt } from "./format/linkPopover";
+import { linkTargets } from "./format/linkTargets";
 import { hasSelectionToolbar } from "./format/selectionToolbar";
 import { cellHasImage, isImageGrid } from "./imageGrid";
 import { renderCell } from "./markdown";
@@ -1374,7 +1375,7 @@ class TableView {
       const offset = rawOffset(cellText(cell.dataset.raw ?? ""), end);
       this.focusCellAt(Number(cell.dataset.row), Number(cell.dataset.col), offset, offset);
     };
-    const form = linkForm(at, (markdown) => this.replaceLink(markdown), () => done(at.to));
+    const form = linkForm(at, (markdown) => this.replaceLink(markdown), () => done(at.to), linkTargets(this.view.state));
     form.addEventListener("focusout", (e) => {
       if (this.link?.dom === form && !form.contains(e.relatedTarget as Node)) this.closeLink();
     });
@@ -1394,6 +1395,7 @@ class TableView {
     const card = linkCard(at, {
       edit: this.editable ? () => this.editLink() : undefined,
       remove: this.editable && !at.bare ? () => this.replaceLink(at.label) : undefined,
+      ...internalLink(this.view, at.url),
     });
     this.placeLink(cell, at, card, false);
   }
@@ -1407,7 +1409,7 @@ class TableView {
       this.closeLink();
       const to = rawOffset(cellText(cell.dataset.raw ?? ""), at.to);
       this.focusCellAt(Number(cell.dataset.row), Number(cell.dataset.col), to, to);
-    });
+    }, linkTargets(this.view.state));
     form.addEventListener("focusout", (e) => {
       if (this.link?.dom === form && !form.contains(e.relatedTarget as Node)) this.closeLink();
     });
