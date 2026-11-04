@@ -68,18 +68,40 @@ export function fromBase64(b64: string): ArrayBuffer {
   return out.buffer;
 }
 
+/** A binary STL's header when it carries each triangle's CAD face (see toBinaryStl). */
+const FACES_MARK = "layers-faces";
+
 /**
- * A text STL as binary: about a fifth of the size, so an uploaded model
- * carried inside a graphic costs less.
+ * Corner positions as a binary STL: a text STL is about five times bigger,
+ * so an uploaded model carried inside a graphic costs less. `faces` (a STEP
+ * model's CAD face for each triangle) go in each triangle's two spare
+ * bytes, marked in the header so other files' bytes aren't read as faces.
  */
-export function toBinaryStl(pos: Float32Array): ArrayBuffer {
+export function toBinaryStl(pos: Float32Array, faces?: Uint16Array | null): ArrayBuffer {
   const n = pos.length / 9;
   const buf = new ArrayBuffer(84 + n * 50);
   const dv = new DataView(buf);
+  if (faces && faces.length === n) {
+    for (let i = 0; i < FACES_MARK.length; i++) dv.setUint8(i, FACES_MARK.charCodeAt(i));
+  }
   dv.setUint32(80, n, true);
   for (let i = 0; i < n; i++) {
     const o = 84 + i * 50 + 12; // normals left at 0: readers work them out
     for (let k = 0; k < 9; k++) dv.setFloat32(o + k * 4, pos[i * 9 + k], true);
+    if (faces && faces.length === n) dv.setUint16(o + 36, faces[i], true);
   }
   return buf;
+}
+
+/** The CAD face of each triangle, when a binary STL made by toBinaryStl carries them. */
+export function stlFaces(buffer: ArrayBuffer): Uint16Array | null {
+  if (buffer.byteLength < 84) return null;
+  const head = new Uint8Array(buffer, 0, FACES_MARK.length);
+  if (!head.every((c, i) => c === FACES_MARK.charCodeAt(i))) return null;
+  const dv = new DataView(buffer);
+  const n = dv.getUint32(80, true);
+  if (84 + n * 50 !== buffer.byteLength) return null;
+  const out = new Uint16Array(n);
+  for (let i = 0; i < n; i++) out[i] = dv.getUint16(84 + i * 50 + 48, true);
+  return out;
 }

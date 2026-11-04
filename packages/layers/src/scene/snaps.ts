@@ -2,7 +2,9 @@
 // points on it worth snapping to, as in Snakie's Build workspace (its
 // robot-holes.ts finds hole centres the same way).
 //
-// An STL is only triangles, so faces are found from them:
+// A model from a STEP file knows its CAD faces, so a face is exactly the
+// triangles of the CAD face under the pointer. An STL is only triangles,
+// so its faces are found from them:
 //
 // - A flat face is the triangles joined to the one under the pointer that
 //   lie in its plane. Its snaps are its middle, its corners, the middles of
@@ -65,10 +67,14 @@ export class Topology {
   /** The triangle across each edge (corner k to k+1), or -1. */
   readonly next: Int32Array;
   private faces = new Map<number, Face>();
+  /** Each triangle's CAD face (0xffff: not known), for a model from a STEP file. */
+  readonly cadFace: Uint16Array | null;
+  private cadTris: Map<number, number[]> | null = null;
 
-  constructor(pos: ArrayLike<number>) {
+  constructor(pos: ArrayLike<number>, cadFaces?: Uint16Array | null) {
     const n = Math.floor(pos.length / 9);
     this.triangles = n;
+    this.cadFace = cadFaces && cadFaces.length === n ? cadFaces : null;
     this.corner = new Uint32Array(n * 3);
     this.normal = new Float32Array(n * 3);
     this.area = new Float32Array(n);
@@ -155,6 +161,22 @@ export class Topology {
     return near.length ? this.faceAt(near[0]) : null;
   }
 
+  /** The triangles of triangle `t`'s CAD face, when the model knows its faces. */
+  cadFaceOf(t: number): number[] | null {
+    const f = this.cadFace?.[t];
+    if (f === undefined || f === 0xffff) return null;
+    if (!this.cadTris) {
+      this.cadTris = new Map();
+      this.cadFace!.forEach((id, i) => {
+        if (id === 0xffff || this.area[i] <= 0) return;
+        let list = this.cadTris!.get(id);
+        if (!list) this.cadTris!.set(id, (list = []));
+        list.push(i);
+      });
+    }
+    return this.cadTris.get(f) || null;
+  }
+
   /** The face that triangle `t` belongs to, and its snaps. Kept for next time. */
   faceAt(t: number): Face | null {
     if (t < 0 || t >= this.triangles) return null;
@@ -212,6 +234,8 @@ function findFace(topo: Topology, seed: number): Face {
   const n0 = topo.normalOf(seed);
   const p0 = topo.point(topo.corner[seed * 3]);
   const d0 = dot(n0, p0);
+  const cad = topo.cadFaceOf(seed);
+  if (cad) return cadFace(topo, cad, seed, n0, d0);
   const flat = grow(topo, seed, (_, o) => {
     if (dot(topo.normalOf(o), n0) < FLAT_COS) return false;
     for (let k = 0; k < 3; k++) if (Math.abs(dot(n0, topo.point(topo.corner[o * 3 + k])) - d0) > 0.02) return false;
@@ -231,6 +255,37 @@ function findFace(topo: Topology, seed: number): Face {
     snaps = flatSnaps(topo, flat, n0);
   }
   return { tris, curved: curved && snaps.length > 0 && tris !== flat, normal: n0, snaps };
+}
+
+/**
+ * A CAD face: flat when all its triangles lie in the seed's plane, else
+ * curved (a cylinder, a fillet, a cone), with the snaps of each kind.
+ */
+function cadFace(topo: Topology, tris: number[], seed: number, n0: V3, d0: number): Face {
+  let flat = true;
+  for (const t of tris) {
+    if (dot(topo.normalOf(t), n0) < FLAT_COS) flat = false;
+    else for (let k = 0; k < 3 && flat; k++) if (Math.abs(dot(n0, topo.point(topo.corner[t * 3 + k])) - d0) > 0.02) flat = false;
+    if (!flat) break;
+  }
+  if (flat) return { tris, curved: false, normal: n0, snaps: flatSnaps(topo, tris, n0) };
+  const snaps = curvedSnaps(topo, tris, seed);
+  if (snaps.length) return { tris, curved: true, normal: n0, snaps };
+  // Many CADs split a round surface in two halves along a seam: the halves
+  // joined smoothly make the whole hole or peg, with its rims.
+  const smooth = grow(topo, seed, (x, y) => dot(topo.normalOf(x), topo.normalOf(y)) > SMOOTH_COS);
+  if (smooth.length > tris.length) {
+    const whole = curvedSnaps(topo, smooth, seed);
+    if (whole.length) return { tris: smooth, curved: true, normal: n0, snaps: whole };
+  }
+  // A curved face with no round rim (a fillet's strip, a freeform patch): the
+  // facet under the pointer still offers its middle and corners, as an STL's would.
+  const facet = grow(topo, seed, (_, o) => {
+    if (topo.cadFace![o] !== topo.cadFace![seed] || dot(topo.normalOf(o), n0) < FLAT_COS) return false;
+    for (let k = 0; k < 3; k++) if (Math.abs(dot(n0, topo.point(topo.corner[o * 3 + k])) - d0) > 0.02) return false;
+    return true;
+  });
+  return { tris: facet, curved: false, normal: n0, snaps: flatSnaps(topo, facet, n0) };
 }
 
 // ------------------------------------------------------------ edges of a face

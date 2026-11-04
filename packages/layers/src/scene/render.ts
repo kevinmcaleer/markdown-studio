@@ -19,7 +19,8 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import type { SceneCamera, SceneData, ScenePart, SceneStyle, Vec3 } from "./model";
-import { bounds, fromBase64, parseStl } from "./stl";
+import { readStep, isStepFile, type StepBody } from "./step";
+import { bounds, fromBase64, parseStl, stlFaces } from "./stl";
 
 const DEG = Math.PI / 180;
 
@@ -33,12 +34,18 @@ export interface Model {
   size: Vec3;
   triangles: number;
   edges: Map<number, LineSegmentsGeometry>;
+  /** Each triangle's CAD face, for a model from a STEP file (0xffff: not known). */
+  faces?: Uint16Array;
 }
 
 export type FetchModel = (url: string) => Promise<ArrayBuffer>;
 
 export function modelFromStl(buffer: ArrayBuffer): Model {
-  const pos = parseStl(buffer);
+  return modelFromPositions(parseStl(buffer), stlFaces(buffer));
+}
+
+/** A model from its triangles' corners (moved to its middle, in place). */
+export function modelFromPositions(pos: Float32Array, faces?: Uint16Array | null): Model {
   const b = bounds(pos);
   const centre = b.min.map((m, i) => (m + b.max[i]) / 2) as Vec3;
   for (let i = 0; i < pos.length; i += 3) {
@@ -50,7 +57,9 @@ export function modelFromStl(buffer: ArrayBuffer): Model {
   geometry.setAttribute("position", new BufferAttribute(pos, 3));
   geometry.computeBoundingBox();
   geometry.computeBoundingSphere();
-  return { geometry, centre, size: b.max.map((m, i) => m - b.min[i]) as Vec3, triangles: pos.length / 9, edges: new Map() };
+  const model: Model = { geometry, centre, size: b.max.map((m, i) => m - b.min[i]) as Vec3, triangles: pos.length / 9, edges: new Map() };
+  if (faces && faces.length === model.triangles) model.faces = faces;
+  return model;
 }
 
 /** The fold lines at a crease angle, worked out once per angle. */
@@ -67,21 +76,43 @@ function edgesOf(model: Model, crease: number): LineSegmentsGeometry | null {
   return g;
 }
 
+type PartSource = Pick<ScenePart, "url" | "data" | "id" | "body">;
+
 /** Models already read, by where they came from, so each is read once. */
 export class ModelStore {
   private models = new Map<string, Promise<Model>>();
+  /** STEP files read, by URL: every solid in each, as one file gives several parts. */
+  private steps = new Map<string, Promise<StepBody[]>>();
   constructor(private fetchModel: FetchModel) {}
 
-  static key(part: Pick<ScenePart, "url" | "data" | "id">): string {
-    return part.url ? `url:${part.url}` : `data:${part.id}:${part.data?.length || 0}:${part.data?.slice(0, 64) || ""}`;
+  static key(part: PartSource): string {
+    return part.url ? `url:${part.url}${part.body !== undefined ? `#${part.body}` : ""}` : `data:${part.id}:${part.data?.length || 0}:${part.data?.slice(0, 64) || ""}`;
   }
 
-  get(part: Pick<ScenePart, "url" | "data" | "id">): Promise<Model> {
+  /** The solids in a STEP file in the project, read once. */
+  stepBodies(url: string): Promise<StepBody[]> {
+    let s = this.steps.get(url);
+    if (!s) {
+      s = this.fetchModel(url).then(readStep);
+      this.steps.set(url, s);
+      s.catch(() => this.steps.delete(url));
+    }
+    return s;
+  }
+
+  get(part: PartSource): Promise<Model> {
     const key = ModelStore.key(part);
     let m = this.models.get(key);
     if (!m) {
       m = (async () => {
         if (part.data) return modelFromStl(fromBase64(part.data));
+        if (part.url && isStepFile(part.url)) {
+          const bodies = await this.stepBodies(part.url);
+          const b = bodies[part.body || 0];
+          if (!b) throw new Error("That part isn't in its STEP file any more.");
+          // A copy: the solid is kept for the file's other parts, and a model is moved to its middle.
+          return modelFromPositions(b.positions.slice(), b.faces);
+        }
         if (part.url) return modelFromStl(await this.fetchModel(part.url));
         throw new Error("This part has no model.");
       })();
@@ -92,7 +123,7 @@ export class ModelStore {
   }
 
   /** A model read here already, under the part that will use it. */
-  put(part: Pick<ScenePart, "url" | "data" | "id">, model: Model): void {
+  put(part: PartSource, model: Model): void {
     this.models.set(ModelStore.key(part), Promise.resolve(model));
   }
 
