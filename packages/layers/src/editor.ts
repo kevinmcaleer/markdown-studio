@@ -68,7 +68,7 @@ export interface LayersOptions {
   fetchImage?(url: string): Promise<Blob>;
   /** The host's pictures, offered under Uploads. */
   listImages?(): Promise<LayersImage[]>;
-  /** The host's 3D models (STL files), offered in a 3D scene's Add a part. */
+  /** The host's 3D models (STL or STEP files), offered in a 3D scene's Add a part. */
   listModels?(): Promise<SceneModel[]>;
   /** Loads a model's bytes (the host's signed-in fetch); plain fetch when left out. */
   fetchModel?(url: string): Promise<ArrayBuffer | Blob>;
@@ -1871,7 +1871,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
           <div class="lyr-panel-title">Lines, arrows and steps</div>
           <div class="lyr-tiles">${LINES.map(s => tile(s.id, s.label, s.svg)).join("")}</div>
           <div class="lyr-panel-title">3D</div>
-          <button type="button" class="lyr-wide-btn" data-add="scene" title="Bring in STL models and draw them as assembly-instruction line art">${icon("cube", 16)} 3D scene from STL files</button>
+          <button type="button" class="lyr-wide-btn" data-add="scene" title="Bring in STL or STEP models and draw them as assembly-instruction line art">${icon("cube", 16)} 3D scene from STL or STEP files</button>
           <p class="lyr-note">Click to add, or drag onto the page.</p>`;
         break;
       case "text":

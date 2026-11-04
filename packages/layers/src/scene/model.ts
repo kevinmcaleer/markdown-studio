@@ -17,6 +17,8 @@ export interface ScenePart {
   data?: string;
   /** The STL's file name, for a URDF's mesh paths. */
   file?: string;
+  /** Which solid in its file, for a part from a STEP file in the project (one file gives a part per solid). */
+  body?: number;
   /** The middle of the part, in mm. */
   position: Vec3;
   /** Roll, pitch, yaw in degrees. */
@@ -203,6 +205,7 @@ export function normalizeScene(value: unknown): SceneData {
         if (typeof p.url === "string" && p.url) part.url = p.url;
         if (typeof p.file === "string" && p.file) part.file = p.file.slice(0, 200);
         if (typeof p.data === "string" && p.data) part.data = p.data;
+        if (part.url && typeof p.body === "number" && Number.isInteger(p.body) && p.body >= 0 && p.body < 100_000) part.body = p.body;
         if (p.hidden) part.hidden = true;
         if (p.highlight) part.highlight = true;
         if (typeof p.parent === "string" && p.parent) part.parent = p.parent;
@@ -373,7 +376,7 @@ export function newPartId(parts: ScenePart[]): string {
 
 /** A part's name from its file name: "left_wheel-2.stl" → "left wheel 2". */
 export function partName(file: string): string {
-  const base = file.split(/[\\/]/).pop()!.replace(/\?.*$/, "").replace(/\.(stl)$/i, "");
+  const base = file.split(/[\\/]/).pop()!.replace(/\?.*$/, "").replace(/\.(stl|step|stp)$/i, "");
   return base.replace(/[_-]+/g, " ").trim() || "Part";
 }
 
