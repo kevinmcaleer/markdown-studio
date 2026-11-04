@@ -16,7 +16,7 @@ import {
   followModel, modelOf, partsDiffer,
   normalizeViews,
   type JointType, type NamedView, type PartJoint, type ProjectModel,
-  type Box3 as PlainBox, type SceneData, type ScenePart, type SceneStyle, type Vec3,
+  type Box3 as PlainBox, type SceneCamera, type SceneData, type ScenePart, type SceneStyle, type Vec3,
 } from "./model";
 import { applyJoint } from "./joint";
 import { frame, LineArt, modelFromStl, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
@@ -253,7 +253,59 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     const ro = new ResizeObserver(layout);
     ro.observe(stage);
 
+    // ------------------------------------------------------------ camera moves
+
+    // The camera glides to a new view instead of jumping: it turns round the
+    // parts, slides across and zooms together, easing in and out.
+    const GLIDE_MS = 450;
+    let glide = 0;
+    const stillPlease = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    function stopGlide(): void {
+      if (glide) cancelAnimationFrame(glide);
+      glide = 0;
+    }
+    /** Moves the camera to `to` over a moment, then calls `done`. */
+    function glideTo(to: SceneCamera, done?: () => void): void {
+      stopGlide();
+      const from = structuredClone(scene.camera);
+      const a = new Vector3(...from.direction).normalize();
+      const b = new Vector3(...to.direction).normalize();
+      // Straight through the parts when turning right round: go round the up axis instead.
+      const turn = a.dot(b) < -0.9999 ? new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), Math.PI) : new Quaternion().setFromUnitVectors(a, b);
+      const t0 = new Vector3(...from.target);
+      const t1 = new Vector3(...to.target);
+      const finish = () => {
+        glide = 0;
+        scene.camera = structuredClone(to);
+        applyCamera();
+        draw();
+        done?.();
+      };
+      const still = a.distanceTo(b) < 1e-6 && t0.distanceTo(t1) < 1e-6 && Math.abs(from.size - to.size) < 1e-6;
+      if (still || stillPlease() || closed) return finish();
+      const start = performance.now();
+      const step = (now: number) => {
+        if (closed) return;
+        const k = Math.min(1, (now - start) / GLIDE_MS);
+        if (k >= 1) return finish();
+        const e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+        const d = a.clone().applyQuaternion(new Quaternion().slerp(turn, e));
+        const t = t0.clone().lerp(t1, e);
+        scene.camera = {
+          direction: [d.x, d.y, d.z],
+          target: [t.x, t.y, t.z],
+          size: Math.exp(Math.log(from.size) + (Math.log(to.size) - Math.log(from.size)) * e),
+        };
+        applyCamera();
+        draw();
+        glide = requestAnimationFrame(step);
+      };
+      glide = requestAnimationFrame(step);
+    }
+
+    orbit.addEventListener("start", stopGlide);
     orbit.addEventListener("change", () => {
+      if (glide) return;
       readCamera();
       draw();
     });
@@ -503,9 +555,13 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
 
     // ------------------------------------------------------------ views
 
-    function fitView(): void {
+    /** Frames all the parts; `smooth` glides there and saves the step for undo. */
+    function fitView(smooth = false): void {
       art.scene.updateMatrixWorld(true);
-      scene.camera = frame(scene.camera, art.bounds(), aspect);
+      const to = frame(scene.camera, art.bounds(), aspect);
+      if (smooth) return glideTo(to, commit);
+      stopGlide();
+      scene.camera = to;
       applyCamera();
       draw();
     }
@@ -513,10 +569,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     /** Turns the camera to show `box` (zooming in or out), keeping the direction it looks from. */
     function frameOn(box: Bounds): void {
       if (box.isEmpty()) return;
-      scene.camera = frame(scene.camera, box, aspect, 1.35);
-      applyCamera();
-      draw();
-      commit();
+      glideTo(frame(scene.camera, box, aspect, 1.35), commit);
     }
     /** Where a part is drawn now, as a box. */
     function partBounds(id: string): Bounds {
@@ -558,9 +611,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     function setView(id: string): void {
       const v = VIEWS.find(x => x.id === id);
       if (!v) return;
-      scene.camera.direction = [...v.direction];
-      fitView();
-      commit();
+      art.scene.updateMatrixWorld(true);
+      glideTo(frame({ ...scene.camera, direction: [...v.direction] }, art.bounds(), aspect), commit);
     }
 
     // ------------------------------------------------------------ history
@@ -581,6 +633,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       syncHistory();
     }
     function restore(text: string): void {
+      stopGlide();
       const s = JSON.parse(text) as SceneData;
       s.parts.forEach(p => {
         if (p.data?.startsWith("#")) p.data = embedded.get(p.data.slice(1));
@@ -1933,10 +1986,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const v = views.find(x => x.id === (d.namedView || d.updateView || d.deleteView));
       if (!v) return;
       if (d.namedView) {
-        scene.camera = structuredClone(v.camera);
-        applyCamera();
-        draw();
-        commit();
+        glideTo(structuredClone(v.camera), commit);
         viewsMenu.hidden = true;
         status(`Looking from “${v.name}”.`);
       } else if (d.updateView) {
@@ -1973,7 +2023,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       switch (b.dataset.act) {
         case "add": if (menu.hidden) void openMenu(); else closeMenu(); break;
         case "upload": closeMenu(); fileInput.click(); break;
-        case "fit": fitView(); commit(); break;
+        case "fit": fitView(true); break;
         case "views": if (viewsMenu.hidden) openViews(); else viewsMenu.hidden = true; break;
         case "urdf": exportUrdf(); break;
         case "undo": undo(); break;
