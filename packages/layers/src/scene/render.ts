@@ -13,7 +13,7 @@
 
 import {
   Box3, BufferAttribute, Euler, Matrix4, BufferGeometry, Color, EdgesGeometry, Group, Mesh, MeshBasicMaterial, OrthographicCamera, PlaneGeometry, Scene,
-  ShaderMaterial, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget, NearestFilter, type Object3D,
+  ShaderMaterial, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget, NearestFilter, NoBlending, type Object3D,
 } from "three";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
@@ -130,22 +130,29 @@ export function placeCamera(c: OrthographicCamera, cam: SceneCamera, dist: numbe
 
 const OUTLINE_VERT = "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }";
 const OUTLINE_FRAG = `
-  uniform sampler2D tId; uniform vec2 px; uniform float width; uniform vec3 colour; varying vec2 vUv;
+  uniform sampler2D tId; uniform vec2 px; uniform float width; uniform vec3 colour; uniform vec3 ghost; varying vec2 vUv;
+  // A part's ID is its colour; alpha is 1 for a part, 0.5 for a ghost part, 0 for nothing.
+  // An edge touching a part gets the line colour; one only between ghosts and nothing, the ghost colour.
   void main() {
     vec4 here = texture2D(tId, vUv);
-    float hit = 0.0;
+    float hitPart = 0.0;
+    float hitGhost = 0.0;
     for (int r = 1; r <= 48; r++) {
       float fr = float(r);
       if (fr > width) break;
       for (int k = 0; k < 16; k++) {
         float a = float(k) * 0.39269908;
         vec4 there = texture2D(tId, vUv + vec2(cos(a), sin(a)) * fr * px);
-        if (distance(there, here) > 0.001) { hit = 1.0; break; }
+        if (distance(there, here) > 0.001) {
+          if (here.a > 0.75 || there.a > 0.75) { hitPart = 1.0; break; }
+          hitGhost = 1.0;
+        }
       }
-      if (hit > 0.5) break;
+      if (hitPart > 0.5) break;
     }
-    if (hit < 0.5) discard;
-    gl_FragColor = vec4(colour, 1.0);
+    if (hitPart > 0.5) gl_FragColor = vec4(colour, 1.0);
+    else if (hitGhost > 0.5) gl_FragColor = vec4(ghost, 1.0);
+    else discard;
   }`;
 
 interface PartObjects {
@@ -220,7 +227,7 @@ export class LineArt {
     this.renderer = new WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
     this.renderer.setPixelRatio(1);
     this.outline = new ShaderMaterial({
-      uniforms: { tId: { value: null }, px: { value: new Vector2() }, width: { value: 3 }, colour: { value: new Color() } },
+      uniforms: { tId: { value: null }, px: { value: new Vector2() }, width: { value: 3 }, colour: { value: new Color() }, ghost: { value: new Color() } },
       vertexShader: OUTLINE_VERT,
       fragmentShader: OUTLINE_FRAG,
       transparent: true,
@@ -236,20 +243,22 @@ export class LineArt {
     this.style = style;
     const world = worldMatrices(list.map(x => x.part), explode);
     list.forEach(({ part, model }, i) => {
-      const fill = new Mesh(model.geometry, new MeshBasicMaterial({ color: part.highlight ? style.highlight : style.fill, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
+      const fillColour = part.ghost ? style.fill : part.highlight ? style.highlight : style.fill;
+      const fill = new Mesh(model.geometry, new MeshBasicMaterial({ color: fillColour, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
       fill.userData.partId = part.id;
       const group = new Group();
       group.add(fill);
       const edges = edgesOf(model, style.crease);
       let lines: LineSegments2 | null = null;
       if (edges && style.lineWidth > 0) {
-        lines = new LineSegments2(edges, this.lineMaterial(style.line));
+        lines = new LineSegments2(edges, this.lineMaterial(part.ghost ? style.ghost : style.line));
         lines.raycast = () => {};
         group.add(lines);
       }
       const idGroup = new Group();
       // Each part's ID colour; 0 (black) is the empty background.
-      idGroup.add(new Mesh(model.geometry, new MeshBasicMaterial({ color: new Color().setHex(idColour(i + 1)) })));
+      // Written as is (no blending), so a ghost part's alpha marks it for the outline pass.
+      idGroup.add(new Mesh(model.geometry, new MeshBasicMaterial({ color: new Color().setHex(idColour(i + 1)), transparent: true, opacity: part.ghost ? 0.5 : 1, blending: NoBlending })));
       place(group, world.get(part.id)!);
       place(idGroup, world.get(part.id)!);
       group.visible = idGroup.visible = !part.hidden;
@@ -326,7 +335,7 @@ export class LineArt {
     }
     r.autoClear = true;
     r.setRenderTarget(this.target);
-    r.setClearColor(0x000000, 1);
+    r.setClearColor(0x000000, 0);
     r.render(this.idScene, camera);
     r.setRenderTarget(null);
     if (background) r.setClearColor(new Color(background), 1);
@@ -339,6 +348,7 @@ export class LineArt {
       // Half the outline falls on each side of a part's edge.
       u.width.value = Math.max(0.5, (style.outline * ratio) / 2);
       (u.colour.value as Color).set(style.line);
+      (u.ghost.value as Color).set(style.ghost);
       r.autoClear = false;
       r.render(this.quadScene, this.quadCamera);
       r.autoClear = true;

@@ -27,8 +27,26 @@ export interface ScenePart {
    * that part's frame, so it moves with it (joints, phase 2).
    */
   parent?: string;
-  /** How the joined part comes apart in an exploded view: along `normal` (in the parent's frame), by `distance` mm. */
-  joint?: { normal: Vec3; distance: number };
+  /**
+   * How it is joined: the faces picked on each part (see joint.ts), and how
+   * it comes apart in an exploded view, along `normal` (the parent's face,
+   * in the parent's frame) by `distance` mm.
+   */
+  joint?: PartJoint;
+  /** Drawn faint: a part fitted in an earlier step. */
+  ghost?: boolean;
+}
+
+export interface PartJoint {
+  normal: Vec3;
+  distance: number;
+  point?: Vec3;
+  childPoint?: Vec3;
+  childNormal?: Vec3;
+  /** Degrees about the normal. */
+  spin?: number;
+  /** Millimetres standing off the face. */
+  gap?: number;
 }
 
 export interface SceneCamera {
@@ -50,6 +68,8 @@ export interface SceneStyle {
   /** How sharp a fold must be, in degrees, to get a line. 180: no fold lines. */
   crease: number;
   highlight: string;
+  /** Lines of ghost parts (fitted in an earlier step); their fill is a pale mix of fill and this. */
+  ghost: string;
 }
 
 export interface SceneData {
@@ -69,12 +89,13 @@ export interface StylePreset {
 }
 
 export const HIGHLIGHT = "#9db8f5";
+export const GHOST = "#a6a6a6";
 
 export const STYLE_PRESETS: StylePreset[] = [
-  { id: "line-art", label: "Line art", detail: "White parts, fine fold lines, a bold outline", style: { fill: "#ffffff", line: "#111111", lineWidth: 1, outline: 3, crease: 30, highlight: HIGHLIGHT } },
-  { id: "technical", label: "Technical", detail: "Fine lines only", style: { fill: "#ffffff", line: "#111111", lineWidth: 1, outline: 1, crease: 30, highlight: HIGHLIGHT } },
-  { id: "bold", label: "Bold", detail: "Thicker lines for small pictures", style: { fill: "#ffffff", line: "#111111", lineWidth: 2, outline: 5, crease: 35, highlight: HIGHLIGHT } },
-  { id: "silhouette", label: "Silhouette", detail: "Outlines only, no fold lines", style: { fill: "#ffffff", line: "#111111", lineWidth: 1, outline: 3, crease: 180, highlight: HIGHLIGHT } },
+  { id: "line-art", label: "Line art", detail: "White parts, fine fold lines, a bold outline", style: { fill: "#ffffff", line: "#111111", lineWidth: 1, outline: 3, crease: 30, highlight: HIGHLIGHT, ghost: GHOST } },
+  { id: "technical", label: "Technical", detail: "Fine lines only", style: { fill: "#ffffff", line: "#111111", lineWidth: 1, outline: 1, crease: 30, highlight: HIGHLIGHT, ghost: GHOST } },
+  { id: "bold", label: "Bold", detail: "Thicker lines for small pictures", style: { fill: "#ffffff", line: "#111111", lineWidth: 2, outline: 5, crease: 35, highlight: HIGHLIGHT, ghost: GHOST } },
+  { id: "silhouette", label: "Silhouette", detail: "Outlines only, no fold lines", style: { fill: "#ffffff", line: "#111111", lineWidth: 1, outline: 3, crease: 180, highlight: HIGHLIGHT, ghost: GHOST } },
 ];
 
 export interface ViewPreset {
@@ -134,9 +155,21 @@ export function normalizeScene(value: unknown): SceneData {
         if (p.hidden) part.hidden = true;
         if (p.highlight) part.highlight = true;
         if (typeof p.parent === "string" && p.parent) part.parent = p.parent;
+        if (p.ghost) part.ghost = true;
         if (p.joint && typeof p.joint === "object") {
-          const n = vec(p.joint.normal, [0, 0, 1], 1);
-          part.joint = { normal: Math.hypot(...n) > 1e-9 ? n : [0, 0, 1], distance: num(p.joint.distance, 0, 0, LIMITS.position) };
+          const j = p.joint;
+          const unit = (v: unknown) => {
+            const n = vec(v, [0, 0, 1], 1);
+            return Math.hypot(...n) > 1e-9 ? n : ([0, 0, 1] as Vec3);
+          };
+          part.joint = { normal: unit(j.normal), distance: num(j.distance, 0, 0, LIMITS.position) };
+          if (Array.isArray(j.point) && Array.isArray(j.childPoint) && Array.isArray(j.childNormal)) {
+            part.joint.point = vec(j.point, [0, 0, 0]);
+            part.joint.childPoint = vec(j.childPoint, [0, 0, 0]);
+            part.joint.childNormal = unit(j.childNormal);
+            part.joint.spin = wrapAngle(num(j.spin, 0));
+            part.joint.gap = num(j.gap, 0, -LIMITS.position, LIMITS.position);
+          }
         }
         return part;
       })
@@ -172,6 +205,7 @@ export function normalizeScene(value: unknown): SceneData {
     outline: num(s.outline, d.outline, ...LIMITS.outline),
     crease: num(s.crease, d.crease, ...LIMITS.crease),
     highlight: colour(s.highlight, d.highlight),
+    ghost: colour(s.ghost, d.ghost),
   };
   return { version: 1, parts, camera, style, explode: num(v.explode, 0, 0, 1) };
 }
@@ -179,7 +213,7 @@ export function normalizeScene(value: unknown): SceneData {
 /** The style a preset gives, keeping the highlight colour already chosen. */
 export function applyPreset(style: SceneStyle, id: string): SceneStyle {
   const p = STYLE_PRESETS.find(x => x.id === id);
-  return p ? { ...p.style, highlight: style.highlight, preset: p.id } : style;
+  return p ? { ...p.style, highlight: style.highlight, ghost: style.ghost, preset: p.id } : style;
 }
 
 export function newPartId(parts: ScenePart[]): string {

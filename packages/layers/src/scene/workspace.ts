@@ -15,6 +15,7 @@ import {
   applyPreset, normalizeScene, newPartId, partName, placeBeside, STYLE_PRESETS, VIEWS, wrapAngle,
   type Box3 as PlainBox, type SceneData, type ScenePart, type SceneStyle, type Vec3,
 } from "./model";
+import { applyJoint } from "./joint";
 import { frame, LineArt, modelFromStl, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
 import { MAX_EMBED, parseStl, toBase64, toBinaryStl } from "./stl";
 
@@ -108,6 +109,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
               ${VIEWS.map(v => `<button type="button" class="lyr-btn" data-view="${v.id}" title="Look from the ${esc(v.label.toLowerCase())}">${esc(v.label)}</button>`).join("")}
               <span class="lyr-sep"></span>
               <button type="button" class="lyr-btn" data-act="fit" title="Fit the parts in the picture (F)">${icon("frame", 16)}<span>Fit</span></button>
+              <span class="lyr-sep"></span>
+              <label class="lyr-scene-explode" title="Slide joined parts apart along their joints, to show how they fit">${icon("expand", 16)}<span>Explode</span><input type="range" min="0" max="100" step="1" data-explode value="0" aria-label="Explode"></label>
             </div>
             <div class="lyr-scene-frame"><canvas class="lyr-scene-canvas"></canvas></div>
             <div class="lyr-scene-help">Drag to look around, right-drag to pan, scroll to zoom. Hold Shift on a handle for 5 mm or 15° steps.</div>
@@ -390,6 +393,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       if (!p) return;
       proxy.updateMatrix();
       setLocalFromWorld(p, proxy.matrix, parentFrame(p));
+      looseJoint(p);
       art.move(scene.parts, scene.explode);
       syncFields();
       draw();
@@ -412,6 +416,10 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       art.scene.updateMatrixWorld(true);
       raycaster.setFromCamera(ndc, camera);
       const hit = raycaster.intersectObjects(art.meshes(), false)[0];
+      if (joining) {
+        pickFace(hit);
+        return;
+      }
       select(hit ? String(hit.object.userData.partId || "") : "");
     });
 
@@ -468,6 +476,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         rebuild();
         applyCamera();
         renderProps();
+        syncExplode();
       });
     }
     function undo(): void {
@@ -551,6 +560,9 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         case "lineWidth": return s.lineWidth;
         case "outline": return s.outline;
         case "crease": return s.crease;
+        case "spin": return p?.joint?.spin || 0;
+        case "gap": return p?.joint?.gap || 0;
+        case "distance": return p?.joint?.distance || 0;
       }
       return 0;
     }
@@ -563,9 +575,20 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const rot = ["roll", "pitch", "yaw"].indexOf(key);
       if (pos >= 0 && p) {
         p.position[pos] = round(Math.max(-100_000, Math.min(100_000, value)));
+        if (looseJoint(p)) renderProps();
         follow();
       } else if (rot >= 0 && p) {
         p.rotation[rot] = round(wrapAngle(value));
+        if (looseJoint(p)) renderProps();
+        follow();
+      } else if ((key === "spin" || key === "gap") && p?.joint?.point) {
+        if (key === "spin") p.joint.spin = round(wrapAngle(value));
+        else p.joint.gap = round(Math.max(-100_000, Math.min(100_000, value)));
+        applyJoint(p);
+        follow();
+        syncFields();
+      } else if (key === "distance" && p?.joint) {
+        p.joint.distance = round(Math.max(0, Math.min(100_000, value)));
         follow();
       } else if (key === "lineWidth" || key === "outline" || key === "crease") {
         const lim = { lineWidth: [0, 10], outline: [0, 20], crease: [1, 180] }[key];
@@ -591,6 +614,150 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     const colourInput = (key: keyof SceneStyle, label: string) =>
       `<label class="lyr-scene-colour">${esc(label)} <input type="color" data-colour="${key}" value="${esc(String(scene.style[key]).slice(0, 7))}"></label>`;
 
+    // ------------------------------------------------------------ joints
+
+    /** Joining: the part being joined, and (after the first click) the face picked on it. */
+    let joining: { childId: string; childPoint?: Vec3; childNormal?: Vec3 } | null = null;
+
+    /** The parts joined (directly or further down) to `id`, and itself. */
+    function branch(id: string): Set<string> {
+      const out = new Set([id]);
+      let grew = true;
+      while (grew) {
+        grew = false;
+        for (const p of scene.parts) if (p.parent && out.has(p.parent) && !out.has(p.id)) {
+          out.add(p.id);
+          grew = true;
+        }
+      }
+      return out;
+    }
+
+    function startJoin(id: string): void {
+      joining = { childId: id };
+      canvasEl.classList.add("lyr-scene-picking");
+      gizmo.detach();
+      status(`Click the face of “${partById(id)?.name}” that fits against the other part. Esc to stop.`, false, true);
+      draw();
+    }
+
+    function stopJoin(message = ""): void {
+      joining = null;
+      canvasEl.classList.remove("lyr-scene-picking");
+      attachGizmo();
+      status(message);
+      draw();
+    }
+
+    /** A clicked face, in its part's own frame. */
+    function faceAt(hit: { object: Object3D; point: Vector3; face?: { normal: Vector3 } | null }): { id: string; point: Vec3; normal: Vec3 } | null {
+      if (!hit.face) return null;
+      const local = hit.object.worldToLocal(hit.point.clone());
+      const n = hit.face.normal.clone().normalize();
+      return { id: String(hit.object.userData.partId || ""), point: [round(local.x, 3), round(local.y, 3), round(local.z, 3)], normal: [round(n.x, 5), round(n.y, 5), round(n.z, 5)] };
+    }
+
+    function pickFace(hit: { object: Object3D; point: Vector3; face?: { normal: Vector3 } | null } | undefined): void {
+      if (!joining) return;
+      const f = hit ? faceAt(hit) : null;
+      if (!joining.childPoint) {
+        if (!f || f.id !== joining.childId) {
+          status(`Click a face on “${partById(joining.childId)?.name}” itself. Esc to stop.`, true, true);
+          return;
+        }
+        joining.childPoint = f.point;
+        joining.childNormal = f.normal;
+        status(`Now click the face it fits against, on another part. Esc to stop.`, false, true);
+        return;
+      }
+      if (!f || branch(joining.childId).has(f.id)) {
+        status("Click a face on another part (not one joined to this one). Esc to stop.", true, true);
+        return;
+      }
+      const child = partById(joining.childId);
+      const parent = partById(f.id);
+      const model = child ? models.get(child.id) : undefined;
+      if (!child || !parent) return stopJoin();
+      const size = model && !(model instanceof Error) ? Math.max(...model.size) : 20;
+      child.parent = parent.id;
+      child.joint = {
+        normal: f.normal,
+        distance: Math.max(10, Math.round(size * 1.2)),
+        point: f.point,
+        childPoint: joining.childPoint,
+        childNormal: joining.childNormal!,
+        spin: 0,
+        gap: 0,
+      };
+      applyJoint(child);
+      selectedId = child.id;
+      stopJoin(`“${child.name}” is joined to “${parent.name}”.`);
+      follow();
+      renderList();
+      renderProps();
+      syncExplode();
+      commit();
+    }
+
+    /** Stops a part following its picked faces once it's placed by hand. Says whether it did. */
+    function looseJoint(p: ScenePart): boolean {
+      const j = p.joint;
+      if (!j?.point) return false;
+      delete j.point;
+      delete j.childPoint;
+      delete j.childNormal;
+      delete j.spin;
+      delete j.gap;
+      return true;
+    }
+
+    function unjoin(p: ScenePart): void {
+      const world = worldMatrices(scene.parts, 0).get(p.id);
+      if (world) setLocalFromWorld(p, world, null);
+      delete p.parent;
+      delete p.joint;
+      follow();
+      renderList();
+      renderProps();
+      syncExplode();
+      commit();
+    }
+
+    function jointSection(p: ScenePart, parent: ScenePart | undefined): string {
+      const others = scene.parts.length > 1;
+      if (!parent) {
+        return others
+          ? `<div class="lyr-scene-join"><button type="button" class="lyr-wide-btn" data-act="join" title="Pick a face on this part, then the face on another part it fits against">${icon("layers", 16)} Join to another part…</button></div>`
+          : "";
+      }
+      const picked = !!p.joint?.point;
+      return `<div class="lyr-scene-join">
+        <p class="lyr-note">Joined to <strong>${esc(parent.name)}</strong>. Its place is from that part, and it moves with it.</p>
+        ${picked ? `<div class="lyr-scene-fields">
+          ${field("spin", "Spin", "°", p.joint?.spin || 0, 1, "Turn it about the joint, keeping the faces together")}
+          ${field("gap", "Gap", "mm", p.joint?.gap || 0, 0.1, "How far it stands off the face")}
+          ${field("distance", "Explode", "mm", p.joint?.distance || 0, 1, "How far it slides out in the exploded view")}
+        </div>` : `<div class="lyr-scene-fields">${field("distance", "Explode", "mm", p.joint?.distance || 0, 1, "How far it slides out in the exploded view")}</div>`}
+        <div class="lyr-scene-quick">
+          <button type="button" class="lyr-btn" data-act="join" title="Pick the two faces again">Re-join</button>
+          <button type="button" class="lyr-btn" data-act="unjoin" title="Stand on its own again, where it is now">Unjoin</button>
+        </div>
+      </div>`;
+    }
+
+    const explodeInput = $<HTMLInputElement>("[data-explode]");
+    function syncExplode(): void {
+      const any = scene.parts.some(p => p.parent && p.joint);
+      explodeInput.disabled = !any;
+      explodeInput.value = String(Math.round(scene.explode * 100));
+      explodeInput.closest("label")!.title = any ? "Slide joined parts apart along their joints, to show how they fit" : "Join parts first: then this slides them apart";
+    }
+    explodeInput.addEventListener("input", () => {
+      scene.explode = Math.max(0, Math.min(1, Number(explodeInput.value) / 100));
+      follow();
+    });
+    explodeInput.addEventListener("change", () => commit());
+
     function renderProps(): void {
       const p = partById(selectedId);
       const parent = p?.parent ? partById(p.parent) : undefined;
@@ -599,7 +766,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           <div class="lyr-panel-title">Part</div>
           ${p ? `
             <label class="lyr-scene-namebox">Name <input type="text" maxlength="120" data-name value="${esc(p.name)}"></label>
-            ${parent ? `<p class="lyr-note">Joined to ${esc(parent.name)}: its numbers are from that part.</p>` : ""}
+            ${jointSection(p, parent)}
             <div class="lyr-scene-sub">Position</div>
             <div class="lyr-scene-fields">
               ${field("x", "X", "mm", p.position[0], 0.1, "Left and right")}
@@ -619,6 +786,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
               <button type="button" class="lyr-btn" data-turn="2" title="A quarter turn about Z">Z</button>
               <button type="button" class="lyr-btn" data-act="reset-turn" title="Turn it back to how its file has it">Reset</button>
             </div>
+            <label class="lyr-scene-check" title="Draw it faint, for a part fitted in an earlier step"><input type="checkbox" data-ghost${p.ghost ? " checked" : ""}> Ghost (fitted earlier)</label>
             <p class="lyr-note">Arrow keys in a box: ±1 step, Shift ×10, Alt ×0.1. Or drag a label sideways.</p>`
           : `<p class="lyr-note">${scene.parts.length ? "Click a part, in the view or the list, to place it." : "Add a part to start."}</p>`}
         </section>
@@ -631,6 +799,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
             ${colourInput("fill", "Parts")}
             ${colourInput("line", "Lines")}
             ${colourInput("highlight", "Highlight")}
+            ${colourInput("ghost", "Ghost lines")}
           </div>
           <div class="lyr-scene-fields">
             ${field("lineWidth", "Lines", "px", scene.style.lineWidth, 0.5, "Fine fold lines")}
@@ -645,7 +814,14 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     props.addEventListener("input", e => {
       const t = e.target as HTMLInputElement;
       if (t.dataset.field) setField(t.dataset.field, Number(t.value));
-      else if (t.dataset.colour) {
+      else if (t.dataset.ghost !== undefined) {
+        const p = partById(selectedId);
+        if (!p) return;
+        if (t.checked) p.ghost = true;
+        else delete p.ghost;
+        rebuild();
+        commit();
+      } else if (t.dataset.colour) {
         (scene.style as unknown as Record<string, string>)[t.dataset.colour] = t.value;
         if (t.dataset.colour !== "highlight") scene.style.preset = "custom";
         rebuild();
@@ -694,6 +870,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         follow();
         syncFields();
         commit();
+      } else if (b.dataset.act === "join") {
+        if (selectedId) startJoin(selectedId);
+      } else if (b.dataset.act === "unjoin") {
+        const p = partById(selectedId);
+        if (p) unjoin(p);
       } else if (b.dataset.act === "reset-turn") {
         const p = partById(selectedId);
         if (!p) return;
@@ -844,7 +1025,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         e.preventDefault();
         redo();
       } else if (e.key === "Escape") {
-        if (!menu.hidden) closeMenu();
+        if (joining) stopJoin("Join stopped.");
+        else if (!menu.hidden) closeMenu();
         else if (selectedId) select("");
         else cancel();
       } else if ((e.key === "Delete" || e.key === "Backspace") && selectedId) {
@@ -916,6 +1098,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     syncHistory();
     renderList();
     renderProps();
+    syncExplode();
     layout();
     applyCamera();
     root.focus({ preventScroll: true });
