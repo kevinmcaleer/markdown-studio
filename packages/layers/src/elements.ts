@@ -14,6 +14,8 @@ measureTextAtRealSize();
 
 export const INK = "#1f2328";
 export const ACCENT = "#e8590c";
+/** The step number on an assembly step: red, so it stands out from the black line art. */
+export const STEP_RED = "#e03131";
 
 export const PALETTE = [
   "#1f2328", "#495057", "#868e96", "#ced4da", "#f1f3f5", "#ffffff",
@@ -274,7 +276,7 @@ const tb = (text: string, o: Record<string, unknown>) => named(new Textbox(text,
 /** A step number, a bold heading and a line of text, at the top left of a `w`×`h` page. */
 function stepHeading(w: number, h: number): FabricObject[] {
   return [
-    badge(1, { x: w * 0.05, y: h * 0.08 }, INK),
+    badge(1, { x: w * 0.05, y: h * 0.08 }, STEP_RED),
     tb("ASSEMBLY", { left: w * 0.05, top: h * 0.08 + 110, width: w * 0.3, fontSize: Math.round(h * 0.09), fontWeight: "800" }),
     tb("Fit the parts together as shown", { left: w * 0.05, top: h * 0.08 + 110 + h * 0.12, width: w * 0.26, fontSize: Math.round(h * 0.035), fill: "#495057" }),
   ];

@@ -15,7 +15,7 @@ import { Connector, type ConnectorEnd } from "./connector";
 import { DetailTail, isTail } from "./detailTail";
 import { blankDoc, clampSide, embedDoc, defaultFetch, exportScales, MAX_EXPORT_BYTES, MAX_SIDE, MIN_SIDE, normalizeDoc, SIZES, type LayersDoc } from "./doc";
 import {
-  ACCENT, badge, boundTo, canHoldText, FIGURES, FONTS, INK, INK_KINDS, isLine, isText, kindOf, LINES, makeShape, makeText, newId, PALETTE, SHAPES, SYMBOLS, shapeText, TEMPLATES, TEXT_STYLES, TOOLS,
+  ACCENT, badge, boundTo, canHoldText, FIGURES, FONTS, INK, INK_KINDS, isLine, isText, kindOf, LINES, makeShape, makeText, newId, PALETTE, SHAPES, SYMBOLS, shapeText, STEP_RED, TEMPLATES, TEXT_STYLES, TOOLS,
   type Point as XY,
 } from "./elements";
 import { boxSides, dist, distToSegment, facingSide, polygonSides, SIDES, snapAngle, type Pt, type Side } from "./geometry";
@@ -1573,7 +1573,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       await page(`Step ${step.n}`, "#ececec", async () => {
         const floor = new Polygon([{ x: 0, y: H * 0.55 }, { x: W, y: H * 0.38 }, { x: W, y: H }, { x: 0, y: H }], { fill: "#d6d6d6", strokeWidth: 0, objectCaching: false });
         Object.assign(floor, { name: "Floor", layerId: newId() });
-        const b = badge(step.n, { x: W * 0.05, y: H * 0.06 }, INK);
+        const b = badge(step.n, { x: W * 0.05, y: H * 0.06 }, STEP_RED);
         Object.assign(b, { badgePinned: true });
         addAll([
           floor,
