@@ -29,8 +29,12 @@ export type LayersOpenHow = {
 export type LayersOpener = {
   /** Opens the picture whose Markdown starts at `pos` in Layers, in the page or full screen. */
   open(view: EditorView, pos: number, mode?: "inline" | "full", how?: LayersOpenHow): void;
-  /** Whether the graphic at `url` has 3D scenes, and how many are behind the project's model (null: can't tell). */
-  status?(url: string): Promise<{ scene: boolean; stale: number } | null>;
+  /**
+   * Whether the graphic at `url` offers Next step (it has 3D scenes and the
+   * host keeps a model), how many scenes are behind the model, and the step
+   * number it should have when its own is out of place in `text` (null: can't tell).
+   */
+  status?(url: string, text?: string): Promise<{ scene: boolean; stale: number; step?: number } | null>;
 };
 
 export const layersOpener = Facet.define<LayersOpener, LayersOpener | null>({

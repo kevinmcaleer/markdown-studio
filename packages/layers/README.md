@@ -23,6 +23,7 @@ const editor = mount(el, {
   loadModel: async () => model,      // the project's 3D model ({ version, stamp, parts } or null); with saveModel, scenes share it
   saveModel: async model => { ... }, // store it; called on a scene's Done when its parts or joints changed
   updateScenes: false,               // true: draw every 3D picture again from the model as it opens (Update / Next step)
+  stepNumber: 3,                     // this graphic's step from its place in the host's steps; a lone step badge follows it unless typed in
   onDone: async ({ png, doc, title }) => { /* upload png, put it in the page */ },
   onCancel: () => editor.destroy(),
 });
@@ -108,6 +109,12 @@ const editor = mount(el, {
   scenes show what was shown as ghosts (fitted already) and whose step
   numbers go up by one. The Markdown editor offers it on graphics with a 3D
   scene, and an "Out of date · Update" mark on ones behind the model.
+- **Step numbers follow the write-up**: with the host's `stepNumber`, a
+  graphic with one step badge (the Assembly step and Step heading
+  templates, or a badge from Elements) takes the step before it plus one.
+  Typing a number pins it (`badgePinned`); **Auto-number** on its bar
+  undoes that. The Markdown editor counts the graphics top to bottom and
+  marks any whose number is out of place "Out of date · Update".
 - Shapes have **W** and **H** fields for exact sizes. Stretching a box keeps
   its corner size.
 - Smart guides snap to the page's and other layers' edges and middles
