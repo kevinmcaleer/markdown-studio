@@ -23,6 +23,7 @@ import { frame, LineArt, modelFromPositions, modelFromStl, Thumbnailer, ModelSto
 import { MAX_EMBED, parseStl, toBase64, toBinaryStl } from "./stl";
 import { isStepFile, readStep, type StepBody } from "./step";
 import { toUrdf, zip } from "./urdf";
+import { createViewCube } from "./viewcube";
 import { MAX_SNAP_TRIANGLES, nearestSnap, Topology, type Face, type Snap } from "./snaps";
 
 export interface SceneModel {
@@ -236,8 +237,33 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         if (closed) return;
         art.draw(camera, viewW, viewH, Math.min(2, window.devicePixelRatio || 1));
         placeSnaps();
+        viewCube.sync(camera.quaternion);
+        viewCube.render();
       });
     }
+
+    // The view cube (as in Snakie's build workspace): click a face, edge or
+    // corner to glide round to it, or drag it to look around.
+    const viewCube = createViewCube({
+      size: 104,
+      onPick: d => {
+        // Straight down or up, a hair off so "up" stays Z (as the Top view does).
+        const dir: Vec3 = Math.abs(d.z) > 0.999 ? [0, -0.0001, Math.sign(d.z)] : [d.x, d.y, d.z];
+        glideTo({ ...scene.camera, direction: dir }, commit);
+      },
+      onOrbit: (dx, dy) => {
+        stopGlide();
+        const [x, y, z] = scene.camera.direction;
+        const len = Math.hypot(x, y, z) || 1;
+        const theta = Math.atan2(y, x) - dx * 0.01;
+        const phi = Math.max(0.01, Math.min(Math.PI - 0.01, Math.acos(Math.max(-1, Math.min(1, z / len))) - dy * 0.01));
+        scene.camera.direction = [round(Math.sin(phi) * Math.cos(theta), 5), round(Math.sin(phi) * Math.sin(theta), 5), round(Math.cos(phi), 5)];
+        applyCamera();
+        draw();
+      },
+      onOrbitEnd: () => commit(),
+    });
+    frameEl.appendChild(viewCube.dom);
 
     function layout(): void {
       const box = stage.getBoundingClientRect();
@@ -2477,6 +2503,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       gizmo.dispose();
       orbit.dispose();
       art.dispose();
+      viewCube.dispose();
       thumbWatch?.disconnect();
       thumbnailer?.dispose();
       blobUrls.forEach(u => URL.revokeObjectURL(u));

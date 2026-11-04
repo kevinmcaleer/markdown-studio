@@ -730,3 +730,16 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 /* A plain span, not <kbd>: host pages style kbd as a dark badge. */
 .lyr-scene-ctx-item .lyr-scene-ctx-keys { flex: none; padding: 0; background: none; color: var(--lyr-muted, #6b7280); font: inherit; font-size: 12px; }
 .lyr-scene-ctx-item.lyr-danger { color: #c62828; }
+
+/* The view cube in the picture's top right (as in Snakie's build workspace); never drawn into the picture. */
+.lyr-viewcube {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 6;
+  width: 104px;
+  height: 104px;
+  cursor: pointer;
+  filter: drop-shadow(0 4px 8px rgb(0 0 0 / 0.22));
+  touch-action: none;
+}
