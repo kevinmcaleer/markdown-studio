@@ -725,5 +725,6 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 .lyr-scene-ctx-item > span:nth-child(2) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lyr-scene-ctx-icon { display: flex; align-items: center; justify-content: center; flex: none; width: 16px; height: 16px; }
 .lyr-scene-ctx-icon svg { width: auto; }
-.lyr-scene-ctx-item kbd { flex: none; color: var(--lyr-muted, #6b7280); font: inherit; font-size: 12px; }
+/* A plain span, not <kbd>: host pages style kbd as a dark badge. */
+.lyr-scene-ctx-item .lyr-scene-ctx-keys { flex: none; padding: 0; background: none; color: var(--lyr-muted, #6b7280); font: inherit; font-size: 12px; }
 .lyr-scene-ctx-item.lyr-danger { color: #c62828; }

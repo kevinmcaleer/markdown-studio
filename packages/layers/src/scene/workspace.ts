@@ -857,7 +857,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       ctxItems = items;
       ctx.innerHTML = `<div class="lyr-scene-ctx-title">${esc(title)}</div>` + items.map((it, i) => it
         ? `<button type="button" class="lyr-scene-ctx-item${it.danger ? " lyr-danger" : ""}" role="${it.on === undefined ? "menuitem" : "menuitemcheckbox"}"${it.on === undefined ? "" : ` aria-checked="${it.on}"`} data-ctx="${i}">
-             <span class="lyr-scene-ctx-icon">${it.on ? icon("check", 16) : it.icon ? icon(it.icon, 16) : ""}</span><span>${esc(it.label)}</span>${it.keys ? `<kbd>${esc(it.keys)}</kbd>` : ""}</button>`
+             <span class="lyr-scene-ctx-icon">${it.on ? icon("check", 16) : it.icon ? icon(it.icon, 16) : ""}</span><span>${esc(it.label)}</span>${it.keys ? `<span class="lyr-scene-ctx-keys">${esc(it.keys)}</span>` : ""}</button>`
         : `<hr>`).join("");
       ctx.hidden = false;
       const r = ctx.getBoundingClientRect();
