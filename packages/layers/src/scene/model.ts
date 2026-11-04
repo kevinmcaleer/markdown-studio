@@ -7,6 +7,8 @@
 // about its own middle: roll about X, pitch about Y, yaw about Z, applied
 // roll first, then pitch, then yaw (the same as URDF's rpy).
 
+import { meshTable, restoreParts, type Meshes } from "./meshTable";
+
 export type Vec3 = [number, number, number];
 
 export interface ScenePart {
@@ -208,7 +210,9 @@ export function normalizeScene(value: unknown): SceneData {
   if (!value || typeof value !== "object") return base;
   const v = value as Partial<SceneData>;
   const parts: ScenePart[] = Array.isArray(v.parts)
-    ? v.parts.filter(p => p && typeof p === "object").map((p, i) => {
+    ? restoreParts(v.parts as unknown as Record<string, unknown>[], (v as { meshes?: unknown }).meshes as Meshes | undefined)
+        .map(p => p as unknown as ScenePart)
+        .filter(p => p && typeof p === "object").map((p, i) => {
         const part: ScenePart = {
           id: text(p.id, 40) || `p${i + 1}`,
           name: text(p.name, 120) || `Part ${i + 1}`,
@@ -338,7 +342,7 @@ export function modelPart(p: ScenePart): ScenePart {
 export function normalizeModel(value: unknown): ProjectModel | null {
   if (!value || typeof value !== "object" || !Array.isArray((value as ProjectModel).parts)) return null;
   const v = value as ProjectModel;
-  const out: ProjectModel = { version: 1, stamp: num(v.stamp, 0, 0), parts: normalizeScene({ parts: v.parts }).parts.map(modelPart) };
+  const out: ProjectModel = { version: 1, stamp: num(v.stamp, 0, 0), parts: normalizeScene({ parts: v.parts, meshes: (v as { meshes?: unknown }).meshes } as Partial<SceneData>).parts.map(modelPart) };
   const views = normalizeViews(v.views);
   if (views.length) out.views = views;
   if (typeof v.defaultView === "string" && views.some(x => x.id === v.defaultView)) out.defaultView = v.defaultView;
@@ -350,9 +354,25 @@ export function modelOf(scene: SceneData, stamp: number): ProjectModel {
   return { version: 1, stamp, parts: scene.parts.map(modelPart) };
 }
 
-/** Whether two lists of parts differ in what they are (not in what a scene shows of them). */
+/** `model` as it is saved: each part's model data kept once, in a `meshes` table (see meshTable.ts). */
+export function packModel(model: ProjectModel): ProjectModel & { meshes?: Meshes } {
+  const table = meshTable();
+  const parts = table.parts(model.parts as unknown as Record<string, unknown>[]) as unknown as ScenePart[];
+  return table.size() ? { ...model, parts, meshes: table.meshes } : model;
+}
+
+/**
+ * Whether two lists of parts differ in what they are (not in what a scene
+ * shows of them). A part's model data isn't compared: it is set when the
+ * part is added (a new model is a new part), and only its packing changes.
+ */
 export function partsDiffer(a: ScenePart[], b: ScenePart[]): boolean {
-  return JSON.stringify(a.map(modelPart)) !== JSON.stringify(b.map(modelPart));
+  const what = (p: ScenePart) => {
+    const out = modelPart(p);
+    delete out.data;
+    return out;
+  };
+  return JSON.stringify(a.map(what)) !== JSON.stringify(b.map(what));
 }
 
 /**

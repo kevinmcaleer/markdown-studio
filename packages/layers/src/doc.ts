@@ -4,6 +4,7 @@
 // URLs, so a graphic never depends on another file.
 
 import { readText, writeText } from "./png";
+import { meshTable, restoreParts, type Meshes } from "./scene/meshTable";
 
 export const DOC_APP = "layers";
 export const DOC_VERSION = 1;
@@ -58,8 +59,44 @@ export function normalizeDoc(value: unknown): LayersDoc | null {
     height: clampSide(Number(v.height)),
     background: typeof v.background === "string" ? v.background : "#ffffff",
     ...(typeof v.title === "string" && v.title ? { title: v.title } : {}),
-    objects: v.objects.filter((o): o is Record<string, unknown> => !!o && typeof o === "object"),
+    objects: unpackObjects(v.objects.filter((o): o is Record<string, unknown> => !!o && typeof o === "object"), (v as { meshes?: unknown }).meshes),
   };
+}
+
+/** The 3D scenes' parts in `objects` with their model data back from a saved `meshes` table (see packDoc). */
+function unpackObjects(objects: Record<string, unknown>[], meshes: unknown): Record<string, unknown>[] {
+  if (!meshes || typeof meshes !== "object") return objects;
+  return objects.map(o => {
+    if (!o || typeof o !== "object") return o;
+    let out = o;
+    if (String(o.type).toLowerCase() === "scenelayer" && o.scene && typeof o.scene === "object") {
+      const scene = o.scene as { parts?: unknown };
+      if (Array.isArray(scene.parts)) out = { ...out, scene: { ...scene, parts: restoreParts(scene.parts as Record<string, unknown>[], meshes) } };
+    }
+    if (Array.isArray(o.objects)) out = { ...out, objects: unpackObjects(o.objects as Record<string, unknown>[], meshes) };
+    return out;
+  });
+}
+
+/**
+ * `doc` as it is saved: each model its 3D scenes carry kept once, in a
+ * `meshes` table the parts point at, however many copies of a part or
+ * scenes showing it there are. normalizeDoc puts them back.
+ */
+export function packDoc(doc: LayersDoc): LayersDoc & { meshes?: Meshes } {
+  const table = meshTable();
+  const walk = (objects: Record<string, unknown>[]): Record<string, unknown>[] =>
+    objects.map(o => {
+      let out = o;
+      if (String(o.type).toLowerCase() === "scenelayer" && o.scene && typeof o.scene === "object") {
+        const scene = o.scene as { parts?: unknown };
+        if (Array.isArray(scene.parts)) out = { ...out, scene: { ...scene, parts: table.parts(scene.parts as Record<string, unknown>[]) } };
+      }
+      if (Array.isArray(o.objects)) out = { ...out, objects: walk(o.objects as Record<string, unknown>[]) };
+      return out;
+    });
+  const objects = walk(doc.objects);
+  return table.size() ? { ...doc, objects, meshes: table.meshes } : doc;
 }
 
 export function parseDoc(text: string | null): LayersDoc | null {
@@ -73,7 +110,7 @@ export function parseDoc(text: string | null): LayersDoc | null {
 
 /** The PNG `png` with `doc` stored inside it. */
 export async function embedDoc(png: Uint8Array, doc: LayersDoc): Promise<Uint8Array> {
-  return writeText(png, JSON.stringify(doc));
+  return writeText(png, JSON.stringify(packDoc(doc)));
 }
 
 /** The document stored in a PNG's bytes, or null for an ordinary picture. */

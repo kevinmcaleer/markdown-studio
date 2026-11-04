@@ -23,6 +23,7 @@ import type { SceneCamera, SceneData, ScenePart, SceneStyle, Vec3 } from "./mode
 import { explodeOf, highlightedParts } from "./model";
 import { readStep, isStepFile, mergeBodies, type StepBody } from "./step";
 import { bounds, fromBase64, parseStl, stlFaces } from "./stl";
+import { isPacked, unpackMesh } from "./mesh";
 
 const DEG = Math.PI / 180;
 
@@ -107,6 +108,10 @@ export class ModelStore {
     let m = this.models.get(key);
     if (!m) {
       m = (async () => {
+        if (part.data && isPacked(part.data)) {
+          const { positions, faces } = await unpackMesh(part.data);
+          return modelFromPositions(positions, faces);
+        }
         if (part.data) return modelFromStl(fromBase64(part.data));
         if (part.url && isStepFile(part.url)) {
           const bodies = await this.stepBodies(part.url);

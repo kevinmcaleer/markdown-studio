@@ -20,7 +20,7 @@ import {
 } from "./elements";
 import { boxSides, dist, distToSegment, facingSide, polygonSides, SIDES, snapAngle, type Pt, type Side } from "./geometry";
 import { icon } from "./icons";
-import { behindModel, blankScene, followModel, normalizeModel, normalizeScene, type ProjectModel, type SceneData } from "./scene/model";
+import { behindModel, blankScene, followModel, normalizeModel, normalizeScene, packModel, type ProjectModel, type SceneData } from "./scene/model";
 import type { ModelStore } from "./scene/render";
 import type { SceneModel } from "./scene/workspace";
 import { type DetailInfo, isDetail, isScene, placeholderPicture, SceneLayer } from "./sceneLayer";
@@ -982,7 +982,8 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
           ? {
               model,
               saveModel: async (m: ProjectModel) => {
-                await opts.saveModel!(m);
+                // Saved with each model once (copies of a part share it).
+                await opts.saveModel!(packModel(m));
                 projectModel = m;
               },
             }

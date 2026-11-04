@@ -51,8 +51,11 @@ export function bounds(pos: Float32Array): { min: [number, number, number]; max:
   return { min, max };
 }
 
-/** Models carried inside a graphic are kept to this size. */
+/** Models carried inside a graphic are kept to this size (packed, see mesh.ts). */
 export const MAX_EMBED = 6_000_000;
+
+export const tooBigToCarry = (name: string, bytes: number) =>
+  `${name} is ${(bytes / 1e6).toFixed(1)} MB even packed small. Models carried in a graphic can be up to ${MAX_EMBED / 1e6} MB: add it to your project's files and pick it from there, or simplify it.`;
 
 export function toBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
