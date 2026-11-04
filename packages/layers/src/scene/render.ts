@@ -350,7 +350,12 @@ export class LineArt {
       pts.push(from.x, from.y, from.z, to.x, to.y, to.z);
     }
     if (!pts.length) return;
-    this.draftMaterial ??= new LineMaterial({ color: 0, linewidth: 1, worldUnits: false, dashed: true, dashSize: 3, gapSize: 2 });
+    const dashed = !style.draftSolid;
+    if (this.draftMaterial && this.draftMaterial.dashed !== dashed) {
+      this.draftMaterial.dispose();
+      this.draftMaterial = null;
+    }
+    this.draftMaterial ??= new LineMaterial({ color: 0, linewidth: 1, worldUnits: false, dashed, dashSize: 3, gapSize: 2 });
     this.draftMaterial.color.set(style.line);
     const geo = new LineSegmentsGeometry().setPositions(pts);
     this.draft = new LineSegments2(geo, this.draftMaterial);

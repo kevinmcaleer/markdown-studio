@@ -3,7 +3,10 @@
 
 import { Circle, Ellipse, FabricObject, FabricText, Group, Path, Polygon, Rect, Textbox } from "fabric";
 import { Connector } from "./connector";
-import { CROSS, CURVED_SOLID, HELP, NO_SIGN, ROTATE, TICK } from "./symbols";
+import {
+  ALLEN_KEY, CAREFUL, CROSS, CURVED_SOLID, FIGURE, GLUE_GUN, HAMMER, HELP, NO_SIGN, NUT, PLIERS, POINTING_HAND, PRINTER_3D, ROTATE, SCREW, SCREWDRIVER,
+  SOLDERING_IRON, TICK, TWO_PEOPLE,
+} from "./symbols";
 import { measureTextAtRealSize } from "./textMeasure";
 
 // Letters are measured at the size they are drawn, so the caret and centring match (see textMeasure.ts).
@@ -92,6 +95,39 @@ export const SYMBOLS: ShapeKind[] = [
   { id: "panel", label: "Parts box", svg: '<rect x="7" y="9" width="34" height="30" rx="7" fill="none" stroke="currentColor" stroke-width="3"/>' },
 ];
 
+/** A tile drawing of a symbol path that is `w` × `h`, fitted into the 48 × 48 tile. */
+function sym(path: string, w: number, h: number): string {
+  const s = 36 / Math.max(w, h);
+  const tx = (48 - w * s) / 2;
+  const ty = (48 - h * s) / 2;
+  return `<g transform="translate(${tx.toFixed(1)} ${ty.toFixed(1)}) scale(${s.toFixed(3)})"><path d="${path}" fill="currentColor"/></g>`;
+}
+
+/** People and attention marks: the kevsrobots assembly figure, two people, careful, a pointing hand, and a right/wrong pair of frames. */
+export const FIGURES: ShapeKind[] = [
+  { id: "figure", label: "Assembly figure", svg: sym(FIGURE, 200, 300) },
+  { id: "two-people", label: "Two people needed", svg: sym(TWO_PEOPLE, 460, 330) },
+  { id: "careful", label: "Careful here", svg: sym(CAREFUL, 200, 180) },
+  { id: "hand", label: "Pointing hand", svg: sym(POINTING_HAND, 220, 160) },
+  { id: "do-dont", label: "Right and wrong (two frames)", svg: '<rect x="4" y="18" width="18" height="24" rx="3" fill="none" stroke="currentColor" stroke-width="2.5"/><rect x="26" y="18" width="18" height="24" rx="3" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M8 10l3 3 5-6" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M31 7l6 6M37 7l-6 6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>' },
+];
+
+/** Tools and fixings, drawn as bold silhouettes for a tools row or a step. */
+export const TOOLS: ShapeKind[] = [
+  { id: "screwdriver", label: "Screwdriver", svg: sym(SCREWDRIVER, 200, 44) },
+  { id: "allen-key", label: "Allen key", svg: sym(ALLEN_KEY, 70, 130) },
+  { id: "pliers", label: "Pliers", svg: sym(PLIERS, 200, 200) },
+  { id: "soldering-iron", label: "Soldering iron", svg: sym(SOLDERING_IRON, 240, 70) },
+  { id: "glue-gun", label: "Hot glue gun", svg: sym(GLUE_GUN, 210, 160) },
+  { id: "hammer", label: "Hammer", svg: sym(HAMMER, 100, 180) },
+  { id: "printer", label: "3D printer", svg: sym(PRINTER_3D, 200, 180) },
+  { id: "screw", label: "Screw", svg: sym(SCREW, 60, 210) },
+  { id: "nut", label: "Nut", svg: sym(NUT, 100, 100) },
+];
+
+/** Every assembly-sheet element, for "does this kind start in black ink". */
+export const INK_KINDS = new Set([...SYMBOLS, ...FIGURES, ...TOOLS].map(s => s.id));
+
 const ARROW = "M 0 40 L 200 40 M 170 10 L 200 40 L 170 70";
 const CURVED = "M 0 160 C 30 60 100 20 200 30 M 165 0 L 200 30 L 168 64";
 const BUBBLE = "M 0 0 L 240 0 L 240 150 L 110 150 L 60 200 L 60 150 L 0 150 Z";
@@ -129,6 +165,18 @@ export function badge(n: number, at: Point, color = ACCENT): Group {
   return named(g, `Step ${n}`);
 }
 
+/**
+ * A right-and-wrong pair, as on a flat-pack sheet: two white frames side by
+ * side, a tick over the left one and a cross over the right. One group, so
+ * it moves together; Ungroup to change the pieces.
+ */
+export function doDont(at: Point, color: string): Group {
+  const frame = (x: number) => new Rect({ left: x, top: 150, width: 420, height: 320, rx: 28, ry: 28, fill: "#ffffff", stroke: color, strokeWidth: 6, strokeUniform: true });
+  const mark = (d: string, x: number) => new Path(d, { left: x, top: 0, fill: color, scaleX: 1.2, scaleY: 1.2 });
+  const g = new Group([frame(0), frame(480), mark(TICK, 150), mark(CROSS, 630)], { left: at.x, top: at.y });
+  return named(g, "Right and wrong");
+}
+
 export function makeShape(kind: string, at: Point, color: string): FabricObject | null {
   const base = { left: at.x, top: at.y };
   const fill = { fill: color, stroke: "", strokeWidth: 0, strokeUniform: true };
@@ -158,6 +206,20 @@ export function makeShape(kind: string, at: Point, color: string): FabricObject 
     case "qty": return named(new Textbox("1x", { ...base, fontFamily: FONTS[0][1], fontSize: 56, fontWeight: "600", fill: color, width: 110, textAlign: "center" }), "Quantity");
     case "step-plain": return named(new Textbox("1.", { ...base, fontFamily: FONTS[0][1], fontSize: 140, fontWeight: "900", fill: color, width: 170 }), "Step number");
     case "panel": return named(new Rect({ ...base, width: 420, height: 300, rx: 36, ry: 36, fill: "#ffffff", stroke: color, strokeWidth: 6, strokeUniform: true }), "Parts box");
+    case "figure": return named(new Path(FIGURE, { ...base, ...fill }), "Assembly figure");
+    case "two-people": return named(new Path(TWO_PEOPLE, { ...base, ...fill }), "Two people");
+    case "careful": return named(new Path(CAREFUL, { ...base, ...fill }), "Careful");
+    case "hand": return named(new Path(POINTING_HAND, { ...base, ...fill }), "Pointing hand");
+    case "do-dont": return doDont(at, color);
+    case "screwdriver": return named(new Path(SCREWDRIVER, { ...base, ...fill }), "Screwdriver");
+    case "allen-key": return named(new Path(ALLEN_KEY, { ...base, ...fill }), "Allen key");
+    case "pliers": return named(new Path(PLIERS, { ...base, ...fill }), "Pliers");
+    case "soldering-iron": return named(new Path(SOLDERING_IRON, { ...base, ...fill }), "Soldering iron");
+    case "glue-gun": return named(new Path(GLUE_GUN, { ...base, ...fill }), "Hot glue gun");
+    case "hammer": return named(new Path(HAMMER, { ...base, ...fill }), "Hammer");
+    case "printer": return named(new Path(PRINTER_3D, { ...base, ...fill }), "3D printer");
+    case "screw": return named(new Path(SCREW, { ...base, ...fill }), "Screw");
+    case "nut": return named(new Path(NUT, { ...base, ...fill }), "Nut");
     default: return null;
   }
 }

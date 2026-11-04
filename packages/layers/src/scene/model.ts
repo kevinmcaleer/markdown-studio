@@ -103,6 +103,8 @@ export interface SceneStyle {
   ghost: string;
   /** Dashed draft lines in an exploded view, from each part back to where it fits. On unless false. */
   draft?: boolean;
+  /** Draft lines drawn solid and thin, as on printed flat-pack sheets, instead of dashed. */
+  draftSolid?: boolean;
 }
 
 export interface SceneData {
@@ -283,6 +285,7 @@ export function normalizeScene(value: unknown): SceneData {
     ghost: colour(s.ghost, d.ghost),
   };
   if (s.draft === false) style.draft = false;
+  if (s.draftSolid === true) style.draftSolid = true;
   const out: SceneData = { version: 1, parts, camera, style, explode: num(v.explode, 0, 0, 1) };
   if (v.model && typeof v.model === "object") out.model = { stamp: num((v.model as { stamp?: unknown }).stamp, 0, 0) };
   const views = normalizeViews(v.views);
@@ -398,7 +401,7 @@ export function highlightedParts(parts: ScenePart[]): Set<string> {
 /** The style a preset gives, keeping the highlight colour already chosen. */
 export function applyPreset(style: SceneStyle, id: string): SceneStyle {
   const p = STYLE_PRESETS.find(x => x.id === id);
-  return p ? { ...p.style, highlight: style.highlight, ghost: style.ghost, ...(style.draft === false ? { draft: false } : {}), preset: p.id } : style;
+  return p ? { ...p.style, highlight: style.highlight, ghost: style.ghost, ...(style.draft === false ? { draft: false } : {}), ...(style.draftSolid ? { draftSolid: true } : {}), preset: p.id } : style;
 }
 
 export function newPartId(parts: ScenePart[]): string {
