@@ -26,6 +26,7 @@ export {
 } from "./mount";
 export { DraftKeeper, readDraft, writeDraft, clearDraft, recoverableDraft, type DraftOptions, type DraftState, type StoredDraft } from "./draft";
 export { linkPopover, openLinkPopover } from "./format/linkPopover";
+export { findLinkTargets, headingSlug, linkTargetsOn, type LinkTarget } from "./format/linkTargets";
 export { calloutPicker, calloutTypeAt, calloutChoices } from "./calloutPicker";
 
 // ---------------------------------------------------------------- the editor

@@ -2,6 +2,7 @@ import { syntaxTree } from "@codemirror/language";
 import { StateEffect, StateField, type EditorState, type Extension } from "@codemirror/state";
 import { EditorView, keymap, showTooltip, type Tooltip } from "@codemirror/view";
 import { linkPrompt } from "./formatting";
+import { filterTargets, linkTargets, targetFor, targetQuery, type LinkTarget } from "./linkTargets";
 
 // The link popover: Mod-K or the Link button asks for the URL and the text in
 // a small form at the cursor, the way EasyMDE's promptURLs does, instead of
@@ -10,6 +11,12 @@ import { linkPrompt } from "./formatting";
 // With the caret on a link, or on a bare URL pasted in from a spreadsheet, a
 // card shows under it as in Google Docs: the link, and buttons to copy it,
 // edit it (give a bare URL a name) or remove it, keeping its text.
+//
+// When the host turns on link targets (linkTargets.ts), the URL field offers
+// the text's own headings, and its pages, in a short list under it: shown
+// while the field is empty or starts with "#", and narrowed as the writer
+// types a heading's words. A pasted URL hides it. A `#heading` link's card
+// takes the caret to that heading.
 
 export type LinkDraft = { from: number; to: number; text: string; url: string };
 
@@ -160,6 +167,7 @@ function cardTooltip(link: LinkAt): Tooltip {
       const dom = linkCard(link, {
         edit: editable ? () => openLinkPopover(view) : undefined,
         remove: editable && !link.bare ? remove : undefined,
+        ...internalLink(view, link.url),
       });
       return { dom };
     },
@@ -193,8 +201,18 @@ function iconButton(label: string, path: string, run: () => void): HTMLButtonEle
   return button;
 }
 
-/** The card for a link: where it goes, and copy, edit and remove buttons. */
-export function linkCard(link: LinkAt, actions: { edit?: () => void; remove?: () => void }): HTMLElement {
+/** For a `#id` link, when the host has link targets: what it goes to, and a way there. */
+export function internalLink(view: EditorView, url: string): { go?: () => void; goes?: string } {
+  if (!url.startsWith("#")) return {};
+  const targets = linkTargets(view.state);
+  if (!targets.length) return {};
+  const target = targetFor(targets, url);
+  if (!target) return { goes: `No heading ${url} in this project` };
+  return { go: () => goToTarget(view, url), goes: target.kind === "page" ? `Goes to page ${target.page}` : `Goes to “${target.text}”` };
+}
+
+/** The card for a link: where it goes, and copy, edit and remove buttons. `go` follows a link within the text. */
+export function linkCard(link: LinkAt, actions: { edit?: () => void; remove?: () => void; go?: () => void; goes?: string }): HTMLElement {
   const dom = document.createElement("div");
   dom.className = "cm-link-card";
   dom.setAttribute("role", "dialog");
@@ -209,7 +227,7 @@ export function linkCard(link: LinkAt, actions: { edit?: () => void; remove?: ()
   const main = document.createElement("div");
   main.className = "cm-link-card-main";
   const followable = /^(?:https?:|mailto:)/i.test(link.url);
-  const title = document.createElement(followable ? "a" : "span");
+  const title = document.createElement(followable ? "a" : actions.go ? "button" : "span");
   title.className = "cm-link-card-title";
   title.textContent = link.text.trim() || shortUrl(link.url) || "Empty link";
   if (title instanceof HTMLAnchorElement) {
@@ -218,9 +236,20 @@ export function linkCard(link: LinkAt, actions: { edit?: () => void; remove?: ()
     title.rel = "noopener noreferrer";
     title.title = `Open ${link.url}`;
   }
+  if (title instanceof HTMLButtonElement && actions.go) {
+    const go = actions.go;
+    title.type = "button";
+    title.title = "Go to it";
+    title.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      go();
+    });
+  }
   const where = document.createElement("span");
   where.className = "cm-link-card-url";
-  where.textContent = link.text.trim() ? shortUrl(link.url) : link.bare ? "No name yet" : "";
+  where.textContent = actions.goes ?? (link.text.trim() ? shortUrl(link.url) : link.bare ? "No name yet" : "");
+  if (actions.goes && !actions.go) where.classList.add("cm-link-card-missing");
   main.append(title, ...(where.textContent ? [where] : []));
 
   const tools = document.createElement("div");
@@ -242,7 +271,12 @@ export function linkCard(link: LinkAt, actions: { edit?: () => void; remove?: ()
 }
 
 /** The form for a link's text and URL. */
-export function linkForm(draft: { text: string; url: string }, save: (markdown: string) => void, cancel: () => void): HTMLFormElement {
+export function linkForm(
+  draft: { text: string; url: string },
+  save: (markdown: string) => void,
+  cancel: () => void,
+  targets: LinkTarget[] = [],
+): HTMLFormElement {
   const dom = document.createElement("form");
   dom.className = "cm-link-popover";
   dom.setAttribute("aria-label", "Link");
@@ -261,9 +295,15 @@ export function linkForm(draft: { text: string; url: string }, save: (markdown: 
   const text = row("Text", draft.text, "Link text");
   // A text field rather than type="url", which turns away site-relative
   // links ("/projects", "./notes.md", "#parts"); inputMode keeps the URL keyboard.
-  const url = row("URL", draft.url, "https://… or /page");
+  const url = row("URL", draft.url, targets.length ? "Paste a link, or find a heading" : "https://… or /page");
   url.inputMode = "url";
   url.autocapitalize = "off";
+  const list = targets.length ? targetList(url, targets, (t) => {
+    url.value = `#${t.id}`;
+    if (!text.value.trim()) text.value = t.kind === "page" && t.title ? t.title : t.text;
+    save(linkMarkdown(text.value, url.value));
+  }) : null;
+  if (list) dom.append(list);
   const actions = document.createElement("div");
   actions.className = "cm-link-actions";
   const cancelButton = document.createElement("button");
@@ -278,7 +318,7 @@ export function linkForm(draft: { text: string; url: string }, save: (markdown: 
 
   cancelButton.addEventListener("click", cancel);
   dom.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
+    if (e.key === "Escape" && !e.defaultPrevented) {
       e.preventDefault();
       e.stopPropagation();
       cancel();
@@ -292,6 +332,134 @@ export function linkForm(draft: { text: string; url: string }, save: (markdown: 
   // Start where there's something to type: the URL, unless it's already there.
   queueMicrotask(() => (draft.url && !draft.text ? text : url).focus());
   return dom;
+}
+
+const PAGE_ICON = "M4.5 2.5h5l2 2v9h-7zM9.5 2.5v2h2";
+
+/**
+ * The list of headings and pages under the URL field. It shows while the
+ * field has the focus and holds nothing, a "#…" or plain words, and hides for
+ * a URL. Up and Down move through it, Enter or a click picks, Escape hides it.
+ */
+function targetList(url: HTMLInputElement, targets: LinkTarget[], pick: (t: LinkTarget) => void): HTMLElement {
+  const box = document.createElement("div");
+  box.className = "cm-link-targets";
+  box.hidden = true;
+  const caption = document.createElement("div");
+  caption.className = "cm-link-targets-caption";
+  caption.textContent = "In this project";
+  const ul = document.createElement("ul");
+  ul.setAttribute("role", "listbox");
+  ul.id = `cm-link-targets-${Math.random().toString(36).slice(2, 9)}`;
+  ul.setAttribute("aria-label", "Headings in this project");
+  box.append(caption, ul);
+  url.setAttribute("role", "combobox");
+  url.setAttribute("aria-autocomplete", "list");
+  url.setAttribute("aria-controls", ul.id);
+  url.setAttribute("aria-expanded", "false");
+  // Keep the focus in the URL field when the list is clicked.
+  box.addEventListener("mousedown", (e) => e.preventDefault());
+
+  const paged = targets.some((t) => t.kind === "page");
+  const top = Math.min(...targets.filter((t) => t.kind === "heading").map((t) => t.level), 6);
+  let shown: LinkTarget[] = [];
+  let active = -1;
+  let hushed = false;
+
+  const mark = () => {
+    ul.querySelectorAll<HTMLElement>("[role=option]").forEach((li, i) => {
+      li.setAttribute("aria-selected", String(i === active));
+      if (i === active) {
+        url.setAttribute("aria-activedescendant", li.id);
+        li.scrollIntoView({ block: "nearest" });
+      }
+    });
+    if (active < 0) url.removeAttribute("aria-activedescendant");
+  };
+
+  const render = () => {
+    const query = targetQuery(url.value);
+    const open = document.activeElement === url && !hushed && query !== null;
+    shown = open ? filterTargets(targets, query) : [];
+    box.hidden = !shown.length;
+    url.setAttribute("aria-expanded", String(!box.hidden));
+    ul.replaceChildren(
+      ...shown.map((t, i) => {
+        const li = document.createElement("li");
+        li.id = `${ul.id}-${i}`;
+        li.setAttribute("role", "option");
+        li.className = `cm-link-target cm-link-target-${t.kind}`;
+        // Headings sit under their page and under the heading above them.
+        const depth = t.kind === "page" ? 0 : Math.max(0, t.level - top) + (paged ? 1 : 0);
+        li.style.setProperty("--depth", String(query ? (t.kind === "page" ? 0 : Math.min(depth, 1)) : depth));
+        const glyph = document.createElement("span");
+        glyph.className = "cm-link-target-icon";
+        if (t.kind === "page") glyph.innerHTML = icon(PAGE_ICON);
+        else glyph.textContent = "#";
+        const name = document.createElement("span");
+        name.className = "cm-link-target-text";
+        name.textContent = t.text;
+        li.append(glyph, name);
+        // While searching, a page names its first heading and a heading its page
+        // (otherwise they sit together in the list already).
+        const hint = !query ? "" : t.kind === "page" ? t.title : paged ? `Page ${t.page}` : "";
+        if (hint) {
+          const note = document.createElement("span");
+          note.className = "cm-link-target-hint";
+          note.textContent = hint;
+          li.append(note);
+        }
+        li.title = `#${t.id}`;
+        li.addEventListener("click", () => pick(t));
+        li.addEventListener("mousemove", () => {
+          if (active !== i) {
+            active = i;
+            mark();
+          }
+        });
+        return li;
+      }),
+    );
+    // Typing a heading's words picks the best match; an empty field picks nothing yet.
+    active = query && shown.length ? 0 : -1;
+    mark();
+  };
+
+  url.addEventListener("focus", render);
+  url.addEventListener("blur", () => {
+    box.hidden = true;
+    url.setAttribute("aria-expanded", "false");
+  });
+  url.addEventListener("input", () => {
+    hushed = false;
+    render();
+  });
+  url.addEventListener("keydown", (e) => {
+    if (box.hidden) {
+      if (e.key === "ArrowDown" && hushed) {
+        hushed = false;
+        render();
+        e.preventDefault();
+      }
+      return;
+    }
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const step = e.key === "ArrowDown" ? 1 : -1;
+      active = active < 0 ? (step > 0 ? 0 : shown.length - 1) : (active + step + shown.length) % shown.length;
+      mark();
+    } else if (e.key === "Enter" && active >= 0) {
+      e.preventDefault();
+      pick(shown[active]);
+    } else if (e.key === "Escape") {
+      // First Escape hides the list; the next one closes the form.
+      e.preventDefault();
+      e.stopPropagation();
+      hushed = true;
+      render();
+    }
+  });
+  return box;
 }
 
 function formTooltip(view: EditorView, draft: LinkDraft) {
@@ -311,8 +479,18 @@ function formTooltip(view: EditorView, draft: LinkDraft) {
       view.dispatch({ effects: close.of(null) });
       view.focus();
     },
+    linkTargets(view.state),
   );
   return { dom };
+}
+
+/** Takes the caret to the heading (or page) a `#id` link goes to; false if the text hasn't got it. */
+export function goToTarget(view: EditorView, url: string): boolean {
+  const target = targetFor(linkTargets(view.state), url);
+  if (!target) return false;
+  view.dispatch({ selection: { anchor: target.from }, effects: EditorView.scrollIntoView(target.from, { y: "start", yMargin: 80 }) });
+  view.focus();
+  return true;
 }
 
 /** Opens the popover for the selection. False in a read-only editor. */
@@ -342,7 +520,7 @@ const theme = EditorView.theme({
     color: "var(--text)",
   },
   ".cm-link-popover label": { display: "grid", gridTemplateColumns: "2.6rem 1fr", alignItems: "center", gap: "0.4rem" },
-  ".cm-link-popover span": { color: "var(--muted)" },
+  ".cm-link-popover label > span": { color: "var(--muted)" },
   ".cm-link-popover input": {
     font: "inherit",
     padding: "0.3rem 0.45rem",
@@ -388,7 +566,47 @@ const theme = EditorView.theme({
     overflow: "hidden",
     textOverflow: "ellipsis",
   },
-  "a.cm-link-card-title:hover": { textDecoration: "underline" },
+  "a.cm-link-card-title:hover, button.cm-link-card-title:hover": { textDecoration: "underline" },
+  "button.cm-link-card-title": { font: "inherit", padding: "0", border: "0", background: "none", cursor: "pointer", textAlign: "left" },
+  ".cm-link-card-missing": { color: "var(--danger, #b42318)" },
+  ".cm-link-targets": { display: "grid", gap: "0.2rem", margin: "-0.1rem 0 0 3rem" },
+  ".cm-link-targets[hidden]": { display: "none" },
+  ".cm-link-targets-caption": { fontSize: "11px", fontWeight: "600", letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--muted)" },
+  ".cm-link-targets ul": {
+    listStyle: "none",
+    margin: "0",
+    padding: "0.2rem",
+    maxHeight: "12.5rem",
+    overflowY: "auto",
+    border: "1px solid var(--border)",
+    borderRadius: "8px",
+    background: "var(--bg)",
+  },
+  ".cm-link-target": {
+    display: "flex",
+    alignItems: "center",
+    gap: "0.4rem",
+    padding: "0.28rem 0.45rem",
+    paddingLeft: "calc(0.45rem + var(--depth, 0) * 0.85rem)",
+    borderRadius: "6px",
+    cursor: "pointer",
+    lineHeight: "1.3",
+  },
+  ".cm-link-target[aria-selected=true]": { background: "color-mix(in srgb, var(--accent) 14%, transparent)" },
+  ".cm-link-target-icon": {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: "14px",
+    flex: "none",
+    color: "var(--muted)",
+    fontFamily: "var(--font-mono, monospace)",
+    fontSize: "12px",
+  },
+  ".cm-link-target-icon svg": { width: "14px", height: "14px" },
+  ".cm-link-target-text": { flex: "1", minWidth: "0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+  ".cm-link-target-page .cm-link-target-text": { fontWeight: "600" },
+  ".cm-link-target-hint": { flex: "none", maxWidth: "45%", color: "var(--muted)", fontSize: "12px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
   ".cm-link-card-url": { color: "var(--muted)", fontSize: "12px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
   ".cm-link-card-tools": { display: "flex", gap: "2px", flex: "none" },
   ".cm-link-card-tools button": {
