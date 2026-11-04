@@ -249,6 +249,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         drawQueued = 0;
         if (closed) return;
         art.arrows = !!scene.arrows;
+        art.setSelected(shownJoint ? "" : selectedId);
         art.draw(camera, viewW, viewH, Math.min(2, window.devicePixelRatio || 1));
         placeSnaps();
         placeDial();

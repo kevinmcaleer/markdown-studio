@@ -1,7 +1,8 @@
 import { Vector3 } from "three";
 import { describe, expect, it } from "vitest";
-import { magnifiedCamera, pagePoints, worldMatrices } from "./render";
+import { magnifiedCamera, pagePoints, selectedFill, worldMatrices } from "./render";
 import type { ScenePart } from "./model";
+import { HIGHLIGHT } from "./model";
 
 const at = (m: { elements: ArrayLike<number> }, p: [number, number, number]) => new Vector3(...p).applyMatrix4(m as never).toArray().map(n => Math.round(n * 1000) / 1000 + 0);
 
@@ -86,5 +87,22 @@ describe("magnifiedCamera", () => {
     expect(Math.abs(c.target[0])).toBeCloseTo(100);
     expect(c.target[2]).toBeCloseTo(50);
     expect(c.size).toBeCloseTo(50);
+  });
+});
+
+describe("selectedFill", () => {
+  const light = (hex: string) => {
+    const n = parseInt(hex.slice(1), 16);
+    return ((n >> 16) * 0.299 + ((n >> 8) & 255) * 0.587 + (n & 255) * 0.114) / 255;
+  };
+
+  it("is a clearly darker shade of the highlight, so a picked part stands out in a highlighted branch", () => {
+    const sel = selectedFill(HIGHLIGHT);
+    expect(sel).not.toBe(HIGHLIGHT);
+    expect(light(HIGHLIGHT) - light(sel)).toBeGreaterThan(0.2);
+  });
+
+  it("goes lighter instead for an already dark highlight", () => {
+    expect(light(selectedFill("#202060"))).toBeGreaterThan(light("#202060"));
   });
 });

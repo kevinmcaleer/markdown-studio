@@ -298,6 +298,8 @@ export class LineArt {
   private objects: PartObjects[] = [];
   private lineMaterials = new Map<string, LineMaterial>();
   private style: SceneStyle | null = null;
+  /** The part picked in the workspace: filled a stronger shade of the highlight, so it stands out (never in a saved picture). */
+  private selected = "";
   /** Dashed draft lines: each exploded part's path back to where it fits. */
   private draft: LineSegments2 | null = null;
   private draftMaterial: LineMaterial | null = null;
@@ -346,7 +348,7 @@ export class LineArt {
     const world = worldMatrices(list.map(x => x.part), explode);
     const lit = highlightedParts(list.map(x => x.part));
     list.forEach(({ part, model }, i) => {
-      const fillColour = part.ghost ? style.fill : lit.has(part.id) ? style.highlight : style.fill;
+      const fillColour = this.fillOf(part, lit);
       const fill = new Mesh(model.geometry, new MeshBasicMaterial({ color: fillColour, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1, clippingPlanes: this.clip, side: this.section ? DoubleSide : FrontSide }));
       fill.userData.partId = part.id;
       const group = new Group();
@@ -459,7 +461,7 @@ export class LineArt {
       const part = o.part;
       const main = new ShaderMaterial({
         uniforms: {
-          fill: { value: new Color(part.ghost ? style.fill : lit.has(part.id) ? style.highlight : style.fill) },
+          fill: { value: new Color(this.fillOf(part, lit)) },
           line: { value: new Color(part.ghost ? style.ghost : style.line) },
           angle: { value: angle * DEG },
           spacing: { value: spacing },
@@ -596,6 +598,27 @@ export class LineArt {
     this.draft.raycast = () => {};
     this.draft.renderOrder = 2;
     this.draftScene.add(this.draft);
+  }
+
+  /** A part's fill: the selected part's stronger shade, the highlight, or the plain fill. */
+  private fillOf(part: ScenePart, lit: Set<string>): string {
+    const style = this.style!;
+    if (part.id === this.selected) return selectedFill(style.highlight);
+    return part.ghost ? style.fill : lit.has(part.id) ? style.highlight : style.fill;
+  }
+
+  /** Marks the part picked in the workspace ("" for none), refilling the parts without rebuilding them. */
+  setSelected(id: string): void {
+    if (id === this.selected) return;
+    this.selected = id;
+    if (!this.style) return;
+    const lit = highlightedParts(this.objects.map(o => o.part));
+    for (const o of this.objects) {
+      const c = this.fillOf(o.part, lit);
+      (o.fill.material as MeshBasicMaterial).color.set(c);
+      const cap = o.caps?.main.material as ShaderMaterial | undefined;
+      if (cap) (cap.uniforms.fill.value as Color).set(c);
+    }
   }
 
   /** Follows the parts' new places without rebuilding the scene. */
@@ -878,6 +901,19 @@ function idColour(n: number): number {
 }
 
 /** Half the size of a sphere round the visible parts, for framing. */
+/**
+ * The selected part's fill: the highlight colour made clearly darker (or,
+ * for an already dark highlight, lighter), so it stands out from a
+ * highlighted branch as well as from plain parts.
+ */
+export function selectedFill(highlight: string): string {
+  const c = new Color(highlight);
+  const hsl = { h: 0, s: 0, l: 0 };
+  c.getHSL(hsl);
+  const l = hsl.l < 0.4 ? Math.min(1, hsl.l + 0.25) : hsl.l - 0.25;
+  return `#${c.setHSL(hsl.h, Math.min(1, hsl.s + 0.1), l).getHexString()}`;
+}
+
 export function radiusOf(box: Box3): number {
   return box.isEmpty() ? 50 : box.getSize(new Vector3()).length() / 2;
 }
