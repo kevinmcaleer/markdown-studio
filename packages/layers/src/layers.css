@@ -582,3 +582,46 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
   line-height: 1.3;
   text-align: center;
 }
+
+/* Join snaps: dots over the view at a face's middle, corners, edges and holes. */
+.lyr-scene-snaps { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.lyr-snap {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border: 2px solid #1f6fe0;
+  border-radius: 50%;
+  background: #fff;
+  box-sizing: border-box;
+}
+.lyr-snap-corner { border-radius: 2px; }
+.lyr-snap-edge { transform: rotate(45deg); border-radius: 1px; }
+.lyr-snap-hole, .lyr-snap-rim { width: 13px; height: 13px; margin: -6.5px 0 0 -6.5px; background: transparent; }
+.lyr-snap-hole::before, .lyr-snap-rim::before { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: #1f6fe0; }
+.lyr-snap.lyr-on { width: 15px; height: 15px; margin: -7.5px 0 0 -7.5px; background: #1f6fe0; box-shadow: 0 0 0 3px rgb(31 111 224 / 0.25); }
+.lyr-snap-edge.lyr-on { width: 13px; height: 13px; margin: -6.5px 0 0 -6.5px; }
+.lyr-snap.lyr-on::before { background: #fff; }
+.lyr-snap-picked { width: 13px; height: 13px; margin: -6.5px 0 0 -6.5px; border-color: #d9480f; background: #ff922b; }
+.lyr-snap-label {
+  position: absolute;
+  transform: translate(12px, -50%);
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #1f6fe0;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Parts list as a tree: joined parts sit under the part they're joined to,
+   with their joint as a row between. */
+.lyr-scene-list > li.lyr-scene-row { padding-left: calc(var(--depth, 0) * 18px); }
+.lyr-scene-joint-row .lyr-scene-name { height: 26px; font-size: 12px; color: var(--lyr-muted); }
+.lyr-scene-joint-row .lyr-scene-name .lyr-icon { color: #1f6fe0; }
+.lyr-scene-joint-row .lyr-icon-btn { height: 24px; }
+.lyr-scene-joint-row.lyr-on .lyr-scene-name { color: #1f6fe0; }
+.lyr-snap-faint { opacity: 0.45; }
+.lyr-snap-faint.lyr-snap-hole::before, .lyr-snap-faint.lyr-snap-rim::before { background: #1f6fe0; }
+.lyr-snap-joined { width: 13px; height: 13px; margin: -6.5px 0 0 -6.5px; background: #1f6fe0; }

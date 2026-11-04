@@ -70,6 +70,8 @@ export interface SceneStyle {
   highlight: string;
   /** Lines of ghost parts (fitted in an earlier step); their fill is a pale mix of fill and this. */
   ghost: string;
+  /** Dashed draft lines in an exploded view, from each part back to where it fits. On unless false. */
+  draft?: boolean;
 }
 
 export interface SceneData {
@@ -207,13 +209,14 @@ export function normalizeScene(value: unknown): SceneData {
     highlight: colour(s.highlight, d.highlight),
     ghost: colour(s.ghost, d.ghost),
   };
+  if (s.draft === false) style.draft = false;
   return { version: 1, parts, camera, style, explode: num(v.explode, 0, 0, 1) };
 }
 
 /** The style a preset gives, keeping the highlight colour already chosen. */
 export function applyPreset(style: SceneStyle, id: string): SceneStyle {
   const p = STYLE_PRESETS.find(x => x.id === id);
-  return p ? { ...p.style, highlight: style.highlight, ghost: style.ghost, preset: p.id } : style;
+  return p ? { ...p.style, highlight: style.highlight, ghost: style.ghost, ...(style.draft === false ? { draft: false } : {}), preset: p.id } : style;
 }
 
 export function newPartId(parts: ScenePart[]): string {
