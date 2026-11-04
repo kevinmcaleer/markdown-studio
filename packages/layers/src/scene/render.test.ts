@@ -29,6 +29,13 @@ describe("worldMatrices", () => {
     expect(at(worldMatrices(parts, 0.5).get("arm")!, [0, 0, 0])).toEqual([100, 10, 25]);
     expect(at(worldMatrices(parts, 1).get("base")!, [0, 0, 0])).toEqual([100, 0, 0]);
   });
+
+  it("explodes a joint by its own amount, unless asked where it is assembled", () => {
+    const own = parts.map(p => (p.id === "arm" ? { ...p, explode: 1 } : p));
+    expect(at(worldMatrices(own, 0).get("arm")!, [0, 0, 0])).toEqual([100, 10, 50]);
+    expect(at(worldMatrices(own, 0.5).get("arm")!, [0, 0, 0])).toEqual([100, 10, 50]);
+    expect(at(worldMatrices(own, 0, false).get("arm")!, [0, 0, 0])).toEqual([100, 10, 0]);
+  });
 });
 
 describe("jointPlace", () => {

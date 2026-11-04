@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyPreset, blankScene, newPartId, normalizeScene, partName, placeBeside, wrapAngle } from "./model";
+import { applyPreset, blankScene, followModel, highlightedParts, newPartId, normalizeScene, partName, placeBeside, wrapAngle } from "./model";
 
 describe("normalizeScene", () => {
   it("gives a blank scene for nonsense", () => {
@@ -44,6 +44,24 @@ describe("normalizeScene", () => {
     expect(by.c.parent).toBeUndefined();
     expect(by.d.parent).toBe("a");
     expect(by.b.joint).toEqual({ normal: [0, 0, 1], distance: 20 });
+  });
+});
+
+describe("highlight and explode per part", () => {
+  const p = (id: string, parent?: string, extra: object = {}) => ({ id, name: id, position: [0, 0, 0], rotation: [0, 0, 0], ...(parent ? { parent } : {}), ...extra });
+
+  it("lights a whole branch, with a part turned off inside it", () => {
+    const parts = normalizeScene({ parts: [p("top"), p("bottom", "top", { highlight: true }), p("a", "bottom"), p("b", "a", { highlight: false }), p("c", "b"), p("d", "top")] }).parts;
+    expect([...highlightedParts(parts)].sort()).toEqual(["a", "bottom"]);
+  });
+
+  it("keeps a part's own explode, between 0 and 1, and a scene's settings when it follows the model", () => {
+    const scene = normalizeScene({ parts: [p("a"), p("b", "a", { explode: 3, highlight: false })] });
+    expect(scene.parts[1].explode).toBe(1);
+    expect(scene.parts[1].highlight).toBe(false);
+    const model = { version: 1 as const, stamp: 2, parts: scene.parts.map(x => ({ ...x, explode: undefined, highlight: undefined })) };
+    const after = followModel({ ...scene, model: { stamp: 1 } }, model);
+    expect(after.parts[1]).toMatchObject({ explode: 1, highlight: false });
   });
 });
 

@@ -510,12 +510,19 @@ function dedupe(snaps: Snap[]): Snap[] {
 }
 
 /** The snap nearest the pointer, in screen pixels, within its catch radius. */
-export function nearestSnap(screen: { x: number; y: number }[], snaps: Snap[], at: { x: number; y: number }, catchPx = 22, holePx = 40): number {
+/**
+ * The snap a pointer at `at` takes: the nearest within reach. A round
+ * snap (a hole, a rim, a round face's middle) also catches anywhere inside
+ * its circle as drawn (`reach`, px), so a wide hole's centre can be had from
+ * over the hole itself. `held` (the face held with ⌘/Ctrl): any distance.
+ */
+export function nearestSnap(screen: { x: number; y: number }[], snaps: Snap[], at: { x: number; y: number }, catchPx = 22, holePx = 40, reach: number[] = [], held = false): number {
   let best = -1;
   let bestD = Infinity;
   screen.forEach((p, i) => {
     const d = Math.hypot(p.x - at.x, p.y - at.y);
-    const lim = snaps[i].role === "hole" || snaps[i].role === "rim" ? holePx : catchPx;
+    const base = snaps[i].role === "hole" || snaps[i].role === "rim" ? holePx : catchPx;
+    const lim = held ? Infinity : Math.max(base, reach[i] || 0);
     if (d <= lim && d < bestD) {
       best = i;
       bestD = d;

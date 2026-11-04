@@ -534,7 +534,15 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
   .lyr-scene-stage { min-height: 60vh; }
 }
 .lyr-scene-explode { display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; height: 32px; color: inherit; }
-.lyr-scene-explode input { width: 110px; accent-color: var(--lyr-accent); }
+.lyr-scene-explode input[type=range] { width: 110px; accent-color: var(--lyr-accent); }
+.lyr-scene-explode-num { width: 48px; height: 26px; padding: 0 4px; border: 1px solid var(--lyr-line); border-radius: 6px; background: #fff; color: inherit; font: inherit; font-size: 12px; text-align: right; }
+.lyr-scene-explode-unit { margin-left: -3px; font-size: 12px; color: var(--lyr-muted); }
+.lyr-scene-list > li.lyr-scene-joint-explode { gap: 6px; padding-right: 2px; height: 30px; background: var(--lyr-hover); }
+.lyr-scene-joint-explode input[type=range] { flex: 1 1 auto; min-width: 0; margin-left: 28px; accent-color: var(--lyr-accent); }
+.lyr-scene-joint-explode .lyr-icon-btn { height: 24px; }
+.lyr-scene-joint-explode .lyr-icon-btn:disabled { opacity: 0.35; }
+/* Highlighted with the part above it, not by its own setting. */
+.lyr-icon-btn.lyr-on.lyr-inherited { opacity: 0.55; }
 .lyr-scene-explode:has(input:disabled) { opacity: 0.45; }
 .lyr-scene-canvas.lyr-scene-picking { cursor: crosshair; }
 .lyr-scene-join { margin-top: 10px; }
@@ -730,3 +738,16 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 /* A plain span, not <kbd>: host pages style kbd as a dark badge. */
 .lyr-scene-ctx-item .lyr-scene-ctx-keys { flex: none; padding: 0; background: none; color: var(--lyr-muted, #6b7280); font: inherit; font-size: 12px; }
 .lyr-scene-ctx-item.lyr-danger { color: #c62828; }
+
+/* The view cube in the picture's top right (as in Snakie's build workspace); never drawn into the picture. */
+.lyr-viewcube {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 6;
+  width: 104px;
+  height: 104px;
+  cursor: pointer;
+  filter: drop-shadow(0 4px 8px rgb(0 0 0 / 0.22));
+  touch-action: none;
+}

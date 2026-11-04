@@ -19,6 +19,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import type { SceneCamera, SceneData, ScenePart, SceneStyle, Vec3 } from "./model";
+import { explodeOf, highlightedParts } from "./model";
 import { readStep, isStepFile, type StepBody } from "./step";
 import { bounds, fromBase64, parseStl, stlFaces } from "./stl";
 
@@ -204,9 +205,10 @@ export function localMatrix(part: Pick<ScenePart, "position" | "rotation">): Mat
 /**
  * Every part's place in the world. A joined part sits in its parent's frame,
  * pushed out along its joint by `explode` of its distance, so exploding
- * moves a whole branch together.
+ * moves a whole branch together. A part's own explode wins over `explode`,
+ * unless `own` is false (where everything goes when assembled).
  */
-export function worldMatrices(parts: ScenePart[], explode = 0): Map<string, Matrix4> {
+export function worldMatrices(parts: ScenePart[], explode = 0, own = true): Map<string, Matrix4> {
   const byId = new Map(parts.map(p => [p.id, p]));
   const out = new Map<string, Matrix4>();
   const visit = (p: ScenePart, depth: number): Matrix4 => {
@@ -217,8 +219,9 @@ export function worldMatrices(parts: ScenePart[], explode = 0): Map<string, Matr
     let m = local;
     if (parent && depth < 64) {
       m = visit(parent, depth + 1).clone();
-      if (p.joint && explode > 0) {
-        const n = new Vector3(...p.joint.normal).normalize().multiplyScalar(p.joint.distance * explode);
+      const f = own ? explodeOf(p, explode) : explode;
+      if (p.joint && f > 0) {
+        const n = new Vector3(...p.joint.normal).normalize().multiplyScalar(p.joint.distance * f);
         m.multiply(new Matrix4().makeTranslation(n.x, n.y, n.z));
       }
       m.multiply(local);
@@ -276,8 +279,9 @@ export class LineArt {
     this.clear();
     this.style = style;
     const world = worldMatrices(list.map(x => x.part), explode);
+    const lit = highlightedParts(list.map(x => x.part));
     list.forEach(({ part, model }, i) => {
-      const fillColour = part.ghost ? style.fill : part.highlight ? style.highlight : style.fill;
+      const fillColour = part.ghost ? style.fill : lit.has(part.id) ? style.highlight : style.fill;
       const fill = new Mesh(model.geometry, new MeshBasicMaterial({ color: fillColour, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
       fill.userData.partId = part.id;
       const group = new Group();
@@ -315,19 +319,20 @@ export class LineArt {
       this.draft = null;
     }
     const style = this.style;
-    if (!style || explode <= 0 || style.draft === false || style.lineWidth <= 0) return;
+    if (!style || style.draft === false || style.lineWidth <= 0) return;
     const pts: number[] = [];
     const byId = new Map(this.objects.map(o => [o.part.id, o]));
     for (const o of this.objects) {
       const p = o.part;
-      if (!p.parent || !p.joint || p.hidden || p.ghost || p.joint.distance <= 0) continue;
+      const f = explodeOf(p, explode);
+      if (!p.parent || !p.joint || p.hidden || p.ghost || p.joint.distance <= 0 || f <= 0) continue;
       const parent = byId.get(p.parent);
       const m = world.get(p.id);
       const pm = world.get(p.parent);
       if (!parent || parent.part.hidden || !m || !pm) continue;
       const from = new Vector3(...(p.joint.childPoint || [0, 0, 0])).applyMatrix4(m);
       // The slide, turned into the world by the parent's frame.
-      const slide = new Vector3(...p.joint.normal).transformDirection(pm).multiplyScalar(p.joint.distance * explode);
+      const slide = new Vector3(...p.joint.normal).transformDirection(pm).multiplyScalar(p.joint.distance * f);
       if (slide.lengthSq() < 1e-6) continue;
       // Start at the part's leading end (a screw's tip, not its neck), so
       // the line isn't hidden inside the part.

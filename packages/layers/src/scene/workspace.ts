@@ -17,12 +17,15 @@ import {
   normalizeViews,
   type JointType, type NamedView, type PartJoint, type ProjectModel,
   type Box3 as PlainBox, type SceneCamera, type SceneData, type ScenePart, type SceneStyle, type Vec3,
+  explodeOf,
+  highlightedParts,
 } from "./model";
 import { applyJoint } from "./joint";
 import { frame, LineArt, modelFromPositions, modelFromStl, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
 import { MAX_EMBED, parseStl, toBase64, toBinaryStl } from "./stl";
 import { isStepFile, readStep, type StepBody } from "./step";
 import { toUrdf, zip } from "./urdf";
+import { createViewCube } from "./viewcube";
 import { MAX_SNAP_TRIANGLES, nearestSnap, Topology, type Face, type Snap } from "./snaps";
 
 export interface SceneModel {
@@ -146,7 +149,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
               </span>
               <button type="button" class="lyr-btn" data-act="fit" title="Fit the parts in the picture (F)">${icon("frame", 16)}<span>Fit</span></button>
               <span class="lyr-sep"></span>
-              <label class="lyr-scene-explode" title="Slide joined parts apart along their joints, to show how they fit">${icon("expand", 16)}<span>Explode</span><input type="range" min="0" max="100" step="1" data-explode value="0" aria-label="Explode"></label>
+              <label class="lyr-scene-explode" title="Slide joined parts apart along their joints, to show how they fit">${icon("expand", 16)}<span>Explode</span><input type="range" min="0" max="100" step="1" data-explode value="0" aria-label="Explode"><input type="number" class="lyr-scene-explode-num" min="0" max="100" step="1" data-explode-num value="0" aria-label="Explode, per cent"><span class="lyr-scene-explode-unit">%</span></label>
             </div>
             <div class="lyr-scene-frame"><canvas class="lyr-scene-canvas"></canvas></div>
             <div class="lyr-scene-help">Drag to look around, right-drag to pan, scroll to zoom. Hold Shift on a handle for 5 mm or 15° steps.</div>
@@ -236,8 +239,33 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         if (closed) return;
         art.draw(camera, viewW, viewH, Math.min(2, window.devicePixelRatio || 1));
         placeSnaps();
+        viewCube.sync(camera.quaternion);
+        viewCube.render();
       });
     }
+
+    // The view cube (as in Snakie's build workspace): click a face, edge or
+    // corner to glide round to it, or drag it to look around.
+    const viewCube = createViewCube({
+      size: 104,
+      onPick: d => {
+        // Straight down or up, a hair off so "up" stays Z (as the Top view does).
+        const dir: Vec3 = Math.abs(d.z) > 0.999 ? [0, -0.0001, Math.sign(d.z)] : [d.x, d.y, d.z];
+        glideTo({ ...scene.camera, direction: dir }, commit);
+      },
+      onOrbit: (dx, dy) => {
+        stopGlide();
+        const [x, y, z] = scene.camera.direction;
+        const len = Math.hypot(x, y, z) || 1;
+        const theta = Math.atan2(y, x) - dx * 0.01;
+        const phi = Math.max(0.01, Math.min(Math.PI - 0.01, Math.acos(Math.max(-1, Math.min(1, z / len))) - dy * 0.01));
+        scene.camera.direction = [round(Math.sin(phi) * Math.cos(theta), 5), round(Math.sin(phi) * Math.sin(theta), 5), round(Math.cos(phi), 5)];
+        applyCamera();
+        draw();
+      },
+      onOrbitEnd: () => commit(),
+    });
+    frameEl.appendChild(viewCube.dom);
 
     function layout(): void {
       const box = stage.getBoundingClientRect();
@@ -505,12 +533,13 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const p = partById(id);
       if (!p) return;
       // Parts joined to it stay where they are, standing on their own.
-      const world = worldMatrices(scene.parts, 0);
+      const world = worldMatrices(scene.parts, 0, false);
       for (const c of scene.parts) {
         if (c.parent !== id) continue;
         setLocalFromWorld(c, world.get(c.id)!, null);
         delete c.parent;
         delete c.joint;
+        delete c.explode;
       }
       scene.parts = scene.parts.filter(x => x.id !== id);
       models.delete(id);
@@ -527,8 +556,9 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       if (!part.parent) return new Matrix4();
       const world = worldMatrices(scene.parts, scene.explode);
       const m = world.get(part.parent)?.clone() || new Matrix4();
-      if (part.joint && scene.explode > 0) {
-        const n = new Vector3(...part.joint.normal).normalize().multiplyScalar(part.joint.distance * scene.explode);
+      const f = explodeOf(part, scene.explode);
+      if (part.joint && f > 0) {
+        const n = new Vector3(...part.joint.normal).normalize().multiplyScalar(part.joint.distance * f);
         m.multiply(new Matrix4().makeTranslation(n.x, n.y, n.z));
       }
       return m;
@@ -758,18 +788,29 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         if (!l) byParent.set(key, (l = []));
         l.push(p);
       }
+      const lit = highlightedParts(scene.parts);
       const row = (p: ScenePart, depth: number): string => {
         const m = models.get(p.id);
+        const on = lit.has(p.id);
+        // Lit by a part above it, not by its own setting.
+        const inherited = on && p.highlight === undefined;
+        const ownExplode = p.explode !== undefined;
+        const f = Math.round(explodeOf(p, scene.explode) * 100);
         const broken = m instanceof Error;
         const parent = p.parent ? partById(p.parent) : undefined;
         const joint = parent ? `<li class="lyr-scene-row lyr-scene-joint-row${shownJoint === p.id ? " lyr-on" : ""}" style="--depth:${depth}">
               <button type="button" class="lyr-scene-name" data-joint="${esc(p.id)}" title="Show where they join">${icon("link", 14)}<span>${esc(p.joint?.point && p.joint.type === "revolute" ? "Turns on" : p.joint?.point && p.joint.type === "prismatic" ? "Slides on" : "Joint to")} ${esc(parent.name)}</span></button>
+              <button type="button" class="lyr-btn lyr-icon-btn${ownExplode ? " lyr-on" : ""}" data-joint-explode="${esc(p.id)}" title="${ownExplode ? `Explodes ${f}% on its own` : "Explode just this joint"}" aria-label="Explode the joint of ${esc(p.name)}" aria-expanded="${explodeOpen === p.id}">${icon("expand", 16)}</button>
               <button type="button" class="lyr-btn lyr-icon-btn" data-rejoin="${esc(p.id)}" title="Change the joint: pick the two faces again" aria-label="Change the joint of ${esc(p.name)}">${icon("pencil", 16)}</button>
               <button type="button" class="lyr-btn lyr-icon-btn" data-unjoin="${esc(p.id)}" title="Remove the joint (the part stays where it is)" aria-label="Remove the joint of ${esc(p.name)}">${icon("unlink", 16)}</button>
-            </li>` : "";
+            </li>${explodeOpen === p.id ? `<li class="lyr-scene-row lyr-scene-joint-explode" style="--depth:${depth}" data-explode-for="${esc(p.id)}">
+              <input type="range" min="0" max="100" step="1" value="${f}" data-joint-explode-range aria-label="How far this joint comes apart, per cent">
+              <input type="number" class="lyr-scene-explode-num" min="0" max="100" step="1" value="${f}" data-joint-explode-num aria-label="How far this joint comes apart, per cent"><span class="lyr-scene-explode-unit">%</span>
+              <button type="button" class="lyr-btn lyr-icon-btn" data-joint-explode-reset="${esc(p.id)}" title="Follow the main Explode slider again" aria-label="Follow the main Explode slider"${ownExplode ? "" : " disabled"}>${icon("rotate", 16)}</button>
+            </li>` : ""}` : "";
         return `${joint}<li class="lyr-scene-row${p.id === selectedId && !shownJoint ? " lyr-on" : ""}${p.hidden ? " lyr-off" : ""}" data-id="${esc(p.id)}" style="--depth:${depth}">
               <button type="button" class="lyr-scene-name" data-pick="${esc(p.id)}" title="${broken ? "Its model couldn't be loaded" : "Select"}">${icon("cube", 14)}<span>${esc(p.name)}</span>${broken ? `<em>missing</em>` : ""}</button>
-              <button type="button" class="lyr-btn lyr-icon-btn${p.highlight ? " lyr-on" : ""}" data-highlight="${esc(p.id)}" title="${p.highlight ? "Stop highlighting" : "Highlight"}" aria-label="Highlight ${esc(p.name)}" aria-pressed="${!!p.highlight}">${icon("highlight", 16)}</button>
+              <button type="button" class="lyr-btn lyr-icon-btn${on ? " lyr-on" : ""}${inherited ? " lyr-inherited" : ""}" data-highlight="${esc(p.id)}" title="${inherited ? "Highlighted with the part above it: click to leave this one out" : on ? "Stop highlighting (and the parts under it)" : "Highlight (and the parts under it)"}" aria-label="Highlight ${esc(p.name)}" aria-pressed="${on}">${icon("highlight", 16)}</button>
               <button type="button" class="lyr-btn lyr-icon-btn${p.ghost ? " lyr-on" : ""}" data-ghost-part="${esc(p.id)}" title="${p.ghost ? "Draw it normally" : "Ghost: draw it faint, as fitted in an earlier step"}" aria-label="Ghost ${esc(p.name)}" aria-pressed="${!!p.ghost}">${icon("opacity", 16)}</button>
               <button type="button" class="lyr-btn lyr-icon-btn" data-hide="${esc(p.id)}" title="${linked() ? (p.hidden ? "Show it in this scene" : "Leave it out of this scene (it stays in the model)") : p.hidden ? "Show" : "Hide"}" aria-label="${p.hidden ? "Show" : "Hide"} ${esc(p.name)}">${icon(p.hidden ? "eyeOff" : "eye", 16)}</button>
               <button type="button" class="lyr-btn lyr-icon-btn" data-remove="${esc(p.id)}" title="${linked() ? "Remove it from the project's model (every scene)" : "Remove"}" aria-label="Remove ${esc(p.name)}">${icon("trash", 16)}</button>
@@ -841,11 +882,79 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       } else if (d.unjoin) {
         const p = partById(d.unjoin);
         if (p) unjoin(p);
-      } else if (d.highlight) toggle(d.highlight, "highlight");
+      } else if (d.jointExplode) {
+        explodeOpen = explodeOpen === d.jointExplode ? "" : d.jointExplode;
+        renderList();
+        if (explodeOpen) list.querySelector<HTMLInputElement>("[data-joint-explode-num]")?.focus();
+      } else if (d.jointExplodeReset) {
+        const p = partById(d.jointExplodeReset);
+        if (p && p.explode !== undefined) {
+          delete p.explode;
+          follow();
+          commit();
+          renderList();
+          list.querySelector<HTMLInputElement>("[data-joint-explode-num]")?.focus();
+        }
+      } else if (d.highlight) toggleHighlight(d.highlight);
       else if (d.ghostPart) toggle(d.ghostPart, "ghost");
       else if (d.hide) toggle(d.hide, "hidden");
       else if (d.remove) removePart(d.remove);
     });
+
+    // A joint's own explode, from its row's slider or number.
+    list.addEventListener("input", e => {
+      const t = e.target as HTMLInputElement;
+      const rowEl = t.closest<HTMLElement>("[data-explode-for]");
+      const p = rowEl ? partById(rowEl.dataset.explodeFor || "") : undefined;
+      if (!p || !rowEl) return;
+      const v = Number(t.value);
+      if (t.value === "" || !Number.isFinite(v)) return;
+      const pc = Math.max(0, Math.min(100, Math.round(v)));
+      p.explode = pc / 100;
+      const other = rowEl.querySelector<HTMLInputElement>(t.matches("[data-joint-explode-range]") ? "[data-joint-explode-num]" : "[data-joint-explode-range]");
+      if (other) other.value = String(pc);
+      rowEl.querySelector<HTMLButtonElement>("[data-joint-explode-reset]")!.disabled = false;
+      const btn = list.querySelector<HTMLElement>(`[data-joint-explode="${CSS.escape(p.id)}"]`);
+      btn?.classList.add("lyr-on");
+      if (btn) btn.title = `Explodes ${pc}% on its own`;
+      follow();
+    });
+    list.addEventListener("change", e => {
+      const t = e.target as HTMLInputElement;
+      if (!t.closest("[data-explode-for]")) return;
+      const p = partById(t.closest<HTMLElement>("[data-explode-for]")!.dataset.explodeFor || "");
+      if (p) t.value = String(Math.round(explodeOf(p, scene.explode) * 100));
+      commit();
+    });
+
+    /**
+     * Turns a part's highlight on or off, for its whole branch: the parts
+     * under it follow it again, and it keeps a setting of its own only
+     * where it differs from the part above it.
+     */
+    function toggleHighlight(id: string): void {
+      const p = partById(id);
+      if (!p) return;
+      const lit = highlightedParts(scene.parts);
+      const want = !lit.has(id);
+      const above = p.parent ? lit.has(p.parent) : false;
+      if (want === above) delete p.highlight;
+      else p.highlight = want;
+      const under = new Set([id]);
+      let grew = true;
+      while (grew) {
+        grew = false;
+        for (const c of scene.parts) if (c.parent && under.has(c.parent) && !under.has(c.id)) {
+          under.add(c.id);
+          grew = true;
+          delete c.highlight;
+        }
+      }
+      rebuild();
+      commit();
+      renderList();
+      renderProps();
+    }
 
     /** Turns a part's highlight, ghost or hidden on or off. */
     function toggle(id: string, key: "highlight" | "ghost" | "hidden"): void {
@@ -864,7 +973,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const p = partById(id);
       const model = models.get(id);
       if (!p || !model || model instanceof Error) return;
-      const world = worldMatrices(scene.parts, 0).get(id) || new Matrix4();
+      const world = worldMatrices(scene.parts, 0, false).get(id) || new Matrix4();
       const names = new Set(scene.parts.map(x => x.name));
       const base = p.name.replace(/ \d+$/, "");
       let n = 2;
@@ -982,7 +1091,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           : { label: "Join to another part…", icon: "link", run: () => { select(id); openJointDialog(id); } },
         ...(parent ? [{ label: "Remove joint", icon: "unlink", run: () => unjoin(p) }] : []),
         null,
-        { label: "Highlight", on: !!p.highlight, run: () => toggle(id, "highlight") },
+        { label: "Highlight", on: highlightedParts(scene.parts).has(id), run: () => toggleHighlight(id) },
         { label: "Ghost", on: !!p.ghost, run: () => toggle(id, "ghost") },
         { label: linked() ? "Show in this scene" : "Show", on: !p.hidden, run: () => toggle(id, "hidden") },
         ...(others ? [{ label: "Show only this", icon: "eye", run: () => showOnly(id) }] : []),
@@ -1151,12 +1260,13 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       renderJointDialog();
       status(half === "child"
         ? `Click the face on “${esc(partById(draft.childId)?.name)}” that meets the other part. Esc to stop.`
-        : "Click where it goes on another part: a face, a corner, an edge, a hole or a round rim. Esc to stop.", false, true);
+        : `Click where it goes on another part: a face, a corner, an edge, a hole or a round rim. Hold ${isMacKeys ? "⌘" : "Ctrl"} to stay on a face while you choose its point. Esc to stop.`, false, true);
       draw();
     }
 
     function stopJoin(message = ""): void {
       joining = null;
+      faceHeld = false;
       clearHover();
       canvasEl.classList.remove("lyr-scene-picking");
       attachGizmo();
@@ -1259,6 +1369,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
 
     /** The part whose joint is shown: both faces tinted, and the points joined. */
     let shownJoint = "";
+    /** The joint whose own explode slider is open in the list. */
+    let explodeOpen = "";
 
     // While joining, the face under the pointer is tinted and its snap
     // points shown: its middle, corners and edge middles, the centres of
@@ -1360,6 +1472,53 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     }
     let hover: Hover | null = null;
     let pointer = { x: 0, y: 0 };
+    // ⌘ (Ctrl elsewhere) held while picking: stay on the face under the
+    // pointer and move between its points, wherever the pointer goes.
+    let faceHeld = false;
+    const isMacKeys = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+    const holdKey = (e: { metaKey: boolean; ctrlKey: boolean }) => (isMacKeys ? e.metaKey : e.ctrlKey);
+    function setFaceHeld(on: boolean): void {
+      if (on === faceHeld) return;
+      faceHeld = on;
+      if (joining && hover) placeSnaps();
+      draw();
+    }
+    /** How far (px) each of the face's round snaps reaches: its circle as drawn. */
+    function snapReach(snaps: Snap[], m: Matrix4, project: (p: Vec3, m: Matrix4) => { x: number; y: number }): number[] {
+      return snaps.map(sn => {
+        if (!sn.radius || !(sn.role === "hole" || sn.role === "rim" || sn.role === "centre" || sn.role === "pocket")) return 0;
+        const n = new Vector3(...sn.n).normalize();
+        const u = new Vector3(1, 0, 0).cross(n);
+        if (u.lengthSq() < 1e-6) u.set(0, 1, 0).cross(n);
+        u.normalize();
+        const w = n.clone().cross(u);
+        const c = project(sn.p, m);
+        let r = 0;
+        for (let k = 0; k < 8; k++) {
+          const a = (k / 8) * Math.PI * 2;
+          const q = new Vector3(...sn.p).addScaledVector(u, Math.cos(a) * sn.radius).addScaledVector(w, Math.sin(a) * sn.radius);
+          const at = project([q.x, q.y, q.z], m);
+          r = Math.max(r, Math.hypot(at.x - c.x, at.y - c.y));
+        }
+        // Inside the circle, a little short of its edge (the edge's own points stay catchable).
+        return r * 0.85;
+      });
+    }
+    /** Whether the pointer is inside one of the hovered face's round snaps, as drawn. */
+    function insideRound(): boolean {
+      if (!hover?.face) return false;
+      const m = hover.mesh.matrixWorld;
+      const project = (p: Vec3, mm: Matrix4) => {
+        const v = new Vector3(...p).applyMatrix4(mm).project(camera);
+        return { x: ((v.x + 1) / 2) * viewW, y: ((1 - v.y) / 2) * viewH };
+      };
+      const reach = snapReach(hover.face.snaps, m, project);
+      return hover.face.snaps.some((sn, i) => {
+        if (!reach[i]) return false;
+        const c = project(sn.p, m);
+        return Math.hypot(c.x - pointer.x, c.y - pointer.y) < reach[i];
+      });
+    }
 
     const ROLE_LABEL: Record<Snap["role"], string> = { centre: "middle of the face", corner: "corner", edge: "middle of the edge", hole: "centre of the hole", rim: "centre of the rim", pocket: "middle of the recess" };
 
@@ -1376,9 +1535,28 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     function hoverAt(e: { clientX: number; clientY: number }): void {
       const r = canvasEl.getBoundingClientRect();
       pointer = { x: e.clientX - r.left, y: e.clientY - r.top };
+      // The face is held: only its points move.
+      if (faceHeld && hover) {
+        placeSnaps();
+        draw();
+        return;
+      }
       art.scene.updateMatrixWorld(true);
       raycaster.setFromCamera(new Vector2((pointer.x / r.width) * 2 - 1, -(pointer.y / r.height) * 2 + 1), camera);
       const hit = raycaster.intersectObjects(pickable(), false).find(h => h.face && h.faceIndex !== undefined);
+      // Over a hole in the face (seeing its wall, another part, or nothing),
+      // the face stays, so the hole's centre can be had. A face parallel to
+      // it on the same part (a counterbore's floor) takes over as usual.
+      if (hover && insideRound()) {
+        const sameSide = hit && hit.object === hover.mesh && Math.abs(hit.face!.normal.clone().normalize().dot(new Vector3(...hover.normal))) > 0.9;
+        const model = hit ? models.get(String(hit.object.userData.partId || "")) : undefined;
+        const other = sameSide && model && !(model instanceof Error) ? topologyOf(model)?.faceAt(hit!.faceIndex!) : null;
+        if (!sameSide || !other || other === hover.face) {
+          placeSnaps();
+          draw();
+          return;
+        }
+      }
       if (!hit) {
         // Off the part, a snap still near the pointer (a hole's centre is
         // over empty space) stays catchable.
@@ -1459,14 +1637,14 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         const snaps = hover.face?.snaps || [];
         const m = hover.mesh.matrixWorld;
         const screen = snaps.map(s => project(s.p, m));
-        hover.snap = nearestSnap(screen, snaps, pointer);
+        hover.snap = nearestSnap(screen, snaps, pointer, 22, 40, snapReach(snaps, m, project), faceHeld);
         screen.forEach((p, i) => {
           marks.push(`<span class="lyr-snap lyr-snap-${snaps[i].role}${i === hover!.snap ? " lyr-on" : ""}" style="left:${p.x}px;top:${p.y}px"></span>`);
         });
         const on = hover.snap >= 0 ? snaps[hover.snap] : null;
         if (on) {
           const p = screen[hover.snap];
-          marks.push(`<span class="lyr-snap-label" style="left:${p.x}px;top:${p.y}px">${esc(ROLE_LABEL[on.role])}</span>`);
+          marks.push(`<span class="lyr-snap-label" style="left:${p.x}px;top:${p.y}px">${esc(ROLE_LABEL[on.role])}${faceHeld ? " · face held" : ""}</span>`);
         }
         if (on?.radius && (on.role === "hole" || on.role === "rim" || on.role === "centre")) {
           const n = new Vector3(...on.n).normalize();
@@ -1501,6 +1679,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     let hoverQueued = 0;
     canvasEl.addEventListener("pointermove", e => {
       if (!joining || e.buttons) return;
+      faceHeld = holdKey(e) && !!hover;
       const at = { clientX: e.clientX, clientY: e.clientY };
       cancelAnimationFrame(hoverQueued);
       hoverQueued = requestAnimationFrame(() => joining && hoverAt(at));
@@ -1557,10 +1736,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     }
 
     function unjoin(p: ScenePart): void {
-      const world = worldMatrices(scene.parts, 0).get(p.id);
+      const world = worldMatrices(scene.parts, 0, false).get(p.id);
       if (world) setLocalFromWorld(p, world, null);
       delete p.parent;
       delete p.joint;
+      delete p.explode;
       if (shownJoint === p.id) shownJoint = "";
       follow();
       renderList();
@@ -1911,14 +2091,37 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     function syncExplode(): void {
       const any = scene.parts.some(p => p.parent && p.joint);
       explodeInput.disabled = !any;
-      explodeInput.value = String(Math.round(scene.explode * 100));
+      explodeInput.value = explodeNum.value = String(Math.round(scene.explode * 100));
+      explodeNum.disabled = !any;
       explodeInput.closest("label")!.title = any ? "Slide joined parts apart along their joints, to show how they fit" : "Join parts first: then this slides them apart";
     }
+    const explodeNum = $<HTMLInputElement>("[data-explode-num]");
     explodeInput.addEventListener("input", () => {
       scene.explode = Math.max(0, Math.min(1, Number(explodeInput.value) / 100));
+      explodeNum.value = explodeInput.value;
       follow();
+      syncJointExplode();
     });
     explodeInput.addEventListener("change", () => commit());
+    explodeNum.addEventListener("input", () => {
+      const v = Number(explodeNum.value);
+      if (explodeNum.value === "" || !Number.isFinite(v)) return;
+      scene.explode = Math.max(0, Math.min(100, Math.round(v))) / 100;
+      explodeInput.value = String(Math.round(scene.explode * 100));
+      follow();
+      syncJointExplode();
+    });
+    explodeNum.addEventListener("change", () => {
+      explodeNum.value = String(Math.round(scene.explode * 100));
+      commit();
+    });
+    /** An open joint explode row that follows the main slider shows its value. */
+    function syncJointExplode(): void {
+      const rowEl = list.querySelector<HTMLElement>("[data-explode-for]");
+      const p = rowEl ? partById(rowEl.dataset.explodeFor || "") : undefined;
+      if (!p || !rowEl || p.explode !== undefined) return;
+      rowEl.querySelectorAll<HTMLInputElement>("input").forEach(i => (i.value = String(Math.round(scene.explode * 100))));
+    }
 
     function renderProps(): void {
       const p = partById(selectedId);
@@ -2344,6 +2547,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       e.stopPropagation();
       const mod = e.metaKey || e.ctrlKey;
       const key = e.key.toLowerCase();
+      if (joining && (e.key === "Meta" || e.key === "Control")) setFaceHeld(holdKey(e) && !!hover);
       if (e.key === "Shift") {
         gizmo.setTranslationSnap(5);
         gizmo.setRotationSnap(15 * DEG);
@@ -2390,6 +2594,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === "Meta" || e.key === "Control") setFaceHeld(false);
       if (e.key === "Shift") {
         gizmo.setTranslationSnap(null);
         gizmo.setRotationSnap(null);
@@ -2407,6 +2612,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       gizmo.dispose();
       orbit.dispose();
       art.dispose();
+      viewCube.dispose();
       thumbWatch?.disconnect();
       thumbnailer?.dispose();
       blobUrls.forEach(u => URL.revokeObjectURL(u));
