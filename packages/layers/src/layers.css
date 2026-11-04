@@ -675,7 +675,9 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
   border-radius: var(--lyr-radius);
   box-shadow: 0 10px 32px rgb(0 0 0 / 0.2);
 }
-.lyr-joint-head { display: flex; align-items: center; gap: 6px; padding: 8px 8px 8px 12px; border-bottom: 1px solid var(--lyr-line); }
+.lyr-joint-head { display: flex; align-items: center; gap: 6px; padding: 8px 8px 8px 12px; border-bottom: 1px solid var(--lyr-line); cursor: grab; user-select: none; touch-action: none; }
+.lyr-joint-head.lyr-dragging { cursor: grabbing; }
+.lyr-joint-head button { cursor: pointer; }
 .lyr-joint-body { overflow: auto; padding: 0 12px 10px; }
 .lyr-joint-body .lyr-panel-title { margin: 12px 0 6px; }
 .lyr-joint-half select { width: 100%; padding: 6px 8px; border: 1px solid var(--lyr-line); border-radius: 6px; font: inherit; background: #fff; }
