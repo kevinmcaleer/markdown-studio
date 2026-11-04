@@ -26,7 +26,7 @@ import { isScene, placeholderPicture, SceneLayer } from "./sceneLayer";
 import { snap, type Box, type Guide } from "./snap";
 import css from "./layers.css?inline";
 
-FabricObject.customProperties = ["name", "layerId", "layerLocked", "badge", "boundTo"];
+FabricObject.customProperties = ["name", "layerId", "layerLocked", "badge", "badgePinned", "boundTo"];
 // Corner handles that are easier to grab, and a selection colour that reads on any picture.
 Object.assign(FabricObject.ownDefaults, {
   borderColor: "#8b3dff",
@@ -81,6 +81,12 @@ export interface LayersOptions {
   saveModel?(model: ProjectModel): Promise<void>;
   /** Draw every 3D scene's picture again once the graphic opens (a new step, or "Update picture" from the host). */
   updateScenes?: boolean;
+  /**
+   * This graphic's step number, from its place among the host's steps (the
+   * step before it, plus one). A graphic with one step badge takes it, unless
+   * its number was typed in (pinned).
+   */
+  stepNumber?: number;
   doneLabel?: string;
   onDone?(result: LayersResult): void | Promise<void>;
   onCancel?(): void;
@@ -752,7 +758,22 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     canvas.requestRenderAll();
   }
 
+  const badges = () => objects().filter(o => Number((o as FabricObject & { badge?: number }).badge) > 0) as (Group & { badge: number; badgePinned?: boolean })[];
+  /** Whether the graphic's step badge follows its place in the host's steps: one badge, not pinned. */
+  const autoBadge = () => {
+    const list = badges();
+    return opts.stepNumber && list.length === 1 && !list[0].badgePinned ? list[0] : null;
+  };
+  /** Numbers the step badge from its place in the host's steps. Says whether it changed it. */
+  function numberStep(): boolean {
+    const b = autoBadge();
+    if (!b || !opts.stepNumber || b.badge === opts.stepNumber) return false;
+    setBadge(b, opts.stepNumber, false);
+    return true;
+  }
+
   function nextBadge(): number {
+    if (opts.stepNumber && !badges().length) return opts.stepNumber;
     const ns = objects().map(o => Number((o as FabricObject & { badge?: number }).badge) || 0);
     return Math.max(0, ...ns) + 1;
   }
@@ -1442,7 +1463,11 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
           <input class="lyr-num" type="number" min="0" max="999" data-prop="badge" value="${g.badge}" aria-label="Number">
           <button type="button" class="lyr-btn" data-badge="1" aria-label="Higher number">${icon("plus", 14)}</button>
         </span>
-        ${swatch("badgeFill", String(circle?.fill || ACCENT), "Colour")}`;
+        ${swatch("badgeFill", String(circle?.fill || ACCENT), "Colour")}
+        ${opts.stepNumber && badges().length === 1
+          ? `<button type="button" class="lyr-btn" data-act="badge-auto" title="Number it from its place in the write-up again (step ${opts.stepNumber})"${(g as Group & { badgePinned?: boolean }).badgePinned ? "" : " hidden"}>${icon("rotate")}<span>Auto-number</span></button>
+            <span class="lyr-hint" data-badge-auto-hint${(g as Group & { badgePinned?: boolean }).badgePinned ? " hidden" : ""}>Numbered from its place in the write-up. Change it to fix it at your number.</span>`
+          : ""}`;
     } else if (isScene(o)) {
       const stale = behindModel(o.scene, projectModel);
       const shown = o.scene?.parts.filter(p => !p.hidden).length || 0;
@@ -1586,11 +1611,18 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
   }
   const isStyleProp = (p: Record<string, unknown>) => Object.keys(p).every(k => ["fill", "fontWeight", "fontStyle", "underline", "fontFamily", "fontSize", "textBackgroundColor"].includes(k));
 
-  function setBadge(o: FabricObject, n: number): void {
-    const g = o as Group & { badge?: number; name?: string };
+  /** Sets a step badge's number. A number chosen by hand is pinned: it no longer follows the step's place. */
+  function setBadge(o: FabricObject, n: number, pin = true): void {
+    const g = o as Group & { badge?: number; name?: string; badgePinned?: boolean };
     const label = g.getObjects()[1] as Textbox | undefined;
     if (!label) return;
     const was = g.badge;
+    if (pin && opts.stepNumber) g.badgePinned = true;
+    // The bar shows Auto-number for a pinned badge, without being drawn again (that would lose the typing).
+    const autoBtn = contextBar.querySelector<HTMLElement>("[data-act=badge-auto]");
+    const autoHint = contextBar.querySelector<HTMLElement>("[data-badge-auto-hint]");
+    if (autoBtn) autoBtn.hidden = !g.badgePinned;
+    if (autoHint) autoHint.hidden = !!g.badgePinned;
     g.badge = Math.max(0, Math.min(999, Math.round(n)));
     label.set({ text: String(g.badge), fontSize: g.badge > 99 ? 30 : g.badge > 9 ? 36 : 44 });
     if (!g.name || g.name === `Step ${was}`) g.name = `Step ${g.badge}`;
@@ -1966,6 +1998,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
           prepare(o);
           canvas.add(o);
         });
+        numberStep();
         if (t.scene) void addScene(undefined, t.scene);
         else selectAll(list);
       }
@@ -2374,6 +2407,13 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       case "shape-text": if (o && canHoldText(o)) editShapeText(o); break;
       case "edit-scene": if (isScene(o)) void editScene(o); break;
       case "update-scene": if (isScene(o)) void updateScenes([o]); break;
+      case "badge-auto":
+        if (o) {
+          delete (o as Group & { badgePinned?: boolean }).badgePinned;
+          if (opts.stepNumber) setBadge(o, opts.stepNumber, false);
+          renderContext();
+        }
+        break;
       case "flip-y": if (o) apply({ flipY: !o.flipY }); break;
       case "fill-page":
         if (o) {
@@ -2567,6 +2607,11 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     if (destroyed) return;
     current = snapshot();
     saved = current;
+    // A step badge follows the step's place in the write-up (left to save, so it's seen).
+    if (numberStep()) {
+      commit();
+      status(`Numbered step ${opts.stepNumber}, from its place in the write-up.`);
+    }
     setMode(mode);
     renderContext();
     syncHistoryButtons();

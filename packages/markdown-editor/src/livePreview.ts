@@ -306,10 +306,10 @@ class ImageWidget extends WidgetType {
             return;
           }
           checked = true;
-          const st = await layers.status!(src).catch(() => null);
+          const st = await layers.status!(src, view.state.doc.toString()).catch(() => null);
           wrap.querySelector(".cm-md-image-stale")?.remove();
-          if (!st?.scene) return;
-          if (!tools.querySelector("[data-next-step]")) {
+          if (!st) return;
+          if (st.scene && !tools.querySelector("[data-next-step]")) {
             const next = document.createElement("button");
             next.type = "button";
             next.className = "cm-md-image-layers";
@@ -324,12 +324,16 @@ class ImageWidget extends WidgetType {
             });
             tools.prepend(next);
           }
-          if (st.stale) {
+          if (st.stale || st.step) {
             const mark = document.createElement("button");
             mark.type = "button";
             mark.className = "cm-md-image-stale";
             mark.textContent = "Out of date · Update";
-            mark.title = "The project's 3D model has changed since this was drawn. Opens it and draws its 3D pictures again; then Save.";
+            mark.title = [
+              st.stale ? "The project's 3D model has changed since this was drawn." : "",
+              st.step ? `Its step number should be ${st.step}, from its place in the write-up.` : "",
+              "Update opens it with that put right; then Save.",
+            ].filter(Boolean).join(" ");
             mark.addEventListener("mousedown", (e) => e.preventDefault());
             mark.addEventListener("click", (e) => {
               e.preventDefault();

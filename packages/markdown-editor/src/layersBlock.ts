@@ -1,5 +1,5 @@
 import { StateEffect, StateField, type EditorState, type Extension } from "@codemirror/state";
-import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet } from "@codemirror/view";
+import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { imageAt, imageMarkdown } from "./imagePopover";
 import { isLayersUrl, LAYERS_MODEL_EVENT, layersOpener, layersUrl, type LayersOpenHow } from "./layersFacet";
 import type { SlashCommand } from "./slashMenu";
@@ -24,6 +24,7 @@ export type LayersApi = {
   nextStepDoc?(doc: unknown): unknown;
   staleScenes?(doc: unknown, stamp: number): number;
   hasScene?(doc: unknown): boolean;
+  stepBadge?(doc: unknown): { last: number; auto: number | null } | null;
 };
 
 /** The project's 3D model, as Layers keeps it: `stamp` goes up with each change. */
@@ -207,14 +208,46 @@ function graphicDoc(api: LayersApi, url: string, fetchImage: (url: string) => Pr
 }
 
 /** Whether the graphic at `url` has 3D scenes, and how many are behind the project's model. */
-async function graphicStatus(host: LayersHost, url: string): Promise<{ scene: boolean; stale: number } | null> {
-  if (!host.loadModel || !host.saveModel || !isLayersUrl(url)) return null;
+/** The Layers graphics in the text, in order: each one's link and where its Markdown starts. */
+export function graphicsIn(text: string): { url: string; at: number }[] {
+  const out: { url: string; at: number }[] = [];
+  for (const m of text.matchAll(/!\[[^\]\n]*\]\(\s*<?([^)\s>]+)/g)) if (isLayersUrl(m[1])) out.push({ url: m[1], at: m.index! });
+  return out;
+}
+
+/**
+ * The step number for a graphic starting at `pos`: the graphics before it,
+ * top to bottom, each count on from the last (one that follows its place
+ * takes the step before plus one; one numbered by hand keeps its number).
+ */
+async function stepAt(api: LayersApi, host: LayersHost, text: string, pos: number): Promise<number> {
+  let prev = 0;
+  if (!api.stepBadge) return 1;
+  for (const g of graphicsIn(text)) {
+    if (g.at >= pos) break;
+    const step = api.stepBadge(await graphicDoc(api, g.url, host.fetchImage ?? defaultFetch));
+    if (step) prev = step.auto !== null ? prev + 1 : step.last;
+  }
+  return prev + 1;
+}
+
+/** What a graphic's mark says: its 3D scenes behind the project's model, or its step number out of place. */
+async function graphicStatus(host: LayersHost, url: string, text = ""): Promise<{ scene: boolean; stale: number; step?: number } | null> {
+  if (!isLayersUrl(url)) return null;
   const api = await loadLayers(host.load);
-  if (!api.hasScene || !api.staleScenes) return null;
   const doc = await graphicDoc(api, url, host.fetchImage ?? defaultFetch);
-  if (!doc || !api.hasScene(doc)) return { scene: false, stale: 0 };
-  const model = await projectModel(host);
-  return { scene: true, stale: model ? api.staleScenes(doc, model.stamp) : 0 };
+  if (!doc) return null;
+  const scene = !!api.hasScene?.(doc);
+  const model = scene && host.loadModel && host.saveModel ? await projectModel(host) : null;
+  const stale = model && api.staleScenes ? api.staleScenes(doc, model.stamp) : 0;
+  const badge = api.stepBadge?.(doc);
+  const at = graphicsIn(text).find(g => g.url === url);
+  let step: number | undefined;
+  if (badge && badge.auto !== null && at) {
+    const want = await stepAt(api, host, text, at.at);
+    if (want !== badge.auto) step = want;
+  }
+  return { scene: scene && !!(host.loadModel && host.saveModel), stale, ...(step ? { step } : {}) };
 }
 
 export function openLayers(view: EditorView, host: LayersHost, pos: number, mode: "inline" | "full" = "inline", how: LayersOpenHow = {}): void {
@@ -239,6 +272,9 @@ export function openLayers(view: EditorView, host: LayersHost, pos: number, mode
       const api = await loadLayers(host.load);
       let doc = from && isLayersUrl(from.url) ? await api.readDoc(from.url, fetchImage) : null;
       if (how.nextStep && doc && api.nextStepDoc) doc = api.nextStepDoc(doc);
+      // Its step number from its place: after the graphic it's the next step of, or where it is.
+      const text = view.state.doc.toString();
+      const stepNumber = await stepAt(api, host, text, how.nextStep && from ? from.to : image ? image.from : pos).catch(() => undefined);
       if (session.closed) return;
       container.innerHTML = "";
       session.editor = api.mount(container, {
@@ -262,6 +298,7 @@ export function openLayers(view: EditorView, host: LayersHost, pos: number, mode
             }
           : {}),
         updateScenes: !!(how.update || how.nextStep),
+        stepNumber,
         doneLabel: "Save",
         onDone: async (result: LayersResult) => {
           const file = new File([result.png], graphicFileName(result.title), { type: "image/png" });
@@ -374,9 +411,20 @@ export function layersBlocks(host: LayersHost): Extension {
     theme,
     layersOpener.of({
       open: (view, pos, mode, how) => openLayers(view, host, pos, mode ?? "inline", how),
-      ...(host.loadModel && host.saveModel ? { status: (url: string) => graphicStatus(host, url) } : {}),
+      status: (url: string, text?: string) => graphicStatus(host, url, text),
     }),
     ViewPlugin.define((view) => ({
+      // Graphics moved, added or saved: each checks its step number again.
+      order: graphicsIn(view.state.doc.toString()).map(g => g.url).join(" "),
+      timer: 0,
+      update(u: ViewUpdate) {
+        if (!u.docChanged) return;
+        const order = graphicsIn(u.state.doc.toString()).map(g => g.url).join(" ");
+        if (order === this.order) return;
+        this.order = order;
+        clearTimeout(this.timer);
+        this.timer = window.setTimeout(() => dispatchEvent(new CustomEvent(LAYERS_MODEL_EVENT)), 400);
+      },
       destroy() {
         const s = sessions.get(view);
         if (s) {

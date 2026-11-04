@@ -178,3 +178,16 @@ export function nextStepDoc(doc: LayersDoc): LayersDoc {
   if (out.title) out.title = out.title.replace(/(\d+)(\D*)$/, (_, d: string, rest: string) => `${Number(d) + 1}${rest}`);
   return out;
 }
+
+/**
+ * The graphic's step badges: the highest number (where the next step counts
+ * on from), and the one badge's number when it follows its place in the
+ * write-up (one badge, not pinned by hand). Null when it has no badge.
+ */
+export function stepBadge(doc: LayersDoc | null): { last: number; auto: number | null } | null {
+  if (!doc) return null;
+  const list = doc.objects.filter(o => typeof o.badge === "number" && o.badge > 0);
+  if (!list.length) return null;
+  const last = Math.max(...list.map(o => o.badge as number));
+  return { last, auto: list.length === 1 && !list[0].badgePinned ? (list[0].badge as number) : null };
+}

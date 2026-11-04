@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isLayersUrl, layersUrl } from "./layersFacet";
-import { graphicFileName, newGraphicInsert } from "./layersBlock";
+import { graphicFileName, graphicsIn, newGraphicInsert } from "./layersBlock";
 
 describe("layers links", () => {
   it("marks and recognises a graphic's link", () => {
@@ -24,5 +24,15 @@ describe("layers links", () => {
     expect(newGraphicInsert(doc, 9, "![G](u)")).toEqual({ from: 9, to: 9, insert: "\n\n![G](u)" });
     // Before a following paragraph: a blank line after, so it stays a picture of its own.
     expect(newGraphicInsert("A\nB", 1, "![G](u)")).toEqual({ from: 1, to: 1, insert: "\n\n![G](u)\n" });
+  });
+});
+
+describe("graphicsIn", () => {
+  it("lists the Layers graphics in order, with where each starts", () => {
+    const text = "# A\n\n![Step 1](/a.png#layers)\n\n![photo](/p.jpg)\n\n![Two](</b.png#layers> \"t\")\n";
+    expect(graphicsIn(text)).toEqual([
+      { url: "/a.png#layers", at: text.indexOf("![Step 1]") },
+      { url: "/b.png#layers", at: text.indexOf("![Two]") },
+    ]);
   });
 });

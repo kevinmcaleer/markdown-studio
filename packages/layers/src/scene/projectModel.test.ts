@@ -74,3 +74,13 @@ describe("documents with scenes", () => {
     expect(d.title).toBe("Step 3");
   });
 });
+
+describe("stepBadge", () => {
+  it("finds the step number and whether it follows its place", async () => {
+    const { stepBadge, blankDoc } = await import("../doc");
+    expect(stepBadge(blankDoc())).toBeNull();
+    expect(stepBadge({ ...blankDoc(), objects: [{ type: "Group", badge: 3 }] })).toEqual({ last: 3, auto: 3 });
+    expect(stepBadge({ ...blankDoc(), objects: [{ type: "Group", badge: 3, badgePinned: true }] })).toEqual({ last: 3, auto: null });
+    expect(stepBadge({ ...blankDoc(), objects: [{ type: "Group", badge: 1 }, { type: "Group", badge: 2 }] })).toEqual({ last: 2, auto: null });
+  });
+});
