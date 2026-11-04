@@ -814,10 +814,17 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     function syncExplodeFollow(): void {
       const btn = root.querySelector<HTMLButtonElement>("[data-act=explode-follow]");
       if (!btn) return;
-      const own = scene.parts.filter(p => p.parent && p.joint && p.explode !== undefined).length;
+      const mine = scene.parts.filter(p => p.parent && p.joint && p.explode !== undefined);
+      const own = mine.length;
+      const still = mine.filter(p => p.explode === 0).length;
       btn.hidden = !own;
       btn.querySelector("span")!.textContent = String(own);
-      btn.title = `${own} joint${own === 1 ? " has its" : "s have their"} own explode, so ${own === 1 ? "it doesn't" : "they don't"} follow this slider. Click to make ${own === 1 ? "it" : "them"} follow it again.`;
+      const what = still === own
+        ? `${own} joint${own === 1 ? " stays" : "s stay"} assembled`
+        : still
+          ? `${own} joints don't follow this slider (${still} stay${still === 1 ? "s" : ""} assembled)`
+          : `${own} joint${own === 1 ? " has its" : "s have their"} own explode, so ${own === 1 ? "it doesn't" : "they don't"} follow this slider`;
+      btn.title = `${what}. Click to make ${own === 1 ? "it" : "them"} follow it again.`;
       btn.setAttribute("aria-label", btn.title);
     }
 
@@ -848,15 +855,20 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         const parent = p.parent ? partById(p.parent) : undefined;
         const picked = explodeSet.includes(p.id);
         const many = explodeSet.length > 1;
+        // Unticked: the joint stays assembled (its own explode is 0).
+        const ticked = p.explode !== 0;
         const joint = parent ? `<li class="lyr-scene-row lyr-scene-joint-row${shownJoint === p.id ? " lyr-on" : ""}${picked && many ? " lyr-picked" : ""}" style="--depth:${depth}">
+              <button type="button" class="lyr-btn lyr-icon-btn lyr-scene-tick${ticked ? " lyr-on" : ""}" data-joint-tick="${esc(p.id)}" title="${ticked ? "Explodes: click to keep this joint assembled in this scene" : "Stays assembled: click to explode it again"}" aria-label="Explode the joint of ${esc(p.name)}" aria-pressed="${ticked}">${icon(ticked ? "ticked" : "border", 16)}</button>
               <button type="button" class="lyr-scene-name" data-joint="${esc(p.id)}" title="Show where they join. ⌘ or Shift-click to pick several joints and explode them together">${icon("link", 14)}<span>${esc(p.joint?.point && p.joint.type === "revolute" ? "Turns on" : p.joint?.point && p.joint.type === "prismatic" ? "Slides on" : "Joint to")} ${esc(parent.name)}</span></button>
-              <button type="button" class="lyr-btn lyr-icon-btn${ownExplode ? " lyr-on" : ""}" data-joint-explode="${esc(p.id)}" title="${ownExplode ? `Explodes ${f}% on its own` : "Explode just this joint"} (⌘ or Shift-click to add more joints)" aria-label="Explode the joint of ${esc(p.name)}" aria-expanded="${picked}">${icon("expand", 16)}</button>
+              <button type="button" class="lyr-btn lyr-icon-btn${ownExplode && ticked ? " lyr-on" : ""}" data-joint-explode="${esc(p.id)}" title="${!ticked ? "Stays assembled" : ownExplode ? `Explodes ${f}% on its own` : "Explode just this joint"} (⌘ or Shift-click to add more joints)" aria-label="Explode the joint of ${esc(p.name)}" aria-expanded="${picked}">${icon("expand", 16)}</button>
               <button type="button" class="lyr-btn lyr-icon-btn" data-rejoin="${esc(p.id)}" title="Change the joint: pick the two faces again" aria-label="Change the joint of ${esc(p.name)}">${icon("pencil", 16)}</button>
               <button type="button" class="lyr-btn lyr-icon-btn" data-unjoin="${esc(p.id)}" title="Remove the joint (the part stays where it is)" aria-label="Remove the joint of ${esc(p.name)}">${icon("unlink", 16)}</button>
             </li>${explodeOpen === p.id ? `${many ? `<li class="lyr-scene-row lyr-scene-joint-explode-count" style="--depth:${depth}">${explodeSet.length} joints</li>` : ""}<li class="lyr-scene-row lyr-scene-joint-explode" style="--depth:${depth}" data-explode-for="${esc(p.id)}">
               <input type="range" min="0" max="100" step="1" value="${f}" data-joint-explode-range aria-label="How far this joint comes apart, per cent">
               <input type="number" class="lyr-scene-explode-num" min="0" max="100" step="1" value="${f}" data-joint-explode-num aria-label="How far this joint comes apart, per cent"><span class="lyr-scene-explode-unit">%</span>
               <button type="button" class="lyr-btn lyr-icon-btn" data-joint-explode-reset="${esc(p.id)}" title="Follow the main Explode slider again" aria-label="Follow the main Explode slider"${explodeSet.some(id => partById(id)?.explode !== undefined) ? "" : " disabled"}>${icon("rotate", 16)}</button>
+            </li><li class="lyr-scene-row lyr-scene-joint-only" style="--depth:${depth}">
+              <button type="button" class="lyr-wide-btn" data-explode-only title="Keep every other joint assembled in this scene, so only ${many ? `these ${explodeSet.length}` : "this one"} come${many ? "" : "s"} apart">${icon("expand", 14)}<span>Explode only ${many ? "these" : "this one"}</span></button>
             </li>` : ""}` : "";
         return `${joint}<li class="lyr-scene-row${p.id === selectedId && !shownJoint ? " lyr-on" : ""}${p.hidden ? " lyr-off" : ""}" data-id="${esc(p.id)}" style="--depth:${depth}">
               <button type="button" class="lyr-scene-name" data-pick="${esc(p.id)}" title="${broken ? "Its model couldn't be loaded" : "Select"}">${icon("cube", 14)}<span>${esc(p.name)}</span>${broken ? `<em>missing</em>` : ""}</button>
@@ -934,6 +946,17 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       } else if (d.unjoin) {
         const p = partById(d.unjoin);
         if (p) unjoin(p);
+      } else if (d.jointTick) {
+        const p = partById(d.jointTick);
+        if (!p) return;
+        if (p.explode === 0) delete p.explode;
+        else p.explode = 0;
+        follow();
+        commit();
+        renderList();
+        status(p.explode === 0 ? `${p.name} stays assembled in this scene.` : `${p.name} explodes with the slider again.`);
+      } else if (d.explodeOnly !== undefined) {
+        explodeOnly();
       } else if (d.jointExplode) {
         pickExplode(d.jointExplode, e.shiftKey || e.metaKey || e.ctrlKey);
       } else if (d.jointExplodeReset) {
@@ -950,6 +973,30 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       else if (d.hide) toggle(d.hide, "hidden");
       else if (d.remove) removePart(d.remove);
     });
+
+    /**
+     * Keeps every joint but the picked ones assembled: they're unticked
+     * (explode 0), and a picked joint that was unticked follows the main
+     * slider again.
+     */
+    function explodeOnly(): void {
+      const set = new Set(explodeSet);
+      for (const p of scene.parts) {
+        if (!p.parent || !p.joint) continue;
+        if (!set.has(p.id)) p.explode = 0;
+        else if (p.explode === 0) delete p.explode;
+      }
+      // Nothing would move with the main slider at 0: open it fully.
+      const moves = explodeSet.map(partById).some(p => p && explodeOf(p, scene.explode) > 0);
+      if (!moves) {
+        scene.explode = 1;
+        syncExplode();
+      }
+      follow();
+      commit();
+      renderList();
+      status(`Only ${set.size === 1 ? "this joint explodes" : `these ${set.size} joints explode`}: the rest stay assembled.`);
+    }
 
     /**
      * Opens a joint's explode slider, or with `add` (⌘ or Shift held) adds
@@ -981,8 +1028,15 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       rowEl.querySelector<HTMLButtonElement>("[data-joint-explode-reset]")!.disabled = false;
       for (const x of all.length ? all : [p]) {
         const btn = list.querySelector<HTMLElement>(`[data-joint-explode="${CSS.escape(x.id)}"]`);
-        btn?.classList.add("lyr-on");
-        if (btn) btn.title = `Explodes ${pc}% on its own`;
+        btn?.classList.toggle("lyr-on", pc > 0);
+        if (btn) btn.title = pc ? `Explodes ${pc}% on its own` : "Stays assembled";
+        // At 0 it stays assembled, so its tick goes too.
+        const tick = list.querySelector<HTMLElement>(`[data-joint-tick="${CSS.escape(x.id)}"]`);
+        if (tick) {
+          tick.classList.toggle("lyr-on", pc > 0);
+          tick.setAttribute("aria-pressed", String(pc > 0));
+          tick.innerHTML = icon(pc > 0 ? "ticked" : "border", 16);
+        }
       }
       follow();
     });
@@ -3120,7 +3174,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           follow();
           commit();
           renderList();
-          status(`${own.length} joint${own.length === 1 ? "" : "s"} follow the Explode slider again.`);
+          status(`${own.length} joint${own.length === 1 ? " follows" : "s follow"} the Explode slider again.`);
           break;
         }
       }

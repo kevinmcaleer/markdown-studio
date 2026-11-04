@@ -795,6 +795,8 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 /* Joints picked together for one explode slider. */
 .lyr-scene-list > li.lyr-scene-joint-row.lyr-picked { background: var(--lyr-hover); }
 .lyr-scene-joint-row.lyr-picked .lyr-scene-name { color: #1f6fe0; }
+.lyr-scene-list > li.lyr-scene-joint-only { padding-left: calc(var(--depth, 0) * 18px + 28px); padding-bottom: 4px; height: auto; background: var(--lyr-hover); border-radius: 0 0 6px 6px; }
+.lyr-scene-joint-only .lyr-wide-btn { width: auto; height: 24px; padding: 0 10px; gap: 6px; font-size: 12px; border: 1px solid var(--lyr-line); background: #fff; }
 .lyr-scene-list > li.lyr-scene-joint-explode-count { padding-left: calc(var(--depth, 0) * 18px + 28px); height: 22px; font-size: 11px; color: var(--lyr-muted); background: var(--lyr-hover); border-radius: 6px 6px 0 0; }
 /* A part held by its joint: its place can't be set by hand. */
 .lyr-scene-placing { border: 0; margin: 0; padding: 0; min-width: 0; }

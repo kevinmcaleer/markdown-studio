@@ -47,6 +47,7 @@ const P: Record<string, string> = {
   arrowSolid: "M3 12h10M13 6l8 6-8 6z",
   textInShape: "M3 5h18v14H3zM8 9h8M12 9v6",
   border: "M4 4h16v16H4z",
+  ticked: "M4 4h16v16H4zM8 12l3 3 5-6",
   rounded: "M4 20V10a6 6 0 0 1 6-6h10",
   crop: "M6 2v14a2 2 0 0 0 2 2h14M18 22V8a2 2 0 0 0-2-2H2",
   highlight: "m9 11-6 6v3h9l3-3M22 12l-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4",
