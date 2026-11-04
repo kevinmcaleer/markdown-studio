@@ -130,8 +130,91 @@ function popoverTooltip(pos: number): Tooltip {
   return {
     pos,
     above: false,
-    create: (view) => ({ dom: popover(view, pos) }),
+    // Where the form goes is worked out here (popoverAnchor), not by CodeMirror.
+    strictSide: true,
+    create: (view) => {
+      const dom = popover(view, pos);
+      let side: PopoverSide | null = null;
+      return {
+        dom,
+        // CodeMirror squeezes a tooltip that runs out of room by setting its
+        // height, which left the form's panel short while its buttons spilled
+        // out below it. The form keeps its own height and moves instead.
+        resize: false,
+        getCoords: (at) => {
+          const placed = popoverAnchor(view, at, dom, side);
+          side = placed?.side ?? side;
+          return placed?.rect as Rect;
+        },
+      };
+    },
   };
+}
+
+type Rect = { left: number; right: number; top: number; bottom: number };
+
+/** The space between the CSS margin above the form and the picture. */
+const GAP = 6;
+
+/** The band of the window the popover can show in: inside the editor, between its sticky toolbar (and so under a host's fixed bar) and status bar. */
+function popoverRoom(view: EditorView): { top: number; bottom: number } {
+  let top = 0;
+  let bottom = window.innerHeight;
+  const scroller = view.scrollDOM.getBoundingClientRect();
+  if (scroller.height) {
+    top = Math.max(top, scroller.top);
+    bottom = Math.min(bottom, scroller.bottom);
+  }
+  const editor = view.dom.closest(".mde");
+  const toolbar = editor?.querySelector(".mde-toolbar")?.getBoundingClientRect();
+  const status = editor?.querySelector(".mde-status")?.getBoundingClientRect();
+  if (toolbar?.height) top = Math.max(top, toolbar.bottom);
+  if (status?.height) bottom = Math.min(bottom, status.top);
+  return { top, bottom };
+}
+
+/** Which side of its picture the popover is on: under it, above it, or over its top. */
+export type PopoverSide = "below" | "above" | "over";
+
+/**
+ * Where the top of the popover goes, given the picture, the popover's height,
+ * the band of the window it can show in and the side it was on last time.
+ * It stays on its side while that still fits, so it doesn't jump about as the
+ * page scrolls. Else under the picture if it fits there, else above it, else
+ * over the picture's top, held below the toolbar while a tall picture scrolls
+ * up under it. Null once the picture has scrolled out of the band.
+ */
+export function placePopover(
+  picture: { top: number; bottom: number },
+  height: number,
+  room: { top: number; bottom: number },
+  last: PopoverSide | null = null,
+): { top: number; side: PopoverSide } | null {
+  if (picture.bottom <= room.top || picture.top >= room.bottom) return null;
+  const fits: Record<PopoverSide, boolean> = {
+    below: picture.bottom + GAP + height <= room.bottom,
+    above: picture.top - 2 * GAP - height >= room.top,
+    over: true,
+  };
+  const side = last && fits[last] ? last : fits.below ? "below" : fits.above ? "above" : "over";
+  const top =
+    side === "below" ? picture.bottom
+    : side === "above" ? picture.top - 2 * GAP - height
+    : Math.max(room.top, Math.min(picture.top, room.bottom - GAP - height));
+  return { top, side };
+}
+
+/** Where to hang the popover from (CodeMirror puts its top at the anchor's bottom), or null to hide it. */
+function popoverAnchor(view: EditorView, pos: number, dom: HTMLElement, last: PopoverSide | null): { rect: Rect; side: PopoverSide } | null {
+  const start = view.coordsAtPos(pos, 1);
+  const wrap = view.contentDOM.querySelector(".cm-md-image-editing")?.getBoundingClientRect();
+  const image = imageAt(view.state, pos);
+  const end = image ? view.coordsAtPos(image.end, -1) : null;
+  const picture = wrap?.height ? wrap : start && { top: start.top, bottom: Math.max(start.bottom, end?.bottom ?? 0) };
+  const placed = picture && placePopover(picture, dom.getBoundingClientRect().height, popoverRoom(view), last);
+  if (!placed) return null;
+  const left = wrap?.height ? wrap.left : (start?.left ?? 0);
+  return { rect: { left, right: left, top: placed.top, bottom: placed.top }, side: placed.side };
 }
 
 function popover(view: EditorView, start: number): HTMLElement {

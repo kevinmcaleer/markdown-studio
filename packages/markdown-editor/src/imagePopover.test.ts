@@ -5,7 +5,7 @@ import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { describe, expect, it } from "vitest";
 import { cardPicturePicker } from "./cardsWidget";
-import { imageAt, imageMarkdown, imagePopoverAt, imageRemoval, openImagePopover } from "./imagePopover";
+import { imageAt, imageMarkdown, imagePopoverAt, imageRemoval, openImagePopover, placePopover } from "./imagePopover";
 import { livePreview } from "./livePreview";
 
 function stateOf(doc: string) {
@@ -92,5 +92,36 @@ describe("image popover", () => {
     const view = viewOf("![A](/a.jpg)", [EditorState.readOnly.of(true)]);
     expect(openImagePopover(view, 0)).toBe(false);
     view.destroy();
+  });
+});
+
+describe("image popover placement", () => {
+  const room = { top: 100, bottom: 800 };
+
+  it("goes under the picture when it fits there", () => {
+    expect(placePopover({ top: 150, bottom: 400 }, 180, room)).toEqual({ top: 400, side: "below" });
+  });
+
+  it("goes above the picture when only that side has room", () => {
+    expect(placePopover({ top: 500, bottom: 750 }, 180, room)).toEqual({ top: 500 - 12 - 180, side: "above" });
+  });
+
+  it("sits over the top of a picture too tall for either side", () => {
+    expect(placePopover({ top: 150, bottom: 1400 }, 180, room)).toEqual({ top: 150, side: "over" });
+  });
+
+  it("stays below the toolbar while a tall picture scrolls up under it", () => {
+    expect(placePopover({ top: -300, bottom: 600 }, 180, room, "over")).toEqual({ top: 100, side: "over" });
+    expect(placePopover({ top: -600, bottom: 150 }, 180, room, "over")).toEqual({ top: 100, side: "over" });
+  });
+
+  it("keeps its side while that still fits", () => {
+    expect(placePopover({ top: 20, bottom: 300 }, 180, room, "below")).toEqual({ top: 300, side: "below" });
+    expect(placePopover({ top: 700, bottom: 1000 }, 180, room, "above")?.side).toBe("above");
+  });
+
+  it("hides once the picture has scrolled out of view", () => {
+    expect(placePopover({ top: -600, bottom: 90 }, 180, room, "over")).toBeNull();
+    expect(placePopover({ top: 820, bottom: 1200 }, 180, room)).toBeNull();
   });
 });
