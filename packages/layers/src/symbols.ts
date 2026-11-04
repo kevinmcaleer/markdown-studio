@@ -210,14 +210,15 @@ export const CAREFUL = (() => {
   return pathOf([tri], [rrect(89, 58, 22, 64, 11), circle(100, 146, 13)]);
 })();
 
-/** A pointing hand (a manicule), pointing right, about 220 × 160. */
+/** A pointing hand (a manicule), pointing right, about 220 × 150. */
 export const POINTING_HAND = (() => {
-  const cuff = rect(0, 60, 42, 96);
-  const palm = rrect(34, 50, 104, 106, 34);
-  const finger = rrect(100, 30, 120, 34, 17);
-  const fingers = [rrect(112, 72, 50, 28, 14), rrect(112, 104, 50, 28, 14), rrect(112, 134, 46, 24, 12)];
-  const thumb = bar({ x: 76, y: 66 }, { x: 118, y: 14 }, 26);
-  return pathOf([cuff, palm, finger, ...fingers, thumb], [rect(10, 70, 6, 76)]);
+  const cuff = rect(0, 54, 34, 96);
+  // The fist: one rounded block, with two slits at the front for the curled fingers.
+  const fist = rrect(28, 56, 122, 94, 30);
+  const finger = rrect(82, 36, 138, 34, 17);
+  const thumb = bar({ x: 70, y: 86 }, { x: 92, y: 26 }, 28);
+  const slits = [rrect(116, 98, 30, 6, 3), rrect(116, 122, 28, 6, 3)];
+  return pathOf([cuff, fist, finger, thumb], [rect(9, 64, 5, 76), ...slits]);
 })();
 
 // ---------------------------------------------------------------- tools

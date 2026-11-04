@@ -8,10 +8,12 @@ import type { SceneData } from "./scene/model";
 
 export class SceneLayer extends FabricImage {
   static type = "SceneLayer";
-  static customProperties = ["scene", "pictureScale"];
+  static customProperties = ["scene", "pictureScale", "detail"];
 
   declare scene?: SceneData;
   declare pictureScale?: number;
+  /** A detail circle: a close-up of one part of another scene layer (`of` is its layerId), drawn on a white disc. */
+  declare detail?: { of: string; part: string };
 
   /** The layer's size on the page. */
   pageSize(): { w: number; h: number } {
@@ -23,6 +25,8 @@ classRegistry.setClass(SceneLayer);
 classRegistry.setClass(SceneLayer, "scenelayer");
 
 export const isScene = (o: unknown): o is SceneLayer => o instanceof SceneLayer;
+/** A detail circle (a close-up of one part of another scene). */
+export const isDetail = (o: unknown): o is SceneLayer & { detail: { of: string; part: string } } => o instanceof SceneLayer && !!o.detail;
 
 /** A see-through stand-in picture for a scene not drawn yet. */
 export function placeholderPicture(w: number, h: number): HTMLCanvasElement {

@@ -108,7 +108,7 @@ export const FIGURES: ShapeKind[] = [
   { id: "figure", label: "Assembly figure", svg: sym(FIGURE, 200, 300) },
   { id: "two-people", label: "Two people needed", svg: sym(TWO_PEOPLE, 460, 330) },
   { id: "careful", label: "Careful here", svg: sym(CAREFUL, 200, 180) },
-  { id: "hand", label: "Pointing hand", svg: sym(POINTING_HAND, 220, 160) },
+  { id: "hand", label: "Pointing hand", svg: sym(POINTING_HAND, 220, 150) },
   { id: "do-dont", label: "Right and wrong (two frames)", svg: '<rect x="4" y="18" width="18" height="24" rx="3" fill="none" stroke="currentColor" stroke-width="2.5"/><rect x="26" y="18" width="18" height="24" rx="3" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M8 10l3 3 5-6" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M31 7l6 6M37 7l-6 6" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>' },
 ];
 
@@ -351,7 +351,7 @@ export const TEMPLATES: Template[] = [
 export function kindOf(o: FabricObject): { icon: string; label: string } {
   const t = String(o.type || "").toLowerCase();
   if (t === "image") return { icon: "image", label: "Picture" };
-  if (t === "scenelayer") return { icon: "cube", label: "3D scene" };
+  if (t === "scenelayer") return { icon: "cube", label: (o as FabricObject & { detail?: unknown }).detail ? "Detail circle" : "3D scene" };
   if (t === "textbox" || t === "i-text" || t === "text") return { icon: "text", label: "Text" };
   if (t === "group" || t === "activeselection") return { icon: "group", label: (o as Group & { badge?: number }).badge ? "Step number" : "Group" };
   if (o instanceof Connector) return { icon: "dash", label: o.arrowStart || o.arrowEnd ? "Arrow" : "Line" };
