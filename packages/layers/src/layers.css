@@ -614,3 +614,14 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
   font-weight: 600;
   white-space: nowrap;
 }
+
+/* Parts list as a tree: joined parts sit under the part they're joined to,
+   with their joint as a row between. */
+.lyr-scene-list > li.lyr-scene-row { padding-left: calc(var(--depth, 0) * 18px); }
+.lyr-scene-joint-row .lyr-scene-name { height: 26px; font-size: 12px; color: var(--lyr-muted); }
+.lyr-scene-joint-row .lyr-scene-name .lyr-icon { color: #1f6fe0; }
+.lyr-scene-joint-row .lyr-icon-btn { height: 24px; }
+.lyr-scene-joint-row.lyr-on .lyr-scene-name { color: #1f6fe0; }
+.lyr-snap-faint { opacity: 0.45; }
+.lyr-snap-faint.lyr-snap-hole::before, .lyr-snap-faint.lyr-snap-rim::before { background: #1f6fe0; }
+.lyr-snap-joined { width: 13px; height: 13px; margin: -6.5px 0 0 -6.5px; background: #1f6fe0; }

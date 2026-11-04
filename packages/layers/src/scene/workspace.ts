@@ -432,8 +432,12 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       select(hit ? String(hit.object.userData.partId || "") : "");
     });
 
-    function select(id: string): void {
+    function select(id: string, keepJoint = false): void {
       selectedId = id;
+      if (!keepJoint && shownJoint) {
+        shownJoint = "";
+        status("");
+      }
       attachGizmo();
       renderList();
       renderProps();
@@ -481,6 +485,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       });
       scene = clone(s);
       if (selectedId && !partById(selectedId)) selectedId = "";
+      shownJoint = "";
       void loadModels().then(() => {
         rebuild();
         applyCamera();
@@ -511,26 +516,48 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     // ------------------------------------------------------------ the parts list
 
     function renderList(): void {
-      list.innerHTML = scene.parts.length
-        ? scene.parts.map(p => {
-            const m = models.get(p.id);
-            const broken = m instanceof Error;
-            return `<li class="lyr-scene-row${p.id === selectedId ? " lyr-on" : ""}${p.hidden ? " lyr-off" : ""}" data-id="${esc(p.id)}">
+      // A tree: each part joined to another sits under it, with its joint
+      // as a row between them that can be shown, changed or undone.
+      const byParent = new Map<string, ScenePart[]>();
+      const ids = new Set(scene.parts.map(p => p.id));
+      for (const p of scene.parts) {
+        const key = p.parent && ids.has(p.parent) ? p.parent : "";
+        let l = byParent.get(key);
+        if (!l) byParent.set(key, (l = []));
+        l.push(p);
+      }
+      const row = (p: ScenePart, depth: number): string => {
+        const m = models.get(p.id);
+        const broken = m instanceof Error;
+        const parent = p.parent ? partById(p.parent) : undefined;
+        const joint = parent ? `<li class="lyr-scene-row lyr-scene-joint-row${shownJoint === p.id ? " lyr-on" : ""}" style="--depth:${depth}">
+              <button type="button" class="lyr-scene-name" data-joint="${esc(p.id)}" title="Show where they join">${icon("link", 14)}<span>Joint to ${esc(parent.name)}</span></button>
+              <button type="button" class="lyr-btn lyr-icon-btn" data-rejoin="${esc(p.id)}" title="Change the joint: pick the two faces again" aria-label="Change the joint of ${esc(p.name)}">${icon("pencil", 16)}</button>
+              <button type="button" class="lyr-btn lyr-icon-btn" data-unjoin="${esc(p.id)}" title="Remove the joint (the part stays where it is)" aria-label="Remove the joint of ${esc(p.name)}">${icon("unlink", 16)}</button>
+            </li>` : "";
+        return `${joint}<li class="lyr-scene-row${p.id === selectedId && !shownJoint ? " lyr-on" : ""}${p.hidden ? " lyr-off" : ""}" data-id="${esc(p.id)}" style="--depth:${depth}">
               <button type="button" class="lyr-scene-name" data-pick="${esc(p.id)}" title="${broken ? "Its model couldn't be loaded" : "Select"}">${icon("cube", 14)}<span>${esc(p.name)}</span>${broken ? `<em>missing</em>` : ""}</button>
               <button type="button" class="lyr-btn lyr-icon-btn${p.highlight ? " lyr-on" : ""}" data-highlight="${esc(p.id)}" title="${p.highlight ? "Stop highlighting" : "Highlight"}" aria-label="Highlight ${esc(p.name)}" aria-pressed="${!!p.highlight}">${icon("highlight", 16)}</button>
               <button type="button" class="lyr-btn lyr-icon-btn" data-hide="${esc(p.id)}" title="${p.hidden ? "Show" : "Hide"}" aria-label="${p.hidden ? "Show" : "Hide"} ${esc(p.name)}">${icon(p.hidden ? "eyeOff" : "eye", 16)}</button>
               <button type="button" class="lyr-btn lyr-icon-btn" data-remove="${esc(p.id)}" title="Remove" aria-label="Remove ${esc(p.name)}">${icon("trash", 16)}</button>
-            </li>`;
-          }).join("")
-        : `<li class="lyr-note">No parts yet.</li>`;
+            </li>${(byParent.get(p.id) || []).map(c => row(c, depth + 1)).join("")}`;
+      };
+      list.innerHTML = scene.parts.length ? (byParent.get("") || []).map(p => row(p, 0)).join("") : `<li class="lyr-note">No parts yet.</li>`;
     }
 
     list.addEventListener("click", e => {
       const b = (e.target as HTMLElement).closest("button");
       if (!b) return;
       const d = b.dataset;
-      if (d.pick) select(d.pick === selectedId ? "" : d.pick);
-      else if (d.highlight) {
+      if (d.pick) select(d.pick === selectedId && !shownJoint ? "" : d.pick);
+      else if (d.joint) showJoint(shownJoint === d.joint ? "" : d.joint);
+      else if (d.rejoin) {
+        select(d.rejoin);
+        startJoin(d.rejoin);
+      } else if (d.unjoin) {
+        const p = partById(d.unjoin);
+        if (p) unjoin(p);
+      } else if (d.highlight) {
         const p = partById(d.highlight);
         if (!p) return;
         p.highlight = !p.highlight || undefined;
@@ -720,6 +747,9 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
 
     // ------------------------------------------------------------ join snaps
 
+    /** The part whose joint is shown: both faces tinted, and the points joined. */
+    let shownJoint = "";
+
     // While joining, the face under the pointer is tinted and its snap
     // points shown: its middle, corners and edge middles, the centres of
     // round holes in it, or the round rims at the ends of a curved face (a
@@ -753,6 +783,47 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     faceTint.matrixAutoUpdate = false;
     faceTint.visible = false;
     faceTint.raycast = () => {};
+    // A shown joint: the parent's face blue, the joined part's orange.
+    const jointTints = [0x4ea1ff, 0xff922b].map(c => {
+      const m = new Mesh(new BufferGeometry(), new MeshBasicMaterial({ color: c, transparent: true, opacity: 0.38, depthTest: false, depthWrite: false, side: DoubleSide }));
+      m.matrixAutoUpdate = false;
+      m.visible = false;
+      m.raycast = () => {};
+      art.overlay.add(m);
+      return m;
+    });
+    /** The two faces of the shown joint, found again from its picked points. */
+    let jointFaces: { id: string; face: Face | null; point: Vec3 }[] = [];
+
+    function showJoint(id: string): void {
+      shownJoint = "";
+      jointFaces = [];
+      const p = id ? partById(id) : undefined;
+      if (p?.joint && p.parent) {
+        shownJoint = id;
+        selectedId = id;
+        const j = p.joint;
+        const findFace = (partId: string, point?: Vec3, normal?: Vec3) => {
+          const m = models.get(partId);
+          if (!point || !normal || !m || m instanceof Error) return null;
+          return topologyOf(m)?.faceNear(point, normal) ?? null;
+        };
+        // A joint from before faces were picked has only its direction: its parts' middles stand in.
+        jointFaces = [
+          { id: p.parent, face: findFace(p.parent, j.point, j.normal), point: j.point || [0, 0, 0] },
+          { id: p.id, face: findFace(p.id, j.childPoint, j.childNormal), point: j.childPoint || [0, 0, 0] },
+        ];
+        const pn = partById(p.parent)?.name || "";
+        status(`“${p.name}” is joined to “${pn}” here: its orange face to the blue one. Change it with the pencil, or remove it.`, false, true);
+      } else status("");
+      attachGizmo();
+      if (shownJoint) gizmo.detach();
+      renderList();
+      renderProps();
+      placeSnaps();
+      draw();
+    }
+
     const ringGeometry = new BufferGeometry();
     const ring = new Line(ringGeometry, new LineBasicMaterial({ color: 0x1f6fe0, depthTest: false }));
     ring.matrixAutoUpdate = false;
@@ -836,6 +907,28 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         const v = new Vector3(...p).applyMatrix4(m).project(camera);
         return { x: ((v.x + 1) / 2) * viewW, y: ((1 - v.y) / 2) * viewH };
       };
+      jointTints.forEach(t => (t.visible = false));
+      if (shownJoint && !joining) {
+        jointFaces.forEach((jf, i) => {
+          const g = art.groupOf(jf.id);
+          const m = models.get(jf.id);
+          if (!g) return;
+          g.updateMatrixWorld(true);
+          const tint = jointTints[i];
+          if (jf.face && m && !(m instanceof Error)) {
+            tint.geometry = faceGeometry(m, jf.face);
+            tint.matrix.copy(g.matrixWorld);
+            tint.matrixWorldNeedsUpdate = true;
+            tint.visible = true;
+            for (const sn of jf.face.snaps) {
+              const at = project(sn.p, g.matrixWorld);
+              marks.push(`<i class="lyr-snap lyr-snap-${sn.role} lyr-snap-faint" style="left:${at.x}px;top:${at.y}px"></i>`);
+            }
+          }
+          const at = project(jf.point, g.matrixWorld);
+          marks.push(`<i class="lyr-snap ${i ? "lyr-snap-picked" : "lyr-snap-joined"}" style="left:${at.x}px;top:${at.y}px"></i>`);
+        });
+      }
       if (joining?.childPoint) {
         const g = art.groupOf(joining.childId);
         if (g) {
@@ -915,6 +1008,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       if (world) setLocalFromWorld(p, world, null);
       delete p.parent;
       delete p.joint;
+      if (shownJoint === p.id) shownJoint = "";
       follow();
       renderList();
       renderProps();

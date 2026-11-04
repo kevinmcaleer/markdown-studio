@@ -127,6 +127,34 @@ export class Topology {
     return [this.normal[t * 3], this.normal[t * 3 + 1], this.normal[t * 3 + 2]];
   }
 
+  /**
+   * The face a joint was picked on, from the point and direction it kept: a
+   * face with a snap there facing that way, else the flat face the point
+   * lies on (or the face nearest it).
+   */
+  faceNear(point: V3, normal: V3): Face | null {
+    const n = unit(normal);
+    const dist = new Float64Array(this.triangles);
+    const order: number[] = [];
+    for (let t = 0; t < this.triangles; t++) {
+      const c = mul(add(add(this.point(this.corner[t * 3]), this.point(this.corner[t * 3 + 1])), this.point(this.corner[t * 3 + 2])), 1 / 3);
+      dist[t] = len(sub(c, point));
+      order.push(t);
+    }
+    order.sort((a, b) => dist[a] - dist[b]);
+    const near = order.slice(0, 400);
+    for (const t of near) {
+      const f = this.faceAt(t);
+      if (f?.snaps.some(s => len(sub(s.p, point)) < 0.05 && dot(s.n, n) > 0.99)) return f;
+    }
+    for (const t of near) {
+      if (this.area[t] <= 0 || dot(this.normalOf(t), n) < 0.99) continue;
+      const a = this.point(this.corner[t * 3]);
+      if (Math.abs(dot(sub(point, a), n)) < 0.05) return this.faceAt(t);
+    }
+    return near.length ? this.faceAt(near[0]) : null;
+  }
+
   /** The face that triangle `t` belongs to, and its snaps. Kept for next time. */
   faceAt(t: number): Face | null {
     if (t < 0 || t >= this.triangles) return null;

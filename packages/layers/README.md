@@ -76,6 +76,11 @@ const editor = mount(el, {
   curved face, the round rims at its ends (a screw's neck, a peg's end, the
   inside of a hole). A click takes the snap nearest the pointer, so a
   screw's neck goes into a screw hole (`src/scene/snaps.ts`).
+- The **parts list is a tree**: a joined part sits under the part it's
+  joined to, with its joint as a row between them. Click the joint to see
+  it (the parent's face tinted blue, the joined part's orange, and the
+  points joined); the pencil picks the faces again and the unlink button
+  removes the joint, leaving the part where it is.
 - Shapes have **W** and **H** fields for exact sizes. Stretching a box keeps
   its corner size.
 - Smart guides snap to the page's and other layers' edges and middles
