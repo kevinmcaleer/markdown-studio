@@ -103,8 +103,23 @@ export interface LayersHandle {
   getDoc(): LayersDoc;
   isDirty(): boolean;
   exportResult(): Promise<LayersResult>;
+  /**
+   * Draws an assembly guide from the project's model on this editor's page,
+   * one page at a time (cover, Before you start, Parts list, then a step
+   * for each part), handing each finished page to `each`. Meant for an
+   * editor mounted out of sight: it clears the page as it goes. Says how
+   * many pages it made.
+   */
+  assemblyGuide(guide: GuideOptions): Promise<number>;
   focus(): void;
   destroy(): void;
+}
+
+export interface GuideOptions {
+  /** The project's name, for the cover. */
+  title?: string;
+  /** Called with each page as it is finished (upload it, say), with its place and how many there will be. */
+  each(result: LayersResult, index: number, total: number): void | Promise<void>;
 }
 
 const MAX_PICTURE = 2000;
@@ -1312,6 +1327,166 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     return t;
   };
   const named = <T extends FabricObject>(o: T, name: string): T => Object.assign(o, { name, layerId: newId() });
+
+  /**
+   * The assembly guide, as a flat-pack booklet, from the project's model:
+   * a cover with the finished assembly, a "Before you start" page of tips
+   * and tools, the parts list, then one step per part (the first fits the
+   * second part onto the first), each with its fixings, the parts of
+   * earlier steps as ghosts, the new ones highlighted and drawn apart along
+   * their joints with arrows, a parts strip and a pinned step number. Every
+   * page looks from one camera (the project's chosen view, if any), framed
+   * round the whole assembly. Each finished page goes to `guide.each`.
+   */
+  async function assemblyGuide(guide: GuideOptions): Promise<number> {
+    const model = await getProjectModel();
+    if (!model?.parts.length) throw new Error("No project model yet: add a 3D scene with the project's parts first.");
+    const [t, g] = await Promise.all([sceneTools(), import("./scene/guide")]);
+    const sizes = new Map<string, [number, number, number]>();
+    for (const p of model.parts) {
+      try {
+        sizes.set(p.id, (await t.store.get(p)).size);
+      } catch {
+        // A part whose model can't be read counts as a part, not a fixing.
+      }
+      if (destroyed) return 0;
+    }
+    const fixing = (p: { id: string }) => {
+      const s = sizes.get(p.id);
+      return !!s && isFastener(s);
+    };
+    const steps = g.guideSteps(model, fixing);
+    if (!steps.length) throw new Error("Every part in the model is a fixing (12 mm or less across): nothing to fit.");
+    const PAGE = SIZES.find(s => s.id === "photo") || SIZES[0];
+    const SCENE = { left: 0.3, top: 0.06, width: 0.66, height: 0.88 };
+    const COVER = { left: 0.1, top: 0.2, width: 0.8, height: 0.76 };
+    // One camera for every page: the project's chosen view, framed round every step as drawn.
+    const style = { ...blankScene().style, draftSolid: true };
+    const view = model.defaultView ? model.views?.find(v => v.id === model.defaultView) : undefined;
+    const base = view ? view.camera : blankScene().camera;
+    const scenes = [g.coverScene(model, base, style), ...steps.map(s => g.stepScene(model, steps, s.n, base, style))];
+    const camera = await t.frameAll(base, scenes.slice(1), t.store, (PAGE.width * SCENE.width) / (PAGE.height * SCENE.height));
+    // The cover fills its space with the finished assembly alone.
+    scenes[0].camera = await t.frameAll(base, [scenes[0]], t.store, (PAGE.width * COVER.width) / (PAGE.height * COVER.height), 1.1);
+    for (const s of scenes) {
+      if (s !== scenes[0]) s.camera = structuredClone(camera);
+      s.model = { stamp: model.stamp };
+    }
+    const total = steps.length + 3;
+    let made = 0;
+    const text = (s: string, o: Record<string, unknown>) => tbox(s, { fontFamily: FONTS[0][1], ...o });
+    const symbol = (kind: string, height: number, left: number, top: number, name?: string, maxWidth = height * 1.3) => {
+      const o = makeShape(kind, { x: 0, y: 0 }, INK)!;
+      o.scaleToHeight(height);
+      // A wide symbol (two people, a screwdriver) fits the box too.
+      if (o.getBoundingRect().width > maxWidth) o.scaleToWidth(maxWidth);
+      o.set({ left, top });
+      if (name) Object.assign(o, { name });
+      return o;
+    };
+    const page = async (title: string, bg: string, fill: () => Promise<void>) => {
+      if (destroyed) throw new Error("The editor was closed.");
+      canvas.discardActiveObject();
+      canvas.remove(...objects());
+      background = bg;
+      titleInput.value = title;
+      resizePage(PAGE.width, PAGE.height);
+      await fill();
+      if (destroyed) throw new Error("The editor was closed.");
+      canvas.discardActiveObject();
+      canvas.requestRenderAll();
+      const result = await exportResult();
+      await guide.each(result, made, total);
+      made++;
+    };
+    const place = async (scene: SceneData, box: { left: number; top: number; width: number; height: number }) => {
+      const w = Math.round(W * box.width);
+      const h = Math.round(H * box.height);
+      const layer = new SceneLayer(placeholderPicture(w, h), { name: "3D scene" } as Partial<SceneLayer>);
+      layer.scene = scene;
+      layer.pictureScale = 1;
+      await layer.setSrc(placeholderPicture(w, h).toDataURL("image/png"));
+      prepare(layer);
+      layer.set({ left: W * box.left, top: H * box.top });
+      layer.setCoords();
+      canvas.add(layer);
+      await updateScenes([layer]);
+      return layer;
+    };
+    const addAll = (list: FabricObject[]) =>
+      list.forEach(o => {
+        prepare(o);
+        canvas.add(o);
+      });
+    const name = (guide.title || "").trim();
+    const unit = Math.min(PAGE.width, PAGE.height);
+
+    // The cover: the finished assembly, with the project's name.
+    await page(name ? `${name}: assembly guide` : "Assembly guide", "#ffffff", async () => {
+      addAll([
+        text(name || "Assembly guide", { left: W * 0.06, top: H * 0.06, width: W * 0.7, fontSize: Math.round(unit * 0.08), fontWeight: "800" }),
+        text(name ? `Assembly guide · ${steps.length} ${steps.length === 1 ? "step" : "steps"}` : `${steps.length} ${steps.length === 1 ? "step" : "steps"}`, { left: W * 0.06, top: H * 0.06 + unit * 0.11, width: W * 0.6, fontSize: Math.round(unit * 0.035), fill: "#495057" }),
+        symbol("figure", unit * 0.16, W * 0.84, H * 0.05, "Assembly figure"),
+      ]);
+      await place(scenes[0], COVER);
+    });
+
+    // Before you start: a few tips with their symbols, and a row of tools (to edit to match the build).
+    await page("Before you start", "#ffffff", async () => {
+      const tips: [string, string][] = [
+        ["figure", "Lay out every part and check it against the parts list on the next page."],
+        ["careful", "Keep the fixings together in a bowl, so none go missing."],
+        ["two-people", "Ask for a second pair of hands for the bigger parts."],
+        ["help", "Stuck? Ask for help on the project's page."],
+      ];
+      const list: FabricObject[] = [text("Before you start", { left: W * 0.06, top: H * 0.06, width: W * 0.8, fontSize: Math.round(unit * 0.07), fontWeight: "800" })];
+      const rowH = H * 0.13;
+      const top0 = H * 0.2;
+      const ico = unit * 0.09;
+      tips.forEach(([kind, line], i) => {
+        const top = top0 + i * rowH;
+        const o = symbol(kind, ico, 0, top, undefined);
+        o.set({ left: W * 0.06 + (ico * 1.3 - o.getBoundingRect().width) / 2 });
+        list.push(o, text(line, { left: W * 0.06 + unit * 0.16, top: top + ico * 0.2, width: W * 0.7, fontSize: Math.round(unit * 0.034), fill: "#1f2328" }));
+      });
+      const toolsTop = top0 + tips.length * rowH + H * 0.03;
+      list.push(text("You will need", { left: W * 0.06, top: toolsTop, width: W * 0.4, fontSize: Math.round(unit * 0.04), fontWeight: "700" }));
+      let x = W * 0.06;
+      for (const [kind, label] of [["screwdriver", "Screwdriver"], ["allen-key", "Allen key"], ["pliers", "Pliers"]] as [string, string][]) {
+        const o = symbol(kind, unit * 0.1, 0, 0, label, unit * 0.3);
+        const b = o.getBoundingRect();
+        o.set({ left: x, top: toolsTop + unit * 0.06 + (unit * 0.1 - b.height) / 2 });
+        list.push(o);
+        x += Math.max(b.width, unit * 0.12) + unit * 0.05;
+      }
+      addAll(list);
+    });
+
+    // The parts list, as the template draws it.
+    await page("Parts", "#ffffff", () => partsInventory());
+
+    // One page per step.
+    for (const step of steps) {
+      await page(`Step ${step.n}`, "#ececec", async () => {
+        const floor = new Polygon([{ x: 0, y: H * 0.55 }, { x: W, y: H * 0.38 }, { x: W, y: H }, { x: 0, y: H }], { fill: "#d6d6d6", strokeWidth: 0, objectCaching: false });
+        Object.assign(floor, { name: "Floor", layerId: newId() });
+        const b = badge(step.n, { x: W * 0.05, y: H * 0.06 }, INK);
+        Object.assign(b, { badgePinned: true });
+        addAll([
+          floor,
+          b,
+          text(g.stepTitle(step), { left: W * 0.05, top: H * 0.06 + 100, width: W * 0.22, fontSize: Math.round(unit * 0.045), fontWeight: "800" }),
+          text(step.fixings.length ? "Fit the highlighted parts and fixings as shown." : "Fit the highlighted parts as shown.", { left: W * 0.05, top: H * 0.06 + 100 + unit * 0.12, width: W * 0.22, fontSize: Math.round(unit * 0.028), fill: "#495057" }),
+        ]);
+        const layer = await place(scenes[step.n], SCENE);
+        if (destroyed) return;
+        await partsStrip(layer, true);
+        await stepArrows(layer);
+      });
+    }
+    status(`Assembly guide: ${made} pages.`);
+    return made;
+  }
 
   /** After a scene is drawn again: its parts strip and detail circles follow, and the turn mark comes or goes. */
   async function followScene(layer: SceneLayer, firstDone = false): Promise<void> {
@@ -2958,6 +3133,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     getDoc,
     isDirty,
     exportResult,
+    assemblyGuide,
     focus: () => root.focus({ preventScroll: true }),
     destroy,
   };

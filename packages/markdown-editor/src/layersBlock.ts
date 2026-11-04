@@ -34,6 +34,8 @@ export type LayersEditor = {
   mode(): "inline" | "full";
   destroy(): void;
   focus(): void;
+  /** Draws an assembly guide from the project's model, a page at a time (Layers 3D scenes). */
+  assemblyGuide?(guide: { title?: string; each(result: LayersResult, index: number, total: number): void | Promise<void> }): Promise<number>;
 };
 export type LayersResult = { png: Blob; title: string; width: number; height: number };
 
@@ -338,6 +340,113 @@ export function openLayers(view: EditorView, host: LayersHost, pos: number, mode
       container.append(msg);
     }
   })();
+}
+
+// ------------------------------------------------------------ the assembly guide
+
+export const GUIDE_HEADING = "## Assembly guide";
+const GUIDE_MARK = /^\*Making the assembly guide[^\n]*\*$/m;
+
+/**
+ * Where the assembly guide goes in `text`: the body of its "## Assembly
+ * guide" section (up to the next heading of that level or higher), or, with
+ * no such section, the end of the text with the heading to insert first.
+ * The guide follows the last step, so a printed page carries it too.
+ */
+export function guideSection(text: string): { from: number; to: number; heading: boolean } {
+  const re = /^## Assembly guide[ \t]*$/m;
+  const m = re.exec(text);
+  if (!m) return { from: text.length, to: text.length, heading: true };
+  let from = m.index + m[0].length;
+  if (text[from] === "\n") from++;
+  const rest = text.slice(from);
+  const next = /^#{1,2}[ \t]/m.exec(rest);
+  const to = next ? from + next.index : text.length;
+  return { from, to, heading: false };
+}
+
+/** The text's first heading-one, as the project's name, or "". */
+function titleOf(text: string): string {
+  return /^# (.+)$/m.exec(text)?.[1].trim() ?? "";
+}
+
+/**
+ * Draws an assembly guide from the project's model (a cover, Before you
+ * start, the parts list and a step per part), uploads each page and puts
+ * them under "## Assembly guide" at the end of the text (or in that section,
+ * replacing what it held). Layers draws the pages out of sight; a line in
+ * the text says how far it has got.
+ */
+export async function makeAssemblyGuide(view: EditorView, host: LayersHost): Promise<void> {
+  if (view.state.readOnly || !host.loadModel || !host.saveModel) return;
+  const text = view.state.doc.toString();
+  const section = guideSection(text);
+  const lead = section.heading ? `${text.length && !text.endsWith("\n\n") ? (text.endsWith("\n") ? "\n" : "\n\n") : ""}${GUIDE_HEADING}\n\n` : section.from === section.to || text.slice(section.from, section.to).startsWith("\n") ? "" : "\n";
+  const mark = (s: string) => `*Making the assembly guide: ${s}…*`;
+  view.dispatch({ changes: { from: section.from, to: section.to, insert: `${lead}${mark("opening the project's model")}\n\n` }, userEvent: "input.layers" });
+  const setMark = (replacement: string) => {
+    const now = view.state.doc.toString();
+    const m = GUIDE_MARK.exec(now);
+    if (!m) return false;
+    view.dispatch({ changes: { from: m.index, to: m.index + m[0].length, insert: replacement }, userEvent: "input.layers" });
+    return true;
+  };
+  const box = document.createElement("div");
+  box.className = "cm-layers-hidden";
+  box.style.cssText = "position:fixed;left:-40000px;top:0;width:1200px;height:800px;overflow:hidden;pointer-events:none";
+  document.body.appendChild(box);
+  let editor: LayersEditor | null = null;
+  const lines: string[] = [];
+  try {
+    const api = await loadLayers(host.load);
+    editor = api.mount(box, {
+      doc: null,
+      mode: "inline",
+      allowInline: true,
+      fetchImage: host.fetchImage ?? defaultFetch,
+      listImages: host.listImages,
+      listModels: host.listModels,
+      fetchModel: host.fetchModel ?? (async (url: string) => (await defaultFetch(url)).arrayBuffer()),
+      loadModel: () => projectModel(host),
+      saveModel: async (model: LayersProjectModel) => {
+        await host.saveModel!(model);
+        modelCache.set(host, { at: Date.now(), model: Promise.resolve(model) });
+      },
+      onDone: () => {},
+      onCancel: () => {},
+    });
+    if (!editor.assemblyGuide) throw new Error("this version of Layers can't draw one");
+    await editor.assemblyGuide({
+      title: titleOf(text),
+      each: async (result, index, total) => {
+        setMark(mark(`page ${index + 1} of ${total}, ${result.title || "a page"}`));
+        const file = new File([result.png], graphicFileName(result.title), { type: "image/png" });
+        const url = layersUrl(await host.uploadImage(file));
+        lines.push(imageMarkdown({ alt: result.title || `Page ${index + 1}`, url }));
+      },
+    });
+    setMark(lines.join("\n\n"));
+  } catch (e) {
+    const msg = e instanceof Error && e.message ? e.message : String(e);
+    // The pages made so far stay; the line says what stopped it.
+    setMark([...lines, `*The assembly guide couldn't be finished: ${msg.replace(/\*/g, "")}*`].join("\n\n"));
+  } finally {
+    editor?.destroy();
+    box.remove();
+  }
+}
+
+/** "/Assembly guide": a booklet of pages drawn from the project's model, under "## Assembly guide" at the end. */
+export function assemblyGuideCommand(host: LayersHost): SlashCommand {
+  return {
+    id: "assembly-guide",
+    label: "Assembly guide",
+    keywords: ["assembly", "guide", "booklet", "instructions", "steps", "flat-pack", "ikea", "manual", "3d"],
+    group: "inline",
+    icon: "M2.5 2.5h11v11h-11zM2.5 6.5h11M6.5 6.5v7M8.5 9.5h3M8.5 11.5h3",
+    block: true,
+    run: (view) => void makeAssemblyGuide(view, host),
+  };
 }
 
 /** Whether Layers is open in this editor. */
