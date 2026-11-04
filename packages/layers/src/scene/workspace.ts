@@ -530,6 +530,19 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       if (!d || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 4 || gizmo.dragging || (gizmo as unknown as { axis: string | null }).axis) return;
       const r = canvasEl.getBoundingClientRect();
       const ndc = new Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+      // A right-click (not a right-drag, which pans): the part's menu, or the view's.
+      if ((e.button === 2 || (e.button === 0 && e.ctrlKey && mac)) && !joining) {
+        art.scene.updateMatrixWorld(true);
+        raycaster.setFromCamera(ndc, camera);
+        const hit = raycaster.intersectObjects(art.meshes(), false)[0];
+        const id = hit ? String(hit.object.userData.partId || "") : "";
+        if (id && partById(id)) {
+          if (selectedId !== id || shownJoint) select(id);
+          partMenu(id, e.clientX, e.clientY);
+        } else viewMenu(e.clientX, e.clientY);
+        return;
+      }
+      if (e.button !== 0) return;
       if (joining) {
         hoverAt(e);
         pickFace(hoverPick());
@@ -699,7 +712,10 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
             </li>${(byParent.get(p.id) || []).map(c => row(c, depth + 1)).join("")}`;
       };
       renderModelNote();
+      const had = list.contains(document.activeElement);
       list.innerHTML = scene.parts.length ? (byParent.get("") || []).map(p => row(p, 0)).join("") : `<li class="lyr-note">No parts yet.</li>`;
+      // The button clicked has gone: keep the keys working in the scene.
+      if (had) root.focus({ preventScroll: true });
     }
 
     /** Whether this scene's parts are the project's model. */
@@ -761,32 +777,191 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       } else if (d.unjoin) {
         const p = partById(d.unjoin);
         if (p) unjoin(p);
-      } else if (d.highlight) {
-        const p = partById(d.highlight);
-        if (!p) return;
-        p.highlight = !p.highlight || undefined;
-        if (!p.highlight) delete p.highlight;
-        rebuild();
-        commit();
-        renderProps();
-      } else if (d.ghostPart) {
-        const p = partById(d.ghostPart);
-        if (!p) return;
-        if (p.ghost) delete p.ghost;
-        else p.ghost = true;
-        rebuild();
-        commit();
-        renderList();
-        renderProps();
-      } else if (d.hide) {
-        const p = partById(d.hide);
-        if (!p) return;
-        if (p.hidden) delete p.hidden;
-        else p.hidden = true;
-        rebuild();
-        commit();
-        renderModelNote();
-      } else if (d.remove) removePart(d.remove);
+      } else if (d.highlight) toggle(d.highlight, "highlight");
+      else if (d.ghostPart) toggle(d.ghostPart, "ghost");
+      else if (d.hide) toggle(d.hide, "hidden");
+      else if (d.remove) removePart(d.remove);
+    });
+
+    /** Turns a part's highlight, ghost or hidden on or off. */
+    function toggle(id: string, key: "highlight" | "ghost" | "hidden"): void {
+      const p = partById(id);
+      if (!p) return;
+      if (p[key]) delete p[key];
+      else p[key] = true;
+      rebuild();
+      commit();
+      renderList();
+      renderProps();
+    }
+
+    /** A copy of a part, standing on its own beside it (its joint isn't copied: join the copy where it goes). */
+    function duplicatePart(id: string): void {
+      const p = partById(id);
+      const model = models.get(id);
+      if (!p || !model || model instanceof Error) return;
+      const world = worldMatrices(scene.parts, 0).get(id) || new Matrix4();
+      const names = new Set(scene.parts.map(x => x.name));
+      const base = p.name.replace(/ \d+$/, "");
+      let n = 2;
+      while (names.has(`${base} ${n}`)) n++;
+      const copy: ScenePart = { ...structuredClone(p), id: newPartId(scene.parts), name: `${base} ${n}`.slice(0, 120) };
+      delete copy.parent;
+      delete copy.joint;
+      delete copy.hidden;
+      // Beside it, one part's width plus a gap along X.
+      const shift = new Matrix4().makeTranslation(model.size[0] + 10, 0, 0);
+      setLocalFromWorld(copy, shift.multiply(world), null);
+      opts.store.put(copy, model);
+      models.set(copy.id, model);
+      scene.parts.push(copy);
+      selectedId = copy.id;
+      shownJoint = "";
+      rebuild();
+      commit();
+      renderList();
+      renderProps();
+      status(`${copy.name} added beside ${p.name}. Join it where it goes with Join.`);
+    }
+
+    /** Shows only this part (or all of them again). */
+    function showOnly(id: string): void {
+      for (const x of scene.parts) {
+        if (!id || x.id === id) delete x.hidden;
+        else x.hidden = true;
+      }
+      rebuild();
+      commit();
+      renderList();
+      renderProps();
+    }
+
+    /** Puts the caret in the part's Name box. */
+    function renameAt(id: string): void {
+      select(id);
+      const input = props.querySelector<HTMLInputElement>("[data-name]");
+      input?.focus();
+      input?.select();
+    }
+
+    // ------------------------------------------------------------ right-click menus
+
+    interface MenuItem { label: string; icon?: string; keys?: string; on?: boolean; danger?: boolean; run: () => void }
+    const ctx = document.createElement("div");
+    ctx.className = "lyr-scene-ctx";
+    ctx.setAttribute("role", "menu");
+    ctx.hidden = true;
+    overlay.appendChild(ctx);
+    let ctxItems: (MenuItem | null)[] = [];
+    function openCtx(x: number, y: number, title: string, items: (MenuItem | null)[]): void {
+      ctxItems = items;
+      ctx.innerHTML = `<div class="lyr-scene-ctx-title">${esc(title)}</div>` + items.map((it, i) => it
+        ? `<button type="button" class="lyr-scene-ctx-item${it.danger ? " lyr-danger" : ""}" role="${it.on === undefined ? "menuitem" : "menuitemcheckbox"}"${it.on === undefined ? "" : ` aria-checked="${it.on}"`} data-ctx="${i}">
+             <span class="lyr-scene-ctx-icon">${it.on ? icon("check", 16) : it.icon ? icon(it.icon, 16) : ""}</span><span>${esc(it.label)}</span>${it.keys ? `<kbd>${esc(it.keys)}</kbd>` : ""}</button>`
+        : `<hr>`).join("");
+      ctx.hidden = false;
+      const r = ctx.getBoundingClientRect();
+      ctx.style.left = `${Math.max(4, Math.min(x, window.innerWidth - r.width - 4))}px`;
+      ctx.style.top = `${Math.max(4, Math.min(y, window.innerHeight - r.height - 4))}px`;
+      ctx.querySelector<HTMLButtonElement>("button")?.focus({ preventScroll: true });
+    }
+    function closeCtx(): void {
+      if (ctx.hidden) return;
+      const had = ctx.contains(document.activeElement);
+      ctx.hidden = true;
+      ctxItems = [];
+      // Keys go on working in the scene (Delete, ⌘D, Esc…).
+      if (had) root.focus({ preventScroll: true });
+    }
+    ctx.addEventListener("click", e => {
+      const b = (e.target as HTMLElement).closest<HTMLElement>("[data-ctx]");
+      if (!b) return;
+      const it = ctxItems[Number(b.dataset.ctx)];
+      closeCtx();
+      it?.run();
+    });
+    ctx.addEventListener("keydown", e => {
+      const items = [...ctx.querySelectorAll<HTMLButtonElement>("button")];
+      const at = items.indexOf(document.activeElement as HTMLButtonElement);
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        e.stopPropagation();
+        items[(at + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length]?.focus();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        closeCtx();
+      }
+    });
+    ctx.addEventListener("contextmenu", e => e.preventDefault());
+    overlay.addEventListener("pointerdown", e => {
+      if (!ctx.contains(e.target as Node)) closeCtx();
+    }, true);
+    overlay.addEventListener("wheel", () => closeCtx(), { passive: true, capture: true });
+
+    const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+    const keyName = (k: string) => (mac ? `⌘${k}` : `Ctrl+${k}`);
+
+    function partMenu(id: string, x: number, y: number): void {
+      const p = partById(id);
+      if (!p) return;
+      const parent = p.parent ? partById(p.parent) : undefined;
+      const broken = models.get(id) instanceof Error;
+      const others = scene.parts.some(o => o.id !== id && !o.hidden);
+      openCtx(x, y, p.name, [
+        { label: "Zoom to it", icon: "frame", run: () => { select(id); zoomTo(id, false); } },
+        { label: "Rename", icon: "pencil", run: () => renameAt(id) },
+        ...(broken ? [] : [{ label: "Duplicate", icon: "copy", keys: keyName("D"), run: () => duplicatePart(id) }]),
+        null,
+        parent
+          ? { label: `Edit joint to ${parent.name}`, icon: "link", run: () => { select(id); openJointDialog(id); } }
+          : { label: "Join to another part…", icon: "link", run: () => { select(id); openJointDialog(id); } },
+        ...(parent ? [{ label: "Remove joint", icon: "unlink", run: () => unjoin(p) }] : []),
+        null,
+        { label: "Highlight", on: !!p.highlight, run: () => toggle(id, "highlight") },
+        { label: "Ghost", on: !!p.ghost, run: () => toggle(id, "ghost") },
+        { label: linked() ? "Show in this scene" : "Show", on: !p.hidden, run: () => toggle(id, "hidden") },
+        ...(others ? [{ label: "Show only this", icon: "eye", run: () => showOnly(id) }] : []),
+        ...(scene.parts.some(o => o.hidden) ? [{ label: "Show all parts", icon: "eye", run: () => showOnly("") }] : []),
+        null,
+        { label: linked() ? "Remove from the model" : "Remove", icon: "trash", keys: "Del", danger: true, run: () => removePart(id) },
+      ]);
+    }
+
+    function jointMenu(id: string, x: number, y: number): void {
+      const p = partById(id);
+      const parent = p?.parent ? partById(p.parent) : undefined;
+      if (!p || !parent) return;
+      openCtx(x, y, `${p.name} → ${parent.name}`, [
+        { label: "Show and zoom to it", icon: "frame", run: () => { showJoint(id); zoomTo(id, true); } },
+        { label: "Edit joint", icon: "pencil", run: () => { select(id); openJointDialog(id); } },
+        null,
+        { label: `Select ${p.name}`, icon: "cube", run: () => select(id) },
+        { label: `Select ${parent.name}`, icon: "cube", run: () => select(parent.id) },
+        null,
+        { label: "Remove joint", icon: "unlink", danger: true, run: () => unjoin(p) },
+      ]);
+    }
+
+    function viewMenu(x: number, y: number): void {
+      openCtx(x, y, "View", [
+        { label: "Fit everything", icon: "frame", keys: "F", run: () => fitView(true) },
+        ...(VIEWS.map(v => ({ label: v.label, run: () => setView(v.id) }))),
+        null,
+        ...(scene.parts.some(o => o.hidden) ? [{ label: "Show all parts", icon: "eye", run: () => showOnly("") }] : []),
+        { label: "Add a part…", icon: "plus", run: () => void openMenu() },
+      ]);
+    }
+
+    list.addEventListener("contextmenu", e => {
+      const b = (e.target as HTMLElement).closest<HTMLElement>("li");
+      const id = b?.dataset.id || b?.querySelector<HTMLElement>("[data-joint]")?.dataset.joint;
+      if (!b || !id) return;
+      e.preventDefault();
+      if (b.dataset.id) {
+        if (selectedId !== id || shownJoint) select(id);
+        partMenu(id, e.clientX, e.clientY);
+      } else jointMenu(id, e.clientX, e.clientY);
     });
 
     // ------------------------------------------------------------ the part and style panel
@@ -2062,8 +2237,12 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       } else if (mod && key === "y") {
         e.preventDefault();
         redo();
+      } else if (mod && key === "d" && selectedId) {
+        e.preventDefault();
+        duplicatePart(selectedId);
       } else if (e.key === "Escape") {
-        if (joining) stopJoin("Join stopped.");
+        if (!ctx.hidden) closeCtx();
+        else if (joining) stopJoin("Join stopped.");
         else if (!menu.hidden) closeMenu();
         else if (selectedId) select("");
         else cancel();

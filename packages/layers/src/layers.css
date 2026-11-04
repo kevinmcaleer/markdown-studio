@@ -683,3 +683,47 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 .lyr-joint-face .lyr-wide-btn { flex: 1; min-width: 0; }
 .lyr-joint-face .lyr-wide-btn.lyr-on { border-color: var(--lyr-accent); background: var(--lyr-accent-soft); color: var(--lyr-accent); }
 .lyr-joint-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--lyr-line); }
+
+/* Right-click menus in the 3D scene: a part, a joint, or the view. */
+.lyr-scene-ctx {
+  position: fixed;
+  z-index: 20;
+  min-width: 220px;
+  max-width: 320px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid var(--lyr-line);
+  border-radius: var(--lyr-radius);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.18);
+}
+.lyr-scene-ctx-title {
+  margin: 4px 8px 4px;
+  overflow: hidden;
+  color: var(--lyr-muted, #6b7280);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lyr-scene-ctx hr { margin: 4px 2px; border: 0; border-top: 1px solid var(--lyr-line); }
+.lyr-scene-ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lyr-scene-ctx-item:hover, .lyr-scene-ctx-item:focus-visible { background: var(--lyr-hover); outline: none; }
+.lyr-scene-ctx-item > span:nth-child(2) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lyr-scene-ctx-icon { display: flex; align-items: center; justify-content: center; flex: none; width: 16px; height: 16px; }
+.lyr-scene-ctx-icon svg { width: auto; }
+.lyr-scene-ctx-item kbd { flex: none; color: var(--lyr-muted, #6b7280); font: inherit; font-size: 12px; }
+.lyr-scene-ctx-item.lyr-danger { color: #c62828; }
