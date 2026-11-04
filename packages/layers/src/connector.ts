@@ -13,10 +13,12 @@ export interface ConnectorEnd {
 
 export class Connector extends Line {
   static type = "Connector";
-  static customProperties = ["arrowStart", "arrowEnd", "connFrom", "connTo"];
+  static customProperties = ["arrowStart", "arrowEnd", "arrowSolid", "connFrom", "connTo"];
 
   declare arrowStart?: boolean;
   declare arrowEnd?: boolean;
+  /** Filled triangle heads, like the arrows on assembly sheets, instead of open ones. */
+  declare arrowSolid?: boolean;
   declare connFrom?: ConnectorEnd | null;
   declare connTo?: ConnectorEnd | null;
 
@@ -39,6 +41,7 @@ export class Connector extends Line {
   }
 
   _render(ctx: CanvasRenderingContext2D): void {
+    if (this.arrowSolid && (this.arrowStart || this.arrowEnd)) return this.renderSolid(ctx);
     super._render(ctx);
     if (!this.arrowStart && !this.arrowEnd) return;
     const p = this.calcLinePoints();
@@ -65,6 +68,50 @@ export class Connector extends Line {
     if (typeof this.stroke === "string") ctx.strokeStyle = this.stroke;
     if (this.stroke) this._renderStroke(ctx);
     this.strokeDashArray = dash;
+  }
+
+  /** The shaft stops short inside each solid head, so its round end doesn't poke out of the point. */
+  private renderSolid(ctx: CanvasRenderingContext2D): void {
+    const p = this.calcLinePoints();
+    const len = Math.hypot(p.x2 - p.x1, p.y2 - p.y1);
+    if (len < 1) return;
+    const sw = Number(this.strokeWidth) || 1;
+    const both = this.arrowStart && this.arrowEnd;
+    const head = Math.min(sw * 2.6 + 14, len * (both ? 0.45 : 0.8));
+    const half = Math.max(sw * 1.5 + 6, head * 0.62);
+    const ux = (p.x2 - p.x1) / len;
+    const uy = (p.y2 - p.y1) / len;
+    const back = head * 0.6;
+    const a = this.arrowStart ? { x: p.x1 + ux * back, y: p.y1 + uy * back } : { x: p.x1, y: p.y1 };
+    const b = this.arrowEnd ? { x: p.x2 - ux * back, y: p.y2 - uy * back } : { x: p.x2, y: p.y2 };
+    const color = typeof this.stroke === "string" ? this.stroke : "#000";
+    ctx.save();
+    ctx.lineWidth = sw;
+    ctx.lineCap = "round";
+    ctx.strokeStyle = color;
+    if (this.strokeDashArray?.length) ctx.setLineDash(this.strokeDashArray);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = color;
+    ctx.lineJoin = "round";
+    ctx.lineWidth = Math.max(1, sw * 0.25);
+    const tri = (tx: number, ty: number, dx: number, dy: number) => {
+      const bx = tx - dx * head;
+      const by = ty - dy * head;
+      ctx.beginPath();
+      ctx.moveTo(tx, ty);
+      ctx.lineTo(bx - dy * half, by + dx * half);
+      ctx.lineTo(bx + dy * half, by - dx * half);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    };
+    if (this.arrowEnd) tri(p.x2, p.y2, ux, uy);
+    if (this.arrowStart) tri(p.x1, p.y1, -ux, -uy);
+    ctx.restore();
   }
 }
 

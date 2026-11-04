@@ -3,6 +3,7 @@
 
 import { Circle, Ellipse, FabricObject, FabricText, Group, Path, Polygon, Rect, Textbox } from "fabric";
 import { Connector } from "./connector";
+import { CROSS, CURVED_SOLID, HELP, NO_SIGN, ROTATE, TICK } from "./symbols";
 import { measureTextAtRealSize } from "./textMeasure";
 
 // Letters are measured at the size they are drawn, so the caret and centring match (see textMeasure.ts).
@@ -77,6 +78,20 @@ export const LINES: ShapeKind[] = [
   { id: "badge", label: "Step number", svg: `<circle cx="24" cy="24" r="16" fill="${ACCENT}"/><text x="24" y="30.5" text-anchor="middle" font-size="18" font-weight="700" fill="#fff" font-family="sans-serif">1</text>` },
 ];
 
+/** Assembly-sheet symbols, drawn in black line art like flat-pack instructions. */
+export const SYMBOLS: ShapeKind[] = [
+  { id: "tick", label: "Tick (do this)", svg: `<g transform="translate(6 6) scale(.36)"><path d="${TICK}" fill="currentColor"/></g>` },
+  { id: "cross", label: "Cross (don't do this)", svg: `<g transform="translate(6 6) scale(.36)"><path d="${CROSS}" fill="currentColor"/></g>` },
+  { id: "solid-arrow", label: "Solid arrow", svg: '<path d="M5 24h22" stroke="currentColor" stroke-width="7" stroke-linecap="round"/><path d="M43 24 25 13v22z" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>' },
+  { id: "curved-solid", label: "Solid curved arrow", svg: `<g transform="translate(5 10) scale(.19)"><path d="${CURVED_SOLID}" fill="currentColor" transform="translate(-4 -54)"/></g>` },
+  { id: "rotate", label: "Turn it", svg: `<g transform="translate(5 5) scale(.19)"><path d="${ROTATE}" fill="currentColor"/></g>` },
+  { id: "no", label: "Not allowed", svg: `<g transform="translate(5 5) scale(.19)"><path d="${NO_SIGN}" fill="currentColor"/></g>` },
+  { id: "help", label: "Ask for help", svg: `<g transform="translate(6 5) scale(.165)"><path d="${HELP}" fill="currentColor"/></g>` },
+  { id: "qty", label: "Quantity (1x)", svg: '<text x="24" y="31" text-anchor="middle" font-size="19" font-weight="600" fill="currentColor" font-family="sans-serif">1x</text>' },
+  { id: "step-plain", label: "Step number (1.)", svg: '<text x="24" y="35" text-anchor="middle" font-size="30" font-weight="900" fill="currentColor" font-family="sans-serif">1.</text>' },
+  { id: "panel", label: "Parts box", svg: '<rect x="7" y="9" width="34" height="30" rx="7" fill="none" stroke="currentColor" stroke-width="3"/>' },
+];
+
 const ARROW = "M 0 40 L 200 40 M 170 10 L 200 40 L 170 70";
 const CURVED = "M 0 160 C 30 60 100 20 200 30 M 165 0 L 200 30 L 168 64";
 const BUBBLE = "M 0 0 L 240 0 L 240 150 L 110 150 L 60 200 L 60 150 L 0 150 Z";
@@ -133,6 +148,16 @@ export function makeShape(kind: string, at: Point, color: string): FabricObject 
     case "arrow": return named(new Connector([0, 0, 300, 0], { ...base, ...lineStyle(color), arrowEnd: true }), "Arrow");
     case "double": return named(new Connector([0, 0, 300, 0], { ...base, ...lineStyle(color), arrowStart: true, arrowEnd: true }), "Double arrow");
     case "curved": return named(new Path(CURVED, { ...base, ...lineStyle(color) }), "Curved arrow");
+    case "tick": return named(new Path(TICK, { ...base, ...fill, scaleX: 1.6, scaleY: 1.6 }), "Tick");
+    case "cross": return named(new Path(CROSS, { ...base, ...fill, scaleX: 1.6, scaleY: 1.6 }), "Cross");
+    case "solid-arrow": return named(new Connector([0, 0, 300, 0], { ...base, ...lineStyle(color), strokeWidth: 22, arrowEnd: true, arrowSolid: true }), "Solid arrow");
+    case "curved-solid": return named(new Path(CURVED_SOLID, { ...base, ...fill }), "Curved arrow");
+    case "rotate": return named(new Path(ROTATE, { ...base, ...fill }), "Turn arrow");
+    case "no": return named(new Path(NO_SIGN, { ...base, ...fill }), "Not allowed");
+    case "help": return named(new Path(HELP, { ...base, ...fill }), "Ask for help");
+    case "qty": return named(new Textbox("1x", { ...base, fontFamily: FONTS[0][1], fontSize: 56, fontWeight: "600", fill: color, width: 110, textAlign: "center" }), "Quantity");
+    case "step-plain": return named(new Textbox("1.", { ...base, fontFamily: FONTS[0][1], fontSize: 140, fontWeight: "900", fill: color, width: 170 }), "Step number");
+    case "panel": return named(new Rect({ ...base, width: 420, height: 300, rx: 36, ry: 36, fill: "#ffffff", stroke: color, strokeWidth: 6, strokeUniform: true }), "Parts box");
     default: return null;
   }
 }

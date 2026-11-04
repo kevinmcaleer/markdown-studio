@@ -43,6 +43,7 @@ const P: Record<string, string> = {
   dash: "M3 12h3M10.5 12h3M18 12h3",
   arrowEnd: "M3 12h17M14 6l6 6-6 6",
   arrowStart: "M21 12H4M10 6l-6 6 6 6",
+  arrowSolid: "M3 12h10M13 6l8 6-8 6z",
   textInShape: "M3 5h18v14H3zM8 9h8M12 9v6",
   border: "M4 4h16v16H4z",
   rounded: "M4 20V10a6 6 0 0 1 6-6h10",

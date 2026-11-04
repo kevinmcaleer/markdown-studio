@@ -14,7 +14,7 @@ import { alignBoxes, distributeBoxes, type AlignHow, type DistributeHow } from "
 import { Connector, type ConnectorEnd } from "./connector";
 import { blankDoc, clampSide, embedDoc, defaultFetch, exportScales, MAX_EXPORT_BYTES, MAX_SIDE, MIN_SIDE, normalizeDoc, SIZES, type LayersDoc } from "./doc";
 import {
-  ACCENT, badge, boundTo, canHoldText, FONTS, INK, isLine, isText, kindOf, LINES, makeShape, makeText, newId, PALETTE, SHAPES, shapeText, TEMPLATES, TEXT_STYLES,
+  ACCENT, badge, boundTo, canHoldText, FONTS, INK, isLine, isText, kindOf, LINES, makeShape, makeText, newId, PALETTE, SHAPES, SYMBOLS, shapeText, TEMPLATES, TEXT_STYLES,
   type Point as XY,
 } from "./elements";
 import { boxSides, dist, distToSegment, facingSide, polygonSides, SIDES, snapAngle, type Pt, type Side } from "./geometry";
@@ -787,7 +787,9 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       add(badge(nextBadge(), { x: 0, y: 0 }, lastColor.badge || ACCENT), at);
       return;
     }
-    const o = makeShape(kind, { x: 0, y: 0 }, isLineKind(kind) ? lastColor.line || INK : lastColor.shape || "#74c0fc");
+    // Instruction symbols start in black, like the line art they sit beside.
+    const color = SYMBOLS.some(s => s.id === kind) ? INK : isLineKind(kind) ? lastColor.line || INK : lastColor.shape || "#74c0fc";
+    const o = makeShape(kind, { x: 0, y: 0 }, color);
     if (o) add(o, at);
   }
   const isLineKind = (k: string) => LINES.some(l => l.id === k);
@@ -1490,7 +1492,8 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
         <button type="button" class="lyr-btn${o.strokeDashArray?.length ? " lyr-on" : ""}" data-toggle="dash" title="Dashed" aria-label="Dashed">${icon("dash")}</button>
         ${o instanceof Connector ? `
         <button type="button" class="lyr-btn${o.arrowStart ? " lyr-on" : ""}" data-toggle="arrowStart" title="Arrow at the start" aria-label="Arrow at the start">${icon("arrowStart")}</button>
-        <button type="button" class="lyr-btn${o.arrowEnd ? " lyr-on" : ""}" data-toggle="arrowEnd" title="Arrow at the end" aria-label="Arrow at the end">${icon("arrowEnd")}</button>` : ""}
+        <button type="button" class="lyr-btn${o.arrowEnd ? " lyr-on" : ""}" data-toggle="arrowEnd" title="Arrow at the end" aria-label="Arrow at the end">${icon("arrowEnd")}</button>
+        <button type="button" class="lyr-btn${o.arrowSolid ? " lyr-on" : ""}" data-toggle="arrowSolid" title="Solid arrow heads" aria-label="Solid arrow heads">${icon("arrowSolid")}</button>` : ""}
         <button type="button" class="lyr-btn" data-act="flip-x" title="Flip direction" aria-label="Flip direction">${icon("flipH")}</button>`;
     } else if (!(o instanceof ActiveSelection) && !(o instanceof Group)) {
       html += `
@@ -1653,7 +1656,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       if (t && el.dataset.toggle === "bold") apply({ fontWeight: Number(t.fontWeight) >= 600 || t.fontWeight === "bold" ? "400" : "700" }, textTargets());
       if (t && el.dataset.toggle === "italic") apply({ fontStyle: t.fontStyle === "italic" ? "normal" : "italic" }, textTargets());
       if (t && el.dataset.toggle === "underline") apply({ underline: !t.underline }, textTargets());
-      if (o instanceof Connector && (el.dataset.toggle === "arrowStart" || el.dataset.toggle === "arrowEnd")) {
+      if (o instanceof Connector && (el.dataset.toggle === "arrowStart" || el.dataset.toggle === "arrowEnd" || el.dataset.toggle === "arrowSolid")) {
         const key = el.dataset.toggle;
         apply({ [key]: !o[key] }, selected().filter(x => x instanceof Connector));
       }
@@ -1870,6 +1873,8 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
           <div class="lyr-tiles">${SHAPES.map(s => tile(s.id, s.label, s.svg)).join("")}</div>
           <div class="lyr-panel-title">Lines, arrows and steps</div>
           <div class="lyr-tiles">${LINES.map(s => tile(s.id, s.label, s.svg)).join("")}</div>
+          <div class="lyr-panel-title">Instruction symbols</div>
+          <div class="lyr-tiles">${SYMBOLS.map(s => tile(s.id, s.label, s.svg)).join("")}</div>
           <div class="lyr-panel-title">3D</div>
           <button type="button" class="lyr-wide-btn" data-add="scene" title="Bring in STL or STEP models and draw them as assembly-instruction line art">${icon("cube", 16)} 3D scene from STL or STEP files</button>
           <p class="lyr-note">Click to add, or drag onto the page.</p>`;
