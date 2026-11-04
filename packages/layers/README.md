@@ -73,7 +73,10 @@ const editor = mount(el, {
   adjust it about and along the joint. The **Explode** slider slides every
   joined part out along its joint by its own Explode distance, so a joined
   branch comes apart together, with dashed **draft lines** from each part
-  back to where it fits (Style: *Draft lines when exploded*). **Ghost**
+  back to where it fits (Style: *Draft lines when exploded*). Untick a
+  joint's box in the parts list and it stays assembled in this scene;
+  pick joints (⌘ or Shift-click their explode buttons) and *Explode only
+  these* keeps every other joint assembled. **Ghost**
   draws a part faint, for parts fitted in an earlier step.
 - **The step frame**, as on a flat-pack sheet, from a 3D scene's bar:
   *Parts strip* boxes the parts the step uses beside the picture, as on a
