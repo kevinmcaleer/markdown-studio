@@ -315,6 +315,10 @@ export class LineArt {
   arrows = false;
   private arrowMesh: Mesh | null = null;
   private arrowMaterial: MeshBasicMaterial | null = null;
+  /** The parts' depth as drawn, for keeping each arrow's head out from behind a part. */
+  private depthTarget: WebGLRenderTarget | null = null;
+  private depthMaterial: ShaderMaterial | null = null;
+  private depthPixel = new Uint8Array(4);
   /** Spots cut back to the fills alone (a detail circle's tail tip): the outline breaks round what the tail points at. */
   cuts: Cut[] = [];
   private cutMaterial: ShaderMaterial | null = null;
@@ -643,6 +647,50 @@ export class LineArt {
    * depth, so an arrow passes behind a part rather than over it, and a
    * screw's arrow stops at the hole. Sized from the picture, not the parts.
    */
+  /** The parts' depth, 16 bits in red and green, read back point by point to see what hides an arrow. */
+  private drawDepth(camera: OrthographicCamera, pw: number, ph: number): void {
+    const r = this.renderer;
+    if (!this.depthTarget || this.depthTarget.width !== pw || this.depthTarget.height !== ph) {
+      this.depthTarget?.dispose();
+      this.depthTarget = new WebGLRenderTarget(pw, ph, { minFilter: NearestFilter, magFilter: NearestFilter, depthBuffer: true });
+    }
+    if (!this.depthMaterial) {
+      this.depthMaterial = new ShaderMaterial({
+        vertexShader: "#include <common>\n#include <clipping_planes_pars_vertex>\nvoid main() {\n#include <begin_vertex>\n#include <project_vertex>\n#include <clipping_planes_vertex>\n}",
+        fragmentShader: "#include <common>\n#include <clipping_planes_pars_fragment>\nvoid main() {\n#include <clipping_planes_fragment>\nfloat z = gl_FragCoord.z; gl_FragColor = vec4(floor(z * 255.0) / 255.0, fract(z * 255.0), 0.0, 1.0);\n}",
+        clipping: true,
+      });
+    }
+    this.depthMaterial.clippingPlanes = this.clip;
+    // The cut faces' caps and stencils aren't parts: left out.
+    const hidden: Object3D[] = [];
+    for (const o of this.objects) {
+      if (o.caps?.id.visible) hidden.push(o.caps.id);
+      for (const c of o.idGroup.children) if (c.userData.stencil && c.visible) hidden.push(c);
+    }
+    hidden.forEach(o => (o.visible = false));
+    this.idScene.overrideMaterial = this.depthMaterial;
+    r.setRenderTarget(this.depthTarget);
+    r.setClearColor(0xffffff, 1);
+    r.render(this.idScene, camera);
+    this.idScene.overrideMaterial = null;
+    hidden.forEach(o => (o.visible = true));
+    r.setClearColor(0x000000, 0);
+  }
+
+  /** Whether `p` is in front of every part drawn (or on one's face), as seen from `camera`. */
+  private visibleAt(p: Vector3, camera: OrthographicCamera): boolean {
+    const t = this.depthTarget;
+    if (!t) return true;
+    const ndc = p.clone().project(camera);
+    const x = Math.round(((ndc.x + 1) / 2) * t.width);
+    const y = Math.round(((ndc.y + 1) / 2) * t.height);
+    if (x < 0 || y < 0 || x >= t.width || y >= t.height) return true;
+    this.renderer.readRenderTargetPixels(t, x, y, 1, 1, this.depthPixel);
+    const d = this.depthPixel[0] / 255 + this.depthPixel[1] / 255 / 255;
+    return ndc.z * 0.5 + 0.5 <= d + 3e-4;
+  }
+
   private drawArrows(camera: OrthographicCamera, h: number): void {
     if (this.arrowMesh) {
       this.draftScene.remove(this.arrowMesh);
@@ -663,16 +711,32 @@ export class LineArt {
       const a = part.arrow;
       if (a?.off) continue;
       const f0 = Math.min(a?.from ?? ARROW_FROM, a?.to ?? ARROW_TO);
-      const f1 = Math.max(a?.from ?? ARROW_FROM, a?.to ?? ARROW_TO);
+      let f1 = Math.max(a?.from ?? ARROW_FROM, a?.to ?? ARROW_TO);
       const axis = to.clone().sub(from);
-      const len = axis.length() * (f1 - f0);
-      if (len < 1e-3) continue;
+      const gap = axis.length();
+      if (gap < 1e-3) continue;
       axis.normalize();
+      // The head is never left behind a part: where the tip would be hidden
+      // (a part fitted from below, say), the arrow stops where its line goes
+      // out of sight, with the head pulled back clear of the edge.
+      const at = (f: number) => from.clone().addScaledVector(axis, gap * f);
+      if (!this.visibleAt(at(f1), camera) && this.visibleAt(at(f0), camera)) {
+        let lo = f0;
+        let hi = f1;
+        for (let i = 0; i < 8; i++) {
+          const mid = (lo + hi) / 2;
+          if (this.visibleAt(at(mid), camera)) lo = mid;
+          else hi = mid;
+        }
+        f1 = Math.max(f0 + (headLen * 0.5) / gap, lo - (headLen * 0.4) / gap);
+      }
+      const len = gap * (f1 - f0);
+      if (len < 1e-3) continue;
       // Flat on to the camera: across the axis and the line of sight.
       const side = new Vector3().crossVectors(axis, view);
       if (side.lengthSq() < 1e-6) continue;
       side.normalize();
-      const start = from.clone().addScaledVector(axis, axis.dot(to.clone().sub(from)) * f0);
+      const start = at(f0);
       const end = start.clone().addScaledVector(axis, len);
       // A short arrow keeps its proportions: the head shrinks with it.
       const k = Math.min(1, len / (headLen * 1.6));
@@ -780,6 +844,7 @@ export class LineArt {
     r.setRenderTarget(this.target);
     r.setClearColor(0x000000, 0);
     r.render(this.idScene, camera);
+    if (this.arrows && this.axes.length) this.drawDepth(camera, pw, ph);
     if (background) r.setClearColor(new Color(background), 1);
     else r.setClearColor(0x000000, 0);
     if ((this.draftHalo && this.draftHaloMaterial) || this.cuts.length) {
@@ -884,6 +949,10 @@ export class LineArt {
     this.draftHaloMaterial?.dispose();
     this.cutMaterial?.dispose();
     this.fillTarget?.dispose();
+    this.depthTarget?.dispose();
+    this.depthMaterial?.dispose();
+    this.arrowMaterial?.dispose();
+    this.arrowMesh?.geometry.dispose();
     this.lineMaterials.forEach(m => m.dispose());
     this.outline.dispose();
     this.target?.dispose();
