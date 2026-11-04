@@ -801,6 +801,25 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 .lyr-scene-placing:disabled .lyr-scene-scrub { cursor: default; pointer-events: none; }
 .lyr-scene-locked-note { display: flex; gap: 6px; align-items: flex-start; }
 .lyr-scene-locked-note .lyr-icon { flex: 0 0 auto; margin-top: 2px; color: #1f6fe0; }
+/* The section view: the arrow that slides the cut, its distance box, and its bar. */
+.lyr-scene-sect { position: absolute; inset: 0; z-index: 3; pointer-events: none; overflow: hidden; }
+.lyr-scene-sect[hidden] { display: none; }
+.lyr-scene-sect svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.lyr-sect-shaft { stroke: #1f6fe0; stroke-width: 2; }
+.lyr-scene-sect.lyr-flat .lyr-sect-shaft { stroke-dasharray: 4 3; }
+.lyr-sect-hit { stroke: transparent; stroke-width: 16; pointer-events: stroke; cursor: grab; }
+.lyr-sect-head { fill: #fff; stroke: #1f6fe0; stroke-width: 2; stroke-linejoin: round; pointer-events: all; cursor: grab; }
+.lyr-sect-base { fill: #fff; stroke: #1f6fe0; stroke-width: 2; pointer-events: all; cursor: grab; }
+.lyr-sect-head:hover, .lyr-scene-sect.lyr-dragging .lyr-sect-head { fill: #1f6fe0; }
+.lyr-scene-sect.lyr-dragging .lyr-sect-hit, .lyr-scene-sect.lyr-dragging .lyr-sect-head, .lyr-scene-sect.lyr-dragging .lyr-sect-base { cursor: grabbing; }
+.lyr-sect-field { position: absolute; transform: translate(-50%, -50%); display: inline-flex; align-items: center; gap: 3px; padding: 2px 6px; border: 1px solid var(--lyr-line); border-radius: 6px; background: #fff; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12); pointer-events: auto; font-size: 12px; }
+.lyr-sect-field input { width: 56px; border: 0; padding: 0; background: transparent; font: inherit; color: var(--lyr-ink); text-align: right; outline: none; }
+.lyr-sect-field em { font-style: normal; color: var(--lyr-muted); }
+.lyr-scene-sect-bar { position: absolute; top: 8px; left: 8px; z-index: 4; display: flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; border: 1px solid var(--lyr-line); border-radius: 8px; background: #fff; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12); font-size: 12px; color: var(--lyr-ink); }
+.lyr-scene-sect-bar[hidden] { display: none; }
+.lyr-scene-sect-bar.lyr-picking > :not(.lyr-sect-title):not([data-sect="off"]) { display: none; }
+.lyr-sect-title { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; color: #1f6fe0; }
+.lyr-scene-sect-bar .lyr-scene-check { margin: 0; }
 /* How many joints explode on their own, beside the main Explode slider. */
 .lyr-btn.lyr-scene-explode-follow { gap: 3px; padding: 0 6px; height: 28px; color: #1f6fe0; font-size: 12px; font-weight: 600; }
 .lyr-scene-explode-follow[hidden] { display: none; }

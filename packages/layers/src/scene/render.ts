@@ -10,6 +10,9 @@
 //    part its bold outline, even where it overlaps another part.
 //
 // The finished picture is drawn at twice the size and shrunk, so lines are smooth.
+//
+// A section view cuts every part on one side of a plane (see setSection):
+// each cut face is filled (a cap, found with the stencil buffer) and hatched.
 
 import {
   Box3, BufferAttribute, Euler, Matrix4, BufferGeometry, Color, EdgesGeometry, Group, Mesh, MeshBasicMaterial, OrthographicCamera, PlaneGeometry, Scene,
@@ -17,10 +20,13 @@ import {
 } from "three";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { BufferGeometry as CutGeometry, DoubleSide, Float32BufferAttribute, GreaterDepth, LessEqualDepth, Texture } from "three";
+import {
+  AlwaysStencilFunc, BackSide, DecrementWrapStencilOp, FrontSide, IncrementWrapStencilOp, NotEqualStencilFunc, Plane, Quaternion, ZeroStencilOp, type Material, type Side,
+} from "three";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
-import type { SceneCamera, SceneData, ScenePart, SceneStyle, Vec3 } from "./model";
-import { explodeOf, highlightedParts } from "./model";
+import type { SceneCamera, SceneData, ScenePart, SceneStyle, SectionPlane, Vec3 } from "./model";
+import { explodeOf, highlightedParts, sectionKeeps, sectionOrigin } from "./model";
 import { readStep, isStepFile, mergeBodies, type StepBody } from "./step";
 import { bounds, fromBase64, parseStl, stlFaces } from "./stl";
 import { isPacked, unpackMesh } from "./mesh";
@@ -201,6 +207,32 @@ interface PartObjects {
   fill: Mesh;
   lines: LineSegments2 | null;
   idGroup: Group;
+  /** With a section: the part's cap on the plane, in the picture and in the ID pass. */
+  caps?: { main: Mesh; id: Mesh };
+}
+
+// A cut face's fill, hatched with lines across the picture (as on a drawing,
+// they don't turn with the view): `angle` and `spacing` differ part to part,
+// so neighbouring parts' cuts tell apart.
+const CAP_VERT = "void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }";
+const CAP_FRAG = `
+  uniform vec3 fill; uniform vec3 line; uniform float angle; uniform float spacing; uniform float width; uniform float hatch;
+  void main() {
+    float d = mod(dot(gl_FragCoord.xy, vec2(cos(angle), sin(angle))), spacing);
+    float off = min(d, spacing - d);
+    float a = hatch * clamp(width * 0.5 + 0.5 - off, 0.0, 1.0);
+    gl_FragColor = vec4(mix(fill, line, a), 1.0);
+  }`;
+/** Each part's hatching: angle (degrees) and spacing (px of the finished picture). */
+const HATCHES: [number, number][] = [[45, 8], [-45, 8], [45, 5], [-45, 5], [30, 10], [-60, 10], [60, 6.5], [-30, 6.5]];
+
+/**
+ * A section's plane as three.js clips with it: three keeps what lies on the
+ * plane normal's side, so it faces back, away from the side cut off.
+ */
+export function clipPlane(s: SectionPlane): Plane {
+  const n = new Vector3(...s.normal).normalize();
+  return new Plane(n.clone().negate(), n.dot(new Vector3(...sectionOrigin(s))));
 }
 
 /** A part's place in its parent's frame (or the world's): move, then turn about its middle. */
@@ -281,10 +313,17 @@ export class LineArt {
   cuts: Cut[] = [];
   private cutMaterial: ShaderMaterial | null = null;
   private cutScene = new Scene();
+  /** The section view's plane, when there is one: every part is cut by it. */
+  private section: SectionPlane | null = null;
+  private clip: Plane[] = [];
+  /** The quad each cap is drawn on (sized to the parts), and the stencil counters' materials (picture, ID pass). */
+  private capGeometry: PlaneGeometry | null = null;
+  private stencilMaterials: Material[] = [];
 
   constructor(canvas?: HTMLCanvasElement) {
-    this.renderer = new WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+    this.renderer = new WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true, stencil: true });
     this.renderer.setPixelRatio(1);
+    this.renderer.localClippingEnabled = true;
     this.outline = new ShaderMaterial({
       uniforms: { tId: { value: null }, px: { value: new Vector2() }, width: { value: 3 }, colour: { value: new Color() }, ghost: { value: new Color() } },
       vertexShader: OUTLINE_VERT,
@@ -304,7 +343,7 @@ export class LineArt {
     const lit = highlightedParts(list.map(x => x.part));
     list.forEach(({ part, model }, i) => {
       const fillColour = part.ghost ? style.fill : lit.has(part.id) ? style.highlight : style.fill;
-      const fill = new Mesh(model.geometry, new MeshBasicMaterial({ color: fillColour, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
+      const fill = new Mesh(model.geometry, new MeshBasicMaterial({ color: fillColour, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1, clippingPlanes: this.clip, side: this.section ? DoubleSide : FrontSide }));
       fill.userData.partId = part.id;
       const group = new Group();
       group.add(fill);
@@ -318,7 +357,7 @@ export class LineArt {
       const idGroup = new Group();
       // Each part's ID colour; 0 (black) is the empty background.
       // Written as is (no blending), so a ghost part's alpha marks it for the outline pass.
-      idGroup.add(new Mesh(model.geometry, new MeshBasicMaterial({ color: new Color().setHex(idColour(i + 1)), transparent: true, opacity: part.ghost ? 0.5 : 1, blending: NoBlending })));
+      idGroup.add(new Mesh(model.geometry, new MeshBasicMaterial({ color: new Color().setHex(idColour(i + 1)), transparent: true, opacity: part.ghost ? 0.5 : 1, blending: NoBlending, clippingPlanes: this.clip })));
       place(group, world.get(part.id)!);
       place(idGroup, world.get(part.id)!);
       group.visible = idGroup.visible = !part.hidden;
@@ -326,7 +365,145 @@ export class LineArt {
       this.idScene.add(idGroup);
       this.objects.push({ part, model, group, fill, lines, idGroup });
     });
+    this.makeCaps();
     this.drawDraft(world, explode);
+  }
+
+  // ------------------------------------------------------------ section view
+
+  /**
+   * Cuts every part with the section's plane (null: none). The parts' fills,
+   * lines and IDs are clipped; each part's cut is capped: its back faces
+   * count up in the stencil buffer and its front faces down, so where the
+   * count isn't 0 the plane is inside the part, and the cap is drawn there
+   * (clearing the count for the next part). Caps have their own IDs, so the
+   * outline pass draws round each cut face.
+   */
+  setSection(s: SectionPlane | null | undefined): void {
+    this.section = s ? structuredClone(s) : null;
+    this.clip.length = 0;
+    if (this.section) this.clip.push(clipPlane(this.section));
+    // The same list everywhere: changing its length recompiles the materials that use it.
+    for (const o of this.objects) {
+      (o.fill.material as MeshBasicMaterial).side = this.section ? DoubleSide : FrontSide;
+      (o.fill.material as MeshBasicMaterial).needsUpdate = true;
+    }
+    this.makeCaps();
+  }
+
+  /** Whether a point (world, mm) is drawn: not cut away by the section. */
+  keeps(p: Vector3): boolean {
+    return sectionKeeps(this.section ?? undefined, [p.x, p.y, p.z]);
+  }
+
+  private clearCaps(): void {
+    for (const o of this.objects) {
+      if (!o.caps) continue;
+      this.scene.remove(o.caps.main);
+      this.idScene.remove(o.caps.id);
+      (o.caps.main.material as Material).dispose();
+      (o.caps.id.material as Material).dispose();
+      o.group.children.filter(c => c.userData.stencil).forEach(c => o.group.remove(c));
+      o.idGroup.children.filter(c => c.userData.stencil).forEach(c => o.idGroup.remove(c));
+      delete o.caps;
+    }
+    this.stencilMaterials.forEach(m => m.dispose());
+    this.stencilMaterials = [];
+    this.capGeometry?.dispose();
+    this.capGeometry = null;
+  }
+
+  private makeCaps(): void {
+    this.clearCaps();
+    const s = this.section;
+    const style = this.style;
+    if (!s || !style) return;
+    const counter = (side: Side, transparent: boolean) => {
+      const m = new MeshBasicMaterial({
+        colorWrite: false, depthWrite: false, depthTest: false, side, transparent, clippingPlanes: this.clip,
+        stencilWrite: true, stencilFunc: AlwaysStencilFunc,
+        stencilFail: side === BackSide ? IncrementWrapStencilOp : DecrementWrapStencilOp,
+        stencilZFail: side === BackSide ? IncrementWrapStencilOp : DecrementWrapStencilOp,
+        stencilZPass: side === BackSide ? IncrementWrapStencilOp : DecrementWrapStencilOp,
+      });
+      this.stencilMaterials.push(m);
+      return m;
+    };
+    // The picture's counters, then the ID pass's (drawn in its transparent list, as its parts are).
+    const mats = [[counter(BackSide, false), counter(FrontSide, false)], [counter(BackSide, true), counter(FrontSide, true)]];
+    const stencilOff = (m: Material) => {
+      m.stencilWrite = true;
+      m.stencilRef = 0;
+      m.stencilFunc = NotEqualStencilFunc;
+      m.stencilFail = m.stencilZFail = m.stencilZPass = ZeroStencilOp;
+    };
+    this.capGeometry = new PlaneGeometry(1, 1);
+    const lit = highlightedParts(this.objects.map(o => o.part));
+    const n = this.objects.length;
+    this.objects.forEach((o, i) => {
+      const order = 10 + i * 2;
+      for (const [k, g] of [o.group, o.idGroup].entries()) {
+        for (const m of mats[k]) {
+          const c = new Mesh(o.model.geometry, m);
+          c.userData.stencil = true;
+          c.renderOrder = order;
+          c.raycast = () => {};
+          g.add(c);
+        }
+      }
+      const [angle, spacing] = HATCHES[i % HATCHES.length];
+      const part = o.part;
+      const main = new ShaderMaterial({
+        uniforms: {
+          fill: { value: new Color(part.ghost ? style.fill : lit.has(part.id) ? style.highlight : style.fill) },
+          line: { value: new Color(part.ghost ? style.ghost : style.line) },
+          angle: { value: angle * DEG },
+          spacing: { value: spacing },
+          width: { value: 1 },
+          hatch: { value: s.plain ? 0 : 1 },
+        },
+        vertexShader: CAP_VERT,
+        fragmentShader: CAP_FRAG,
+        side: DoubleSide,
+      });
+      main.userData.spacing = spacing;
+      stencilOff(main);
+      const id = new MeshBasicMaterial({ color: new Color().setHex(idColour(n + i + 1)), transparent: true, opacity: part.ghost ? 0.5 : 1, blending: NoBlending, side: DoubleSide });
+      stencilOff(id);
+      const caps = { main: new Mesh(this.capGeometry!, main), id: new Mesh(this.capGeometry!, id) };
+      for (const c of [caps.main, caps.id]) {
+        c.renderOrder = order + 1;
+        c.raycast = () => {};
+        c.frustumCulled = false;
+        c.visible = o.group.visible;
+      }
+      this.scene.add(caps.main);
+      this.idScene.add(caps.id);
+      o.caps = caps;
+    });
+    this.placeCaps();
+  }
+
+  /** The caps' quad on the plane, big enough to cover every part. */
+  private placeCaps(): void {
+    const s = this.section;
+    if (!s || !this.objects.some(o => o.caps)) return;
+    const box = new Box3();
+    this.objects.forEach(o => {
+      o.group.updateMatrixWorld(true);
+      box.expandByObject(o.fill);
+    });
+    const plane = clipPlane(s);
+    const centre = plane.projectPoint(box.isEmpty() ? new Vector3() : box.getCenter(new Vector3()), new Vector3());
+    const size = Math.max(1, radiusOf(box) * 4);
+    const turn = new Quaternion().setFromUnitVectors(new Vector3(0, 0, 1), new Vector3(...s.normal).normalize());
+    const m = new Matrix4().compose(centre, turn, new Vector3(size, size, 1));
+    for (const o of this.objects) {
+      if (!o.caps) continue;
+      place(o.caps.main, m);
+      place(o.caps.id, m);
+      o.caps.main.visible = o.caps.id.visible = o.group.visible;
+    }
   }
 
   /**
@@ -437,6 +614,7 @@ export class LineArt {
       place(o.group, m);
       place(o.idGroup, m);
     }
+    this.placeCaps();
     this.drawDraft(world, explode);
   }
 
@@ -469,6 +647,7 @@ export class LineArt {
     let m = this.lineMaterials.get(colour);
     if (!m) {
       m = new LineMaterial({ color: new Color(colour).getHex(), linewidth: 1, worldUnits: false });
+      m.clippingPlanes = this.clip;
       this.lineMaterials.set(colour, m);
     }
     return m;
@@ -488,7 +667,13 @@ export class LineArt {
     r.setSize(pw, ph, false);
     if (!this.target || this.target.width !== pw || this.target.height !== ph) {
       this.target?.dispose();
-      this.target = new WebGLRenderTarget(pw, ph, { minFilter: NearestFilter, magFilter: NearestFilter });
+      this.target = new WebGLRenderTarget(pw, ph, { minFilter: NearestFilter, magFilter: NearestFilter, stencilBuffer: true });
+    }
+    for (const o of this.objects) {
+      const u = (o.caps?.main.material as ShaderMaterial | undefined)?.uniforms;
+      if (!u) continue;
+      u.spacing.value = (o.caps!.main.material as ShaderMaterial).userData.spacing * ratio;
+      u.width.value = Math.max(1, style.lineWidth * 0.75 * ratio);
     }
     for (const m of this.lineMaterials.values()) {
       m.linewidth = style.lineWidth * ratio;
@@ -518,7 +703,7 @@ export class LineArt {
       // The fills alone, for the draft lines' halos and the cuts.
       if (!this.fillTarget || this.fillTarget.width !== pw || this.fillTarget.height !== ph) {
         this.fillTarget?.dispose();
-        this.fillTarget = new WebGLRenderTarget(pw, ph, { minFilter: NearestFilter, magFilter: NearestFilter });
+        this.fillTarget = new WebGLRenderTarget(pw, ph, { minFilter: NearestFilter, magFilter: NearestFilter, stencilBuffer: true });
       }
       for (const o of this.objects) if (o.lines) o.lines.visible = false;
       r.setRenderTarget(this.fillTarget);
@@ -598,6 +783,7 @@ export class LineArt {
   }
 
   clear(): void {
+    this.clearCaps();
     for (const o of this.objects) {
       (o.fill.material as MeshBasicMaterial).dispose();
       ((o.idGroup.children[0] as Mesh).material as MeshBasicMaterial).dispose();
@@ -673,6 +859,7 @@ export async function renderPicture(data: SceneData, store: ModelStore, w: numbe
   try {
     const max = Math.min(art.renderer.capabilities.maxTextureSize || 4096, 8192);
     const ss = Math.max(1, Math.min(2, max / Math.max(ow, oh)));
+    art.setSection(data.section);
     art.setParts(list, data.style, data.explode);
     art.cuts = cuts;
     const camera = cameraFor(data.camera, w / h, radiusOf(art.bounds()) + Math.hypot(...data.camera.target));

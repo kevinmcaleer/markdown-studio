@@ -33,6 +33,7 @@ const P: Record<string, string> = {
   minus: "M5 12h14",
   flipH: "M12 3v18M8 7 3 12l5 5zM16 7l5 5-5 5z",
   flipV: "M3 12h18M7 8l5-5 5 5zM7 16l5 5 5-5z",
+  section: "M4 4h16v16H4zM12 4v16M12 9l5-5M12 15l8-8M12 20l8-8",
   group: "M3 3h8v8H3zM13 13h8v8h-8zM11 7h4a2 2 0 0 1 2 2v4",
   ungroup: "M3 3h8v8H3zM13 13h8v8h-8z",
   resize: "M21 9V3h-6M3 15v6h6M21 3l-7 7M3 21l7-7",

@@ -127,6 +127,22 @@ export interface SceneData {
   model?: { stamp: number };
   /** Named views, when the host keeps no project model (otherwise they're the model's). */
   views?: NamedView[];
+  /** A section view: the parts cut away on one side of a plane, the cut faces filled and hatched. */
+  section?: SectionPlane;
+}
+
+/**
+ * A section view's plane, as Fusion 360's section analysis has it: parallel
+ * to the face picked (through `point`, facing `normal`, in the world, mm),
+ * slid `offset` mm along the normal. What lies on the normal's side of it is
+ * cut away.
+ */
+export interface SectionPlane {
+  point: Vec3;
+  normal: Vec3;
+  offset: number;
+  /** The cut faces drawn plain, without hatching. */
+  plain?: boolean;
 }
 
 /** A camera saved under a name, so pictures can share it (like Fusion 360's named views). */
@@ -301,7 +317,37 @@ export function normalizeScene(value: unknown): SceneData {
   if (v.model && typeof v.model === "object") out.model = { stamp: num((v.model as { stamp?: unknown }).stamp, 0, 0) };
   const views = normalizeViews(v.views);
   if (views.length) out.views = views;
+  const section = normalizeSection(v.section);
+  if (section) out.section = section;
   return out;
+}
+
+/** `value` as a section plane, or null when it isn't one. */
+export function normalizeSection(value: unknown): SectionPlane | null {
+  if (!value || typeof value !== "object") return null;
+  const v = value as Partial<SectionPlane>;
+  const n = vec(v.normal, [0, 0, 0], 1);
+  const l = Math.hypot(...n);
+  if (l < 1e-9) return null;
+  const out: SectionPlane = {
+    point: vec(v.point, [0, 0, 0]),
+    normal: n.map(x => x / l) as Vec3,
+    offset: num(v.offset, 0, -LIMITS.position, LIMITS.position),
+  };
+  if (v.plain === true) out.plain = true;
+  return out;
+}
+
+/** Where a section's plane is now: the picked point slid along the normal. */
+export function sectionOrigin(s: SectionPlane): Vec3 {
+  return [s.point[0] + s.normal[0] * s.offset, s.point[1] + s.normal[1] * s.offset, s.point[2] + s.normal[2] * s.offset];
+}
+
+/** Whether a point (world, mm) is kept by the section: on the plane or behind it. */
+export function sectionKeeps(s: SectionPlane | undefined, p: Vec3): boolean {
+  if (!s) return true;
+  const o = sectionOrigin(s);
+  return (p[0] - o[0]) * s.normal[0] + (p[1] - o[1]) * s.normal[1] + (p[2] - o[2]) * s.normal[2] <= 1e-6;
 }
 
 /** `value` as a list of named views (at most 50), anything broken left out. */

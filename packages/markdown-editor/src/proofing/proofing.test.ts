@@ -11,7 +11,9 @@ import { checkable, createSpeller, distance, isCorrect, suggestions } from "./sp
 
 function state(doc: string) {
   const s = EditorState.create({ doc, extensions: markdownExtensions() });
-  ensureSyntaxTree(s, s.doc.length, 5000);
+  // Parse the whole document: on a busy CI runner one call can run out of
+  // time and leave a partial tree (code, links and HTML then read as prose).
+  for (let i = 0; i < 20 && !ensureSyntaxTree(s, s.doc.length, 5000); i++);
   return s;
 }
 

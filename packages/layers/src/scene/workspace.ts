@@ -28,6 +28,7 @@ import { isStepFile, mergeBodies, readStep, type StepBody } from "./step";
 import { toUrdf, zip } from "./urdf";
 import { createViewCube } from "./viewcube";
 import { MAX_SNAP_TRIANGLES, nearestSnap, Topology, type Face, type Snap } from "./snaps";
+import { createSectionTool } from "./sectionTool";
 import { fitDiameter, fitLength, holeDepth, isHoleSnap, matchingHoles, SCREW_HEADS, SCREW_LENGTHS, SCREW_SIZES, screwFile, screwLabel, screwLift, screwMesh, screwName, type ScrewHead, type ScrewSpec } from "./screw";
 
 export interface SceneModel {
@@ -156,6 +157,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
                 <div class="lyr-scene-views-menu" role="menu" hidden></div>
               </span>
               <button type="button" class="lyr-btn" data-act="fit" title="Fit the parts in the picture (F)">${icon("frame", 16)}<span>Fit</span></button>
+              <button type="button" class="lyr-btn" data-act="section" title="Section view: click a face, then drag its arrow to slide a cut through the parts">${icon("section", 16)}<span>Section</span></button>
               <span class="lyr-sep"></span>
               <label class="lyr-scene-explode" title="Slide joined parts apart along their joints, to show how they fit">${icon("expand", 16)}<span>Explode</span><input type="range" min="0" max="100" step="1" data-explode value="0" aria-label="Explode"><input type="number" class="lyr-scene-explode-num" min="0" max="100" step="1" data-explode-num value="0" aria-label="Explode, per cent"><span class="lyr-scene-explode-unit">%</span></label>
               <button type="button" class="lyr-btn lyr-scene-explode-follow" data-act="explode-follow" hidden>${icon("rotate", 16)}<span></span></button>
@@ -250,6 +252,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         art.draw(camera, viewW, viewH, Math.min(2, window.devicePixelRatio || 1));
         placeSnaps();
         placeDial();
+        section.place();
         viewCube.sync(camera.quaternion);
         viewCube.render();
       });
@@ -363,6 +366,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
 
     /** Puts the parts in the view again (after adding, removing or restyling). */
     function rebuild(): void {
+      art.setSection(scene.section);
+      syncSectionButton();
       art.setParts(loaded(), scene.style, scene.explode);
       attachGizmo();
       renderList();
@@ -635,6 +640,10 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const d = downAt;
       downAt = null;
       if (!d || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 4) return;
+      if (section.picking() && e.button === 0) {
+        section.click(e);
+        return;
+      }
       // A handle under the pointer is the gizmo's click, unless faces are being picked (the gizmo is put away then).
       if (!joining && !screwing && (gizmo.dragging || (gizmo as unknown as { axis: string | null }).axis)) return;
       const r = canvasEl.getBoundingClientRect();
@@ -643,7 +652,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       if ((e.button === 2 || (e.button === 0 && e.ctrlKey && mac)) && !joining && !screwing) {
         art.scene.updateMatrixWorld(true);
         raycaster.setFromCamera(ndc, camera);
-        const hit = raycaster.intersectObjects(art.meshes(), false)[0];
+        const hit = raycaster.intersectObjects(art.meshes(), false).find(h => art.keeps(h.point));
         const id = hit ? String(hit.object.userData.partId || "") : "";
         if (id && partById(id)) {
           if (selectedId !== id || shownJoint) select(id);
@@ -664,7 +673,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       }
       art.scene.updateMatrixWorld(true);
       raycaster.setFromCamera(ndc, camera);
-      const hit = raycaster.intersectObjects(art.meshes(), false)[0];
+      const hit = raycaster.intersectObjects(art.meshes(), false).find(h => art.keeps(h.point));
       select(hit ? String(hit.object.userData.partId || "") : "");
     });
 
@@ -1524,6 +1533,45 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     snapLayer.className = "lyr-scene-snaps";
     frameEl.appendChild(snapLayer);
 
+    // ------------------------------------------------------------ section view
+
+    // Fusion's section analysis: pick a face, slide a cut through the parts (sectionTool.ts).
+    const section = createSectionTool({
+      frame: frameEl,
+      canvas: canvasEl,
+      camera,
+      art,
+      size: () => ({ w: viewW, h: viewH }),
+      get: () => scene.section,
+      set: s => {
+        if (s) scene.section = s;
+        else delete scene.section;
+        art.setSection(s);
+        syncSectionButton();
+        draw();
+      },
+      commit: () => commit(),
+      status,
+      draw,
+      face: (id, triangle) => {
+        const m = models.get(id);
+        if (!m || m instanceof Error) return null;
+        const f = topologyOf(m)?.faceAt(triangle);
+        return f ? { geometry: faceGeometry(m, f), normal: f.curved ? null : ([...f.normal] as Vec3) } : null;
+      },
+      onPicking: on => {
+        if (on) {
+          if (joining) stopJoin();
+          if (screwing) stopScrews();
+          gizmo.detach();
+        } else attachGizmo();
+        syncSectionButton();
+      },
+    });
+    function syncSectionButton(): void {
+      $("[data-act=section]").classList.toggle("lyr-on", section.picking() || !!scene.section);
+    }
+
     // ------------------------------------------------------------ the angle dial
 
     // While the joint dialog is open, a dial round the joint turns the part
@@ -1761,7 +1809,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       }
       art.scene.updateMatrixWorld(true);
       raycaster.setFromCamera(new Vector2((pointer.x / r.width) * 2 - 1, -(pointer.y / r.height) * 2 + 1), camera);
-      const hit = raycaster.intersectObjects(pickable(), false).find(h => h.face && h.faceIndex !== undefined);
+      const hit = raycaster.intersectObjects(pickable(), false).find(h => h.face && h.faceIndex !== undefined && art.keeps(h.point));
       // Over a hole in the face (seeing its wall, another part, or nothing),
       // the face stays, so the hole's centre can be had. A face parallel to
       // it on the same part (a counterbore's floor) takes over as usual.
@@ -1911,6 +1959,12 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
 
     let hoverQueued = 0;
     canvasEl.addEventListener("pointermove", e => {
+      if (section.picking() && !e.buttons) {
+        const at = { clientX: e.clientX, clientY: e.clientY };
+        cancelAnimationFrame(hoverQueued);
+        hoverQueued = requestAnimationFrame(() => section.hover(at));
+        return;
+      }
       if (!(joining || screwing) || e.buttons) return;
       faceHeld = !screwing && holdKey(e) && !!hover;
       shiftDown = e.shiftKey;
@@ -1988,6 +2042,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
 
     function startScrews(): void {
       if (joining) stopJoin();
+      if (section.picking()) section.stop();
       if (draft) closeJointDialog();
       screwing = true;
       shownJoint = "";
@@ -3016,6 +3071,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         case "screw-stop": stopScrews(); break;
         case "views": if (viewsMenu.hidden) openViews(); else viewsMenu.hidden = true; break;
         case "urdf": exportUrdf(); break;
+        case "section": if (section.picking()) section.stop(""); else section.start(); break;
         case "undo": undo(); break;
         case "redo": redo(); break;
         case "cancel": cancel(); break;
@@ -3071,6 +3127,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         duplicatePart(selectedId);
       } else if (e.key === "Escape") {
         if (!ctx.hidden) closeCtx();
+        else if (section.picking()) section.stop(scene.section ? "" : "Section stopped.");
         else if (screwing) stopScrews();
         else if (joining) stopJoin("Join stopped.");
         else if (!menu.hidden) closeMenu();
@@ -3119,6 +3176,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       gizmo.detach();
       gizmo.dispose();
       orbit.dispose();
+      section.dispose();
       art.dispose();
       viewCube.dispose();
       thumbWatch?.disconnect();
