@@ -382,3 +382,153 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 .lyr-size-fields { display: inline-flex; align-items: center; gap: 6px; color: var(--lyr-muted); font-size: 12px; }
 .lyr-size-fields label { display: inline-flex; align-items: center; gap: 4px; }
 .lyr-size-fields .lyr-num { width: 64px; }
+
+/* ------------------------------------------------------------ 3D scene workspace */
+.lyr-scene-overlay { z-index: 2147483100; }
+.lyr.lyr-scene { flex: 1 1 auto; height: 100%; border: 0; border-radius: 0; }
+.lyr-scene-title { display: inline-flex; align-items: center; gap: 8px; padding: 0 6px; font-weight: 600; }
+.lyr-scene-body { flex: 1 1 auto; display: flex; min-height: 0; }
+.lyr-scene-side {
+  flex: 0 0 260px;
+  overflow: auto;
+  padding: 12px;
+  background: var(--lyr-rail);
+  border-right: 1px solid var(--lyr-line);
+}
+.lyr-scene-props { flex-basis: 280px; border-right: 0; border-left: 1px solid var(--lyr-line); }
+.lyr-scene-add { position: relative; }
+.lyr-scene-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 5;
+  max-height: 60vh;
+  overflow: auto;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid var(--lyr-line);
+  border-radius: var(--lyr-radius);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 0.16);
+}
+.lyr-scene-menu .lyr-panel-title { margin: 10px 6px 4px; }
+.lyr-scene-menu .lyr-note { display: block; margin: 4px 6px; }
+.lyr-scene-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 34px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lyr-scene-menu-item:hover { background: var(--lyr-hover); }
+.lyr-scene-menu-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lyr-scene-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.lyr-scene-list > li { margin: 0; padding: 0; }
+.lyr-scene-list > li::before, .lyr-scene-list > li::marker { content: none; }
+.lyr-scene-row { display: flex; align-items: center; gap: 0; border-radius: 6px; }
+.lyr-scene-row:hover { background: var(--lyr-hover); }
+.lyr-scene-row.lyr-on { background: var(--lyr-accent-soft); }
+.lyr-scene-row.lyr-off .lyr-scene-name { opacity: 0.45; }
+.lyr-scene-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lyr-scene-name > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lyr-scene-name > em { font-style: normal; font-size: 11px; color: #c92a2a; }
+.lyr-scene-row.lyr-on .lyr-scene-name { color: var(--lyr-accent); font-weight: 600; }
+/* Icon-only buttons: just the icon, centred, no box. */
+.lyr-icon-btn { flex: 0 0 auto; width: 28px; min-width: 28px; height: 28px; padding: 0; border: 0; box-shadow: none; display: inline-flex; align-items: center; justify-content: center; color: var(--lyr-muted); }
+.lyr-icon-btn .lyr-icon { display: block; margin: 0; }
+.lyr-icon-btn.lyr-on { background: transparent; color: var(--lyr-accent); }
+.lyr-scene-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--lyr-stage);
+}
+.lyr-scene-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2px;
+  padding: 3px;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.12);
+}
+.lyr-scene-frame { position: relative; flex: 0 0 auto; box-shadow: 0 2px 12px rgb(0 0 0 / 0.14); }
+.lyr-scene-frame.lyr-clear {
+  background-color: #fff;
+  background-image: linear-gradient(45deg, #e9ecef 25%, transparent 25%), linear-gradient(-45deg, #e9ecef 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e9ecef 75%), linear-gradient(-45deg, transparent 75%, #e9ecef 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0;
+}
+.lyr-scene-canvas { display: block; touch-action: none; outline: none; }
+.lyr-scene-help { color: var(--lyr-muted); font-size: 12px; text-align: center; }
+.lyr-scene-section + .lyr-scene-section { margin-top: 10px; padding-top: 4px; border-top: 1px solid var(--lyr-line); }
+.lyr-scene-section .lyr-panel-title:first-child { margin-top: 2px; }
+.lyr-scene-sub { margin: 10px 0 4px; color: var(--lyr-muted); font-size: 12px; font-weight: 600; }
+.lyr-scene-fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.lyr-scene-field { display: flex; flex-direction: column; gap: 2px; min-width: 0; position: relative; }
+.lyr-scene-field .lyr-num { width: 100%; padding-right: 22px; text-align: right; font-variant-numeric: tabular-nums; }
+.lyr-scene-field em { position: absolute; right: 6px; bottom: 8px; font-style: normal; font-size: 11px; color: var(--lyr-muted); pointer-events: none; }
+.lyr-scene-scrub { font-size: 12px; color: var(--lyr-muted); cursor: ew-resize; user-select: none; touch-action: none; }
+.lyr-scene-scrub:hover { color: var(--lyr-accent); }
+.lyr-scene-quick { display: flex; align-items: center; gap: 2px; margin-top: 8px; flex-wrap: wrap; }
+.lyr-scene-quick .lyr-label { margin-left: 0; }
+.lyr-scene-namebox { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--lyr-muted); }
+.lyr-scene-namebox input {
+  height: 32px;
+  border: 1px solid var(--lyr-line);
+  border-radius: 6px;
+  padding: 0 8px;
+  color: var(--lyr-ink);
+  font: inherit;
+  background: #fff;
+}
+.lyr-scene-presets { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.lyr-scene-preset {
+  height: 32px;
+  border: 1px solid var(--lyr-line);
+  border-radius: 6px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.lyr-scene-preset:hover { border-color: var(--lyr-accent); }
+.lyr-scene-preset.lyr-on { border-color: var(--lyr-accent); background: var(--lyr-accent-soft); color: var(--lyr-accent); font-weight: 600; }
+.lyr-scene-colours { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 10px 0; }
+.lyr-scene-colour { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--lyr-muted); }
+.lyr-scene-colour input { width: 100%; height: 30px; padding: 2px; border: 1px solid var(--lyr-line); border-radius: 6px; background: #fff; cursor: pointer; }
+@media (max-width: 900px) {
+  .lyr-scene-body { flex-direction: column; overflow: auto; }
+  .lyr-scene-side { flex: 0 0 auto; border: 0; border-bottom: 1px solid var(--lyr-line); }
+  .lyr-scene-stage { min-height: 60vh; }
+}

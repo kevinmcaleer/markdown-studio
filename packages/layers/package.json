@@ -30,10 +30,12 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "fabric": "6.9.1"
+    "fabric": "6.9.1",
+    "three": "0.187.0"
   },
   "devDependencies": {
     "@types/node": "26.6.5",
+    "@types/three": "0.187.0",
     "happy-dom": "20.14.5",
     "typescript": "7.0.2",
     "vite": "8.3.5",

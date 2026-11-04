@@ -28,6 +28,7 @@
         doc,
         title: doc?.title,
         listImages: async () => [],
+        listModels: async () => window.demoModels || [],
         onDone: async r => {
           const url = URL.createObjectURL(r.png);
           result.innerHTML = `<p>Saved ${r.width}×${r.height}, ${(r.png.size / 1024).toFixed(1)} KB. Click to edit again.</p><img src="${url}" alt="">`;
