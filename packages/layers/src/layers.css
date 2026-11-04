@@ -774,3 +774,9 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 .lyr-scene-list > li.lyr-scene-joint-row.lyr-picked { background: var(--lyr-hover); }
 .lyr-scene-joint-row.lyr-picked .lyr-scene-name { color: #1f6fe0; }
 .lyr-scene-list > li.lyr-scene-joint-explode-count { padding-left: calc(var(--depth, 0) * 18px + 28px); height: 22px; font-size: 11px; color: var(--lyr-muted); background: var(--lyr-hover); border-radius: 6px 6px 0 0; }
+/* A part held by its joint: its place can't be set by hand. */
+.lyr-scene-placing { border: 0; margin: 0; padding: 0; min-width: 0; }
+.lyr-scene-placing:disabled { opacity: 0.45; }
+.lyr-scene-placing:disabled .lyr-scene-scrub { cursor: default; pointer-events: none; }
+.lyr-scene-locked-note { display: flex; gap: 6px; align-items: flex-start; }
+.lyr-scene-locked-note .lyr-icon { flex: 0 0 auto; margin-top: 2px; color: #1f6fe0; }
