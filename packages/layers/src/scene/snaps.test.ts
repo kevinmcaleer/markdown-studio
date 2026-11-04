@@ -38,6 +38,66 @@ describe("snaps", () => {
     expect(of(face.snaps, "corner").length).toBe(4);
   });
 
+  it("snaps on a face with a square hole through it (a frame)", () => {
+    const plate = new Shape().moveTo(-20, -10).lineTo(20, -10).lineTo(20, 10).lineTo(-20, 10).lineTo(-20, -10);
+    plate.holes.push(new Path().moveTo(-5, -4).lineTo(-5, 4).lineTo(5, 4).lineTo(5, -4).lineTo(-5, -4));
+    const t = new Topology(soup(new ExtrudeGeometry(plate, { depth: 5, bevelEnabled: false })));
+    const face = t.faceAt(triFacing(t, [0, 0, 1]))!;
+    expect(of(face.snaps, "corner").length).toBe(4);
+    expect(of(face.snaps, "pocket").map(s => r(s.p))).toEqual([[0, 0, 5]]);
+  });
+
+  it("still snaps a face whose border is broken by an unwelded corner", () => {
+    // A box's top face, with one corner of one triangle moved 0.01 mm: that
+    // seam no longer welds, so the border runs out instead of coming back
+    // round. Exported STLs do this, above all inside a recess, and the face
+    // used to light up with no anchor points on it (Kev, 2026-11-04).
+    const pos = Float32Array.from(soup(new BoxGeometry(40, 20, 10, 3, 2, 1)));
+    const top = (t: number) => pos[t * 9 + 2] === 5 && pos[t * 9 + 5] === 5 && pos[t * 9 + 8] === 5;
+    let moved = -1;
+    for (let t = 0; t < pos.length / 9 && moved < 0; t++) {
+      if (!top(t)) continue;
+      for (let k = 0; k < 3; k++) {
+        // A corner on the outer edge of the face, shared with the triangle beside it.
+        const x = pos[t * 9 + k * 3], y = pos[t * 9 + k * 3 + 1];
+        if (Math.abs(y) !== 10 || Math.abs(x) === 20) continue;
+        pos[t * 9 + k * 3] = x + 0.01;
+        moved = t;
+        break;
+      }
+    }
+    expect(moved).toBeGreaterThanOrEqual(0);
+    const t = new Topology(pos);
+    const face = t.faceAt(triFacing(t, [0, 0, 1], i => i !== moved))!;
+    expect(face.tris.length).toBeGreaterThan(8);
+    expect(of(face.snaps, "centre").length).toBe(1);
+    expect(of(face.snaps, "corner").length).toBeGreaterThanOrEqual(3);
+    // Nothing is called a hole from a border that never closed.
+    expect(of(face.snaps, "hole").length + of(face.snaps, "pocket").length).toBe(0);
+  });
+
+  it("snaps a small flat face above shallow sides (not read as a round one)", () => {
+    // A 2x2 pad 1 mm above a 20x20 base, with sides sloping 6°: the pad's
+    // smooth neighbourhood runs all the way down the sides, so the pad used
+    // to be read as a facet of a round surface and offered nothing to click
+    // (Kev, 2026-11-04). It is a flat face with a middle and four corners.
+    const tri = (a: number[], b: number[], c: number[]) => [...a, ...b, ...c];
+    const top = [[-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]];
+    const low = [[-10, -10, 0], [10, -10, 0], [10, 10, 0], [-10, 10, 0]];
+    const pos: number[] = [...tri(top[0], top[1], top[2]), ...tri(top[0], top[2], top[3])];
+    for (let i = 0; i < 4; i++) {
+      const j = (i + 1) % 4;
+      pos.push(...tri(top[j], top[i], low[i]), ...tri(top[j], low[i], low[j]));
+    }
+    const t = new Topology(pos);
+    const face = t.faceAt(triFacing(t, [0, 0, 1]))!;
+    expect(face.curved).toBe(false);
+    expect(face.tris.length).toBe(2);
+    expect(of(face.snaps, "centre").map(s => r(s.p))).toEqual([[0, 0, 1]]);
+    expect(of(face.snaps, "corner").length).toBe(4);
+    expect(of(face.snaps, "edge").length).toBe(4);
+  });
+
   it("finds a screw's neck on its shank, facing down the shank", () => {
     // Shank radius 1.5 from y=0 to 10, head radius 5 from 10 to 13; Y is the axis.
     const pts = [[0, 0], [1.5, 0], [1.5, 10], [5, 10], [5, 13], [0, 13]].map(([x, y]) => new Vector2(x, y));

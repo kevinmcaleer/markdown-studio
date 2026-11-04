@@ -107,6 +107,15 @@ export interface SceneData {
    * the model's, each with this scene's own hidden / ghost / highlight.
    */
   model?: { stamp: number };
+  /** Named views, when the host keeps no project model (otherwise they're the model's). */
+  views?: NamedView[];
+}
+
+/** A camera saved under a name, so pictures can share it (like Fusion 360's named views). */
+export interface NamedView {
+  id: string;
+  name: string;
+  camera: SceneCamera;
 }
 
 /**
@@ -118,6 +127,8 @@ export interface ProjectModel {
   version: 1;
   stamp: number;
   parts: ScenePart[];
+  /** The project's named views (they don't change its stamp). */
+  views?: NamedView[];
 }
 
 export interface StylePreset {
@@ -260,6 +271,35 @@ export function normalizeScene(value: unknown): SceneData {
   if (s.draft === false) style.draft = false;
   const out: SceneData = { version: 1, parts, camera, style, explode: num(v.explode, 0, 0, 1) };
   if (v.model && typeof v.model === "object") out.model = { stamp: num((v.model as { stamp?: unknown }).stamp, 0, 0) };
+  const views = normalizeViews(v.views);
+  if (views.length) out.views = views;
+  return out;
+}
+
+/** `value` as a list of named views (at most 50), anything broken left out. */
+export function normalizeViews(value: unknown): NamedView[] {
+  if (!Array.isArray(value)) return [];
+  const base = blankScene().camera;
+  const seen = new Set<string>();
+  const out: NamedView[] = [];
+  for (const v of value.slice(0, 50)) {
+    if (!v || typeof v !== "object") continue;
+    const id = text(v.id, 40);
+    const name = text(v.name, 60).trim();
+    if (!id || !name || seen.has(id)) continue;
+    seen.add(id);
+    const c = (v.camera || {}) as Partial<SceneCamera>;
+    const dir = vec(c.direction, base.direction);
+    out.push({
+      id,
+      name,
+      camera: {
+        direction: Math.hypot(...dir) > 1e-9 ? dir : base.direction,
+        target: vec(c.target, base.target),
+        size: num(c.size, base.size, LIMITS.size[0], LIMITS.size[1]),
+      },
+    });
+  }
   return out;
 }
 
@@ -279,7 +319,10 @@ export function modelPart(p: ScenePart): ScenePart {
 export function normalizeModel(value: unknown): ProjectModel | null {
   if (!value || typeof value !== "object" || !Array.isArray((value as ProjectModel).parts)) return null;
   const v = value as ProjectModel;
-  return { version: 1, stamp: num(v.stamp, 0, 0), parts: normalizeScene({ parts: v.parts }).parts.map(modelPart) };
+  const out: ProjectModel = { version: 1, stamp: num(v.stamp, 0, 0), parts: normalizeScene({ parts: v.parts }).parts.map(modelPart) };
+  const views = normalizeViews(v.views);
+  if (views.length) out.views = views;
+  return out;
 }
 
 /** The model a scene's parts make, at `stamp`. */
