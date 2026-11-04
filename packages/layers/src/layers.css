@@ -541,3 +541,44 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 .lyr-scene-join .lyr-wide-btn { border: 1px solid var(--lyr-line); background: #fff; }
 .lyr-scene-check { display: flex; align-items: center; gap: 6px; margin-top: 10px; cursor: pointer; }
 .lyr-scene-colours { grid-template-columns: repeat(2, 1fr); }
+
+/* Add a part: each project model as a tile with its picture. */
+.lyr-scene-models.lyr-scene-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; padding: 2px; }
+.lyr-scene-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.lyr-scene-tile:hover, .lyr-scene-tile:focus-visible { background: var(--lyr-hover); border-color: var(--lyr-line); outline: none; }
+.lyr-scene-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  border-radius: 6px;
+  background: #f1f1f1;
+  color: #9aa0a6;
+  overflow: hidden;
+}
+.lyr-scene-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.lyr-scene-thumb.lyr-loading svg { animation: lyr-thumb-pulse 1.2s ease-in-out infinite; }
+@keyframes lyr-thumb-pulse { 50% { opacity: 0.35; } }
+.lyr-scene-tile-name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  line-height: 1.3;
+  text-align: center;
+}

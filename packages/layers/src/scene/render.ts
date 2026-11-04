@@ -446,3 +446,36 @@ export async function renderPicture(data: SceneData, store: ModelStore, w: numbe
     art.dispose();
   }
 }
+
+/**
+ * Small pictures of single models, for the Add a part menu: each drawn alone
+ * from the iso view in the scene's style, framed to fill the square. One
+ * renderer draws them all, so a long list doesn't use up the browser's
+ * WebGL contexts.
+ */
+export class Thumbnailer {
+  private art = new LineArt();
+
+  /** The model drawn `px` pixels square, as a data URL. */
+  draw(model: Model, style: SceneStyle, direction: Vec3, px: number): string {
+    const part: ScenePart = { id: "t", name: "", position: [0, 0, 0], rotation: [0, 0, 0] };
+    // Lines a touch finer than the scene's, so a small picture isn't all line.
+    this.art.setParts([{ part, model }], { ...style, outline: Math.min(style.outline, 2), lineWidth: Math.min(style.lineWidth, 1) }, 0);
+    const box = this.art.bounds();
+    const cam = frame({ direction, target: [0, 0, 0], size: 1 }, box, 1, 1.08);
+    const camera = cameraFor(cam, 1, radiusOf(box) + Math.hypot(...cam.target));
+    this.art.draw(camera, px, px, 2);
+    const out = document.createElement("canvas");
+    out.width = px;
+    out.height = px;
+    const ctx = out.getContext("2d")!;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(this.art.renderer.domElement, 0, 0, px, px);
+    return out.toDataURL("image/png");
+  }
+
+  dispose(): void {
+    this.art.dispose();
+  }
+}
