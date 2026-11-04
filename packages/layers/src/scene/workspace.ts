@@ -371,7 +371,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     /** Moves the parts in the view to where the scene says. */
     function follow(): void {
       art.move(scene.parts, scene.explode);
-      placeProxy();
+      // Its handles too: a part just joined is held by its joint, one unjoined is free.
+      attachGizmo();
       draw();
     }
 
@@ -585,9 +586,18 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       proxy.updateMatrixWorld(true);
     }
 
+    /**
+     * Whether a part is held by its joint (its faces picked), as in Fusion:
+     * it goes where the joint puts it, and moves only by the joint's own
+     * Angle / Slide, or once it's unjoined.
+     */
+    function locked(p: ScenePart | undefined): boolean {
+      return !!p?.parent && !!p.joint?.point;
+    }
+
     function attachGizmo(): void {
       const p = selectedId ? partById(selectedId) : undefined;
-      if (p && !p.hidden && art.matrixOf(p.id) && !screwing) {
+      if (p && !p.hidden && !locked(p) && art.matrixOf(p.id) && !screwing) {
         placeProxy();
         gizmo.attach(proxy);
         gizmo.setMode(tool);
@@ -603,7 +613,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     });
     gizmo.addEventListener("objectChange", () => {
       const p = selectedId ? partById(selectedId) : undefined;
-      if (!p) return;
+      if (!p || locked(p)) return;
       proxy.updateMatrix();
       setLocalFromWorld(p, proxy.matrix, parentFrame(p));
       looseJoint(p);
@@ -1203,6 +1213,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const s = scene.style;
       const pos = ["x", "y", "z"].indexOf(key);
       const rot = ["roll", "pitch", "yaw"].indexOf(key);
+      // A part held by its joint isn't placed by hand.
+      if ((pos >= 0 || rot >= 0) && locked(p)) return;
       if (pos >= 0 && p) {
         p.position[pos] = round(Math.max(-100_000, Math.min(100_000, value)));
         if (looseJoint(p)) renderProps();
@@ -2566,6 +2578,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           ${p ? `
             <label class="lyr-scene-namebox">Name <input type="text" maxlength="120" data-name value="${esc(p.name)}"></label>
             ${jointSection(p, parent)}
+            ${locked(p) ? `<p class="lyr-note lyr-scene-locked-note">${icon("link", 14)} Held in place by its joint to ${esc(parent?.name || "its parent")}, so it moves with it. Turn or slide it with the joint's ${p.joint?.type === "prismatic" ? "Slide" : p.joint?.type === "revolute" ? "Angle" : "Spin and Gap"}, or Unjoin it to place it by hand.</p>` : ""}
+            <fieldset class="lyr-scene-placing"${locked(p) ? " disabled" : ""}>
             <div class="lyr-scene-sub">Position</div>
             <div class="lyr-scene-fields">
               ${field("x", "X", "mm", p.position[0], 0.1, "Left and right")}
@@ -2585,6 +2599,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
               <button type="button" class="lyr-btn" data-turn="2" title="A quarter turn about Z">Z</button>
               <button type="button" class="lyr-btn" data-act="reset-turn" title="Turn it back to how its file has it">Reset</button>
             </div>
+            </fieldset>
             <label class="lyr-scene-check" title="Draw it faint, for a part fitted in an earlier step"><input type="checkbox" data-ghost${p.ghost ? " checked" : ""}> Ghost (fitted earlier)</label>
             <p class="lyr-note">Arrow keys in a box: ±1 step, Shift ×10, Alt ×0.1. Or drag a label sideways.</p>`
           : `<p class="lyr-note">${scene.parts.length ? "Click a part, in the view or the list, to place it." : "Add a part to start."}</p>`}
@@ -2673,7 +2688,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         renderProps();
       } else if (b.dataset.turn) {
         const p = partById(selectedId);
-        if (!p) return;
+        if (!p || locked(p)) return;
         const axis = new Vector3(...([[1, 0, 0], [0, 1, 0], [0, 0, 1]][Number(b.dataset.turn)] as Vec3));
         const q = new Quaternion().setFromEuler(new Euler(p.rotation[0] * DEG, p.rotation[1] * DEG, p.rotation[2] * DEG, "ZYX"));
         q.premultiply(new Quaternion().setFromAxisAngle(axis, 90 * DEG));
@@ -2692,7 +2707,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         if (p) unjoin(p);
       } else if (b.dataset.act === "reset-turn") {
         const p = partById(selectedId);
-        if (!p) return;
+        if (!p || locked(p)) return;
         p.rotation = [0, 0, 0];
         follow();
         syncFields();

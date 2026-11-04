@@ -91,10 +91,11 @@ const editor = mount(el, {
   marks the project's **default view**: new steps start from it, and a step
   that looks from more than 30° off it gets a "turn it" mark at the
   picture's top right (removed when it looks from the default view again).
-- **Draft lines break the lines they cross**: a dashed (or solid) draft
-  line runs over the parts, and the outlines and fold lines it crosses open
-  either side of it, as on a printed sheet, with the parts' fills left
-  whole.
+- **Draft lines break the lines they cross**: where a dashed (or solid)
+  draft line passes in front of a part, the outlines and fold lines it
+  crosses open either side of it, as on a printed sheet, with the parts'
+  fills left whole. Where it passes behind or inside a part it's drawn
+  plain, and the outline stays whole.
 - **Parts list** (Templates): every kind of part in the project's model
   (or the first 3D scene's parts) drawn at one scale with its name and
   count, and the **fixings** together in a box at the bottom, each with

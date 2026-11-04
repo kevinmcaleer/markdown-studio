@@ -16,7 +16,7 @@ import {
   ShaderMaterial, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget, NearestFilter, NoBlending, type Object3D,
 } from "three";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
-import { BufferGeometry as CutGeometry, DoubleSide, Float32BufferAttribute, Texture } from "three";
+import { BufferGeometry as CutGeometry, DoubleSide, Float32BufferAttribute, GreaterDepth, LessEqualDepth, Texture } from "three";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import type { SceneCamera, SceneData, ScenePart, SceneStyle, Vec3 } from "./model";
@@ -271,6 +271,11 @@ export class LineArt {
   /** A band under each draft line painted with the fills alone, so the lines it crosses break round it as on a flat-pack sheet. */
   private draftHalo: LineSegments2 | null = null;
   private draftHaloMaterial: LineMaterial | null = null;
+  /** The draft lines where they pass behind or inside a part: drawn without a halo, so the outline there stays whole. */
+  private draftHidden: LineSegments2 | null = null;
+  private draftHiddenMaterial: LineMaterial | null = null;
+  /** The draft lines, drawn against the parts' depth after the outlines (unlike the overlay, which is drawn over everything). */
+  private draftScene = new Scene();
   private haloFill = { value: null as Texture | null };
   /** Spots cut back to the fills alone (a detail circle's tail tip): the outline breaks round what the tail points at. */
   cuts: Cut[] = [];
@@ -331,13 +336,17 @@ export class LineArt {
    */
   private drawDraft(world: Map<string, Matrix4>, explode: number): void {
     if (this.draft) {
-      this.overlay.remove(this.draft);
+      this.draftScene.remove(this.draft);
       this.draft.geometry.dispose();
       this.draft = null;
     }
     if (this.draftHalo) {
-      this.overlay.remove(this.draftHalo);
+      this.draftScene.remove(this.draftHalo);
       this.draftHalo = null;
+    }
+    if (this.draftHidden) {
+      this.draftScene.remove(this.draftHidden);
+      this.draftHidden = null;
     }
     const style = this.style;
     if (!style || style.draft === false || style.lineWidth <= 0) return;
@@ -375,15 +384,24 @@ export class LineArt {
     if (this.draftMaterial && this.draftMaterial.dashed !== dashed) {
       this.draftMaterial.dispose();
       this.draftMaterial = null;
+      this.draftHiddenMaterial?.dispose();
+      this.draftHiddenMaterial = null;
     }
-    // Transparent only so it sorts after its halo (both are drawn in the transparent pass, in renderOrder).
-    this.draftMaterial ??= new LineMaterial({ color: 0, linewidth: 1, worldUnits: false, dashed, dashSize: 3, gapSize: 2, depthTest: false, depthWrite: false, transparent: true });
+    // The lines are tested against the parts' depth: where a line is in front
+    // of a part it's drawn with its halo, where it's behind or inside one it's
+    // drawn alone, so only an outline it really crosses breaks. Nudged a
+    // little towards the camera, so a line along a part's face counts as in
+    // front of it. Transparent only so the three sort by renderOrder.
+    const depth = { depthTest: true, depthWrite: false, transparent: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 };
+    this.draftMaterial ??= new LineMaterial({ color: 0, linewidth: 1, worldUnits: false, dashed, dashSize: 3, gapSize: 2, ...depth, depthFunc: LessEqualDepth });
     this.draftMaterial.color.set(style.line);
+    this.draftHiddenMaterial ??= new LineMaterial({ color: 0, linewidth: 1, worldUnits: false, dashed, dashSize: 3, gapSize: 2, ...depth, depthFunc: GreaterDepth });
+    this.draftHiddenMaterial.color.set(style.line);
     if (!this.draftHaloMaterial) {
       // The halo paints the picture's fills (drawn without any lines) back over
       // a band round the line: the lines and outlines it crosses break, the
       // parts and the page show through unbroken, as on a flat-pack sheet.
-      const m = new LineMaterial({ color: 0xffffff, linewidth: 1, worldUnits: false, depthTest: false, depthWrite: false, transparent: true, blending: NoBlending });
+      const m = new LineMaterial({ color: 0xffffff, linewidth: 1, worldUnits: false, ...depth, depthFunc: LessEqualDepth, blending: NoBlending });
       m.onBeforeCompile = shader => {
         shader.uniforms.tFill = this.haloFill;
         shader.fragmentShader = shader.fragmentShader
@@ -393,16 +411,21 @@ export class LineArt {
       this.draftHaloMaterial = m;
     }
     const geo = new LineSegmentsGeometry().setPositions(pts);
-    // Drawn over the parts and their outlines (the overlay), as the lines on a sheet run over everything.
+    // Drawn after the parts and their outlines, as the lines on a sheet run over the drawing.
+    this.draftHidden = new LineSegments2(geo, this.draftHiddenMaterial);
+    this.draftHidden.computeLineDistances();
+    this.draftHidden.raycast = () => {};
+    this.draftHidden.renderOrder = 0;
+    this.draftScene.add(this.draftHidden);
     this.draftHalo = new LineSegments2(geo, this.draftHaloMaterial);
     this.draftHalo.raycast = () => {};
-    this.draftHalo.renderOrder = 0;
-    this.overlay.add(this.draftHalo);
+    this.draftHalo.renderOrder = 1;
+    this.draftScene.add(this.draftHalo);
     this.draft = new LineSegments2(geo, this.draftMaterial);
     this.draft.computeLineDistances();
     this.draft.raycast = () => {};
-    this.draft.renderOrder = 1;
-    this.overlay.add(this.draft);
+    this.draft.renderOrder = 2;
+    this.draftScene.add(this.draft);
   }
 
   /** Follows the parts' new places without rebuilding the scene. */
@@ -471,13 +494,14 @@ export class LineArt {
       m.linewidth = style.lineWidth * ratio;
       m.resolution.set(pw, ph);
     }
-    if (this.draftMaterial) {
+    for (const m of [this.draftMaterial, this.draftHiddenMaterial]) {
+      if (!m) continue;
       // Dashes a steady size on the picture, whatever the zoom: mm per pixel.
       const mmPerPx = (camera.top - camera.bottom) / camera.zoom / h;
-      this.draftMaterial.linewidth = style.lineWidth * ratio;
-      this.draftMaterial.resolution.set(pw, ph);
-      this.draftMaterial.dashSize = 7 * mmPerPx;
-      this.draftMaterial.gapSize = 5 * mmPerPx;
+      m.linewidth = style.lineWidth * ratio;
+      m.resolution.set(pw, ph);
+      m.dashSize = 7 * mmPerPx;
+      m.gapSize = 5 * mmPerPx;
     }
     if (this.draftHaloMaterial) {
       // Wide enough that a part's bold outline opens clearly either side of the line.
@@ -517,6 +541,12 @@ export class LineArt {
       r.autoClear = true;
     }
     if (this.cuts.length && this.fillTarget) this.drawCuts(pw, ph);
+    if (this.draftScene.children.length) {
+      // Against the depth the parts left, so a line behind a part is known to be.
+      r.autoClear = false;
+      r.render(this.draftScene, camera);
+      r.autoClear = true;
+    }
     if (this.overlay.children.length) {
       r.autoClear = false;
       r.clearDepth();
@@ -582,6 +612,7 @@ export class LineArt {
     this.draft?.geometry.dispose();
     this.draftMaterial?.dispose();
     this.draftHaloMaterial?.dispose();
+    this.draftHiddenMaterial?.dispose();
     this.cutMaterial?.dispose();
     this.fillTarget?.dispose();
     this.lineMaterials.forEach(m => m.dispose());
