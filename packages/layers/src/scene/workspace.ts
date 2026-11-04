@@ -156,6 +156,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
               <button type="button" class="lyr-btn" data-act="fit" title="Fit the parts in the picture (F)">${icon("frame", 16)}<span>Fit</span></button>
               <span class="lyr-sep"></span>
               <label class="lyr-scene-explode" title="Slide joined parts apart along their joints, to show how they fit">${icon("expand", 16)}<span>Explode</span><input type="range" min="0" max="100" step="1" data-explode value="0" aria-label="Explode"><input type="number" class="lyr-scene-explode-num" min="0" max="100" step="1" data-explode-num value="0" aria-label="Explode, per cent"><span class="lyr-scene-explode-unit">%</span></label>
+              <button type="button" class="lyr-btn lyr-scene-explode-follow" data-act="explode-follow" hidden>${icon("rotate", 16)}<span></span></button>
             </div>
             <div class="lyr-scene-frame"><canvas class="lyr-scene-canvas"></canvas></div>
             <div class="lyr-scene-help">Drag to look around, right-drag to pan, scroll to zoom. Hold Shift on a handle for 5 mm or 15° steps.</div>
@@ -786,7 +787,22 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
 
     // ------------------------------------------------------------ the parts list
 
+    /**
+     * The joints with an explode of their own don't follow the main slider:
+     * a button beside it says how many, and puts them back on it.
+     */
+    function syncExplodeFollow(): void {
+      const btn = root.querySelector<HTMLButtonElement>("[data-act=explode-follow]");
+      if (!btn) return;
+      const own = scene.parts.filter(p => p.parent && p.joint && p.explode !== undefined).length;
+      btn.hidden = !own;
+      btn.querySelector("span")!.textContent = String(own);
+      btn.title = `${own} joint${own === 1 ? " has its" : "s have their"} own explode, so ${own === 1 ? "it doesn't" : "they don't"} follow this slider. Click to make ${own === 1 ? "it" : "them"} follow it again.`;
+      btn.setAttribute("aria-label", btn.title);
+    }
+
     function renderList(): void {
+      syncExplodeFollow();
       // A tree: each part joined to another sits under it, with its joint
       // as a row between them that can be shown, changed or undone.
       const byParent = new Map<string, ScenePart[]>();
@@ -939,6 +955,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const pc = Math.max(0, Math.min(100, Math.round(v)));
       const all = explodeSet.map(partById).filter((x): x is ScenePart => !!x);
       for (const x of all.length ? all : [p]) x.explode = pc / 100;
+      syncExplodeFollow();
       const other = rowEl.querySelector<HTMLInputElement>(t.matches("[data-joint-explode-range]") ? "[data-joint-explode-num]" : "[data-joint-explode-range]");
       if (other) other.value = String(pc);
       rowEl.querySelector<HTMLButtonElement>("[data-joint-explode-reset]")!.disabled = false;
@@ -2742,6 +2759,15 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         case "redo": redo(); break;
         case "cancel": cancel(); break;
         case "done": void finish(); break;
+        case "explode-follow": {
+          const own = scene.parts.filter(p => p.explode !== undefined);
+          own.forEach(p => delete p.explode);
+          follow();
+          commit();
+          renderList();
+          status(`${own.length} joint${own.length === 1 ? "" : "s"} follow the Explode slider again.`);
+          break;
+        }
       }
     });
 
