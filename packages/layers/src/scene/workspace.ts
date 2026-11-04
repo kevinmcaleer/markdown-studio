@@ -29,6 +29,7 @@ import { toUrdf, zip } from "./urdf";
 import { createViewCube } from "./viewcube";
 import { MAX_SNAP_TRIANGLES, nearestSnap, Topology, type Face, type Snap } from "./snaps";
 import { createSectionTool } from "./sectionTool";
+import { fitDiameter, fitLength, holeDepth, isHoleSnap, matchingHoles, SCREW_HEADS, SCREW_LENGTHS, SCREW_SIZES, screwFile, screwLabel, screwLift, screwMesh, screwName, type ScrewHead, type ScrewSpec } from "./screw";
 
 export interface SceneModel {
   url: string;
@@ -147,6 +148,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
             <div class="lyr-scene-tools" role="toolbar" aria-label="View">
               <button type="button" class="lyr-btn" data-tool="translate" title="Move parts with the handles (M)">${icon("move", 16)}<span>Move</span></button>
               <button type="button" class="lyr-btn" data-tool="rotate" title="Turn parts with the handles (R)">${icon("rotate", 16)}<span>Turn</span></button>
+              <button type="button" class="lyr-btn" data-act="screw" title="Screws: click a hole to put a screw in it (S)">${icon("screw", 16)}<span>Screw</span></button>
               <span class="lyr-sep"></span>
               ${VIEWS.map(v => `<button type="button" class="lyr-btn" data-view="${v.id}" title="Look from the ${esc(v.label.toLowerCase())}">${esc(v.label)}</button>`).join("")}
               <span class="lyr-sep"></span>
@@ -158,7 +160,9 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
               <button type="button" class="lyr-btn" data-act="section" title="Section view: click a face, then drag its arrow to slide a cut through the parts">${icon("section", 16)}<span>Section</span></button>
               <span class="lyr-sep"></span>
               <label class="lyr-scene-explode" title="Slide joined parts apart along their joints, to show how they fit">${icon("expand", 16)}<span>Explode</span><input type="range" min="0" max="100" step="1" data-explode value="0" aria-label="Explode"><input type="number" class="lyr-scene-explode-num" min="0" max="100" step="1" data-explode-num value="0" aria-label="Explode, per cent"><span class="lyr-scene-explode-unit">%</span></label>
+              <button type="button" class="lyr-btn lyr-scene-explode-follow" data-act="explode-follow" hidden>${icon("rotate", 16)}<span></span></button>
             </div>
+            <div class="lyr-screw-bar" role="toolbar" aria-label="Screw" hidden></div>
             <div class="lyr-scene-frame"><canvas class="lyr-scene-canvas"></canvas></div>
             <div class="lyr-scene-help">Drag to look around, right-drag to pan, scroll to zoom. Hold Shift on a handle for 5 mm or 15° steps.</div>
             <div class="lyr-drop" hidden>Drop STL or STEP files to add them</div>
@@ -280,7 +284,9 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     function layout(): void {
       const box = stage.getBoundingClientRect();
       const availW = Math.max(100, box.width - 32);
-      const availH = Math.max(100, box.height - 96);
+      const bar = root.querySelector<HTMLElement>(".lyr-screw-bar");
+      const barH = bar && !bar.hidden ? bar.offsetHeight + 10 : 0;
+      const availH = Math.max(100, box.height - 96 - barH);
       viewW = Math.floor(Math.min(availW, availH * aspect));
       viewH = Math.floor(viewW / aspect);
       frameEl.style.width = `${viewW}px`;
@@ -597,14 +603,14 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
 
     function attachGizmo(): void {
       const p = selectedId ? partById(selectedId) : undefined;
-      if (p && !p.hidden && !locked(p) && art.matrixOf(p.id)) {
+      if (p && !p.hidden && !locked(p) && art.matrixOf(p.id) && !screwing) {
         placeProxy();
         gizmo.attach(proxy);
         gizmo.setMode(tool);
       } else {
         gizmo.detach();
       }
-      root.querySelectorAll<HTMLElement>("[data-tool]").forEach(b => b.classList.toggle("lyr-on", b.dataset.tool === tool));
+      root.querySelectorAll<HTMLElement>("[data-tool]").forEach(b => b.classList.toggle("lyr-on", b.dataset.tool === tool && !screwing));
     }
 
     gizmo.addEventListener("dragging-changed", e => {
@@ -639,11 +645,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         return;
       }
       // A handle under the pointer is the gizmo's click, unless faces are being picked (the gizmo is put away then).
-      if (!joining && (gizmo.dragging || (gizmo as unknown as { axis: string | null }).axis)) return;
+      if (!joining && !screwing && (gizmo.dragging || (gizmo as unknown as { axis: string | null }).axis)) return;
       const r = canvasEl.getBoundingClientRect();
       const ndc = new Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
       // A right-click (not a right-drag, which pans): the part's menu, or the view's.
-      if ((e.button === 2 || (e.button === 0 && e.ctrlKey && mac)) && !joining) {
+      if ((e.button === 2 || (e.button === 0 && e.ctrlKey && mac)) && !joining && !screwing) {
         art.scene.updateMatrixWorld(true);
         raycaster.setFromCamera(ndc, camera);
         const hit = raycaster.intersectObjects(art.meshes(), false).find(h => art.keeps(h.point));
@@ -655,6 +661,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         return;
       }
       if (e.button !== 0) return;
+      if (screwing) {
+        hoverAt(e);
+        void screwClick(e.shiftKey);
+        return;
+      }
       if (joining) {
         hoverAt(e);
         pickFace(hoverPick());
@@ -795,7 +806,22 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
 
     // ------------------------------------------------------------ the parts list
 
+    /**
+     * The joints with an explode of their own don't follow the main slider:
+     * a button beside it says how many, and puts them back on it.
+     */
+    function syncExplodeFollow(): void {
+      const btn = root.querySelector<HTMLButtonElement>("[data-act=explode-follow]");
+      if (!btn) return;
+      const own = scene.parts.filter(p => p.parent && p.joint && p.explode !== undefined).length;
+      btn.hidden = !own;
+      btn.querySelector("span")!.textContent = String(own);
+      btn.title = `${own} joint${own === 1 ? " has its" : "s have their"} own explode, so ${own === 1 ? "it doesn't" : "they don't"} follow this slider. Click to make ${own === 1 ? "it" : "them"} follow it again.`;
+      btn.setAttribute("aria-label", btn.title);
+    }
+
     function renderList(): void {
+      syncExplodeFollow();
       // A tree: each part joined to another sits under it, with its joint
       // as a row between them that can be shown, changed or undone.
       const byParent = new Map<string, ScenePart[]>();
@@ -948,6 +974,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const pc = Math.max(0, Math.min(100, Math.round(v)));
       const all = explodeSet.map(partById).filter((x): x is ScenePart => !!x);
       for (const x of all.length ? all : [p]) x.explode = pc / 100;
+      syncExplodeFollow();
       const other = rowEl.querySelector<HTMLInputElement>(t.matches("[data-joint-explode-range]") ? "[data-joint-explode-num]" : "[data-joint-explode-range]");
       if (other) other.value = String(pc);
       rowEl.querySelector<HTMLButtonElement>("[data-joint-explode-reset]")!.disabled = false;
@@ -1277,6 +1304,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
 
     /** Joining: the part being joined, and (after the first click) the face picked on it. */
     let joining: { childId: string; childPoint?: Vec3; childNormal?: Vec3; half?: "child" | "parent" } | null = null;
+    /** Putting screws in holes: armed while true (see the screw tool, below). */
+    let screwing = false;
 
     /** The parts joined (directly or further down) to `id`, and itself. */
     function branch(id: string): Set<string> {
@@ -1533,6 +1562,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       onPicking: on => {
         if (on) {
           if (joining) stopJoin();
+          if (screwing) stopScrews();
           gizmo.detach();
         } else attachGizmo();
         syncSectionButton();
@@ -1759,6 +1789,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
 
     /** The meshes a join may pick now: the part being joined, then any part not on its branch. */
     function pickable(): Mesh[] {
+      if (screwing) return art.meshes().filter(m => !partById(String(m.userData.partId || ""))?.screw);
       if (!joining) return [];
       const branchIds = joining.childPoint ? branch(joining.childId) : null;
       return art.meshes().filter(m => {
@@ -1869,7 +1900,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         }
       }
       if (hover) {
-        const snaps = hover.face?.snaps || [];
+        const snaps = hoverSnaps();
         const m = hover.mesh.matrixWorld;
         const screen = snaps.map(s => project(s.p, m));
         hover.snap = nearestSnap(screen, snaps, pointer, 22, 40, snapReach(snaps, m, project), faceHeld);
@@ -1877,9 +1908,18 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           marks.push(`<span class="lyr-snap lyr-snap-${snaps[i].role}${i === hover!.snap ? " lyr-on" : ""}" style="left:${p.x}px;top:${p.y}px"></span>`);
         });
         const on = hover.snap >= 0 ? snaps[hover.snap] : null;
+        // Shift held with the screw tool: every hole a click would fill, marked.
+        if (on && screwing && shiftDown) {
+          for (const h of holesFor(hover.id, on, true)) {
+            if (h === on) continue;
+            const p = project(h.p, m);
+            marks.push(`<span class="lyr-snap lyr-snap-hole lyr-on" style="left:${p.x}px;top:${p.y}px"></span>`);
+          }
+        }
         if (on) {
           const p = screen[hover.snap];
-          marks.push(`<span class="lyr-snap-label" style="left:${p.x}px;top:${p.y}px">${esc(ROLE_LABEL[on.role])}${faceHeld ? " · face held" : ""}</span>`);
+          const text = screwing ? screwHint(hover.id, on) : `${ROLE_LABEL[on.role]}${faceHeld ? " · face held" : ""}`;
+          marks.push(`<span class="lyr-snap-label" style="left:${p.x}px;top:${p.y}px">${esc(text)}</span>`);
         }
         if (on?.radius && (on.role === "hole" || on.role === "rim" || on.role === "centre")) {
           const n = new Vector3(...on.n).normalize();
@@ -1903,9 +1943,15 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     }
 
     /** What a click picks now: the snap marked, or the point under the pointer. */
+    /** The hovered face's snaps a click can take: only its round holes while putting screws in. */
+    function hoverSnaps(): Snap[] {
+      const all = hover?.face?.snaps || [];
+      return screwing ? all.filter(isHoleSnap) : all;
+    }
+
     function hoverPick(): Pick | null {
       if (!hover) return null;
-      const s = hover.snap >= 0 ? hover.face?.snaps[hover.snap] : undefined;
+      const s = hover.snap >= 0 ? hoverSnaps()[hover.snap] : undefined;
       const p = s ? s.p : hover.point;
       const n = s ? s.n : hover.normal;
       return { id: hover.id, point: [round(p[0], 3), round(p[1], 3), round(p[2], 3)], normal: [round(n[0], 5), round(n[1], 5), round(n[2], 5)] };
@@ -1919,16 +1965,246 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         hoverQueued = requestAnimationFrame(() => section.hover(at));
         return;
       }
-      if (!joining || e.buttons) return;
-      faceHeld = holdKey(e) && !!hover;
+      if (!(joining || screwing) || e.buttons) return;
+      faceHeld = !screwing && holdKey(e) && !!hover;
+      shiftDown = e.shiftKey;
       const at = { clientX: e.clientX, clientY: e.clientY };
       cancelAnimationFrame(hoverQueued);
-      hoverQueued = requestAnimationFrame(() => joining && hoverAt(at));
+      hoverQueued = requestAnimationFrame(() => (joining || screwing) && hoverAt(at));
     });
     canvasEl.addEventListener("pointerleave", () => {
       cancelAnimationFrame(hoverQueued);
-      if (joining) clearHover();
+      if (joining || screwing) clearHover();
     });
+
+    // ------------------------------------------------------------ the screw tool
+
+    // Arm it (the Screw button, or S), and each click on a round hole puts
+    // a screw in it, joined to the part with the hole and drawn out of it
+    // (this picture's explode), so the next step shows it fitted. The tool
+    // stays armed for the next hole. Its size is measured from the hole
+    // (Auto) unless one is chosen; the choice is remembered. Shift-click
+    // fills every hole like it on that part, facing the same way.
+
+    interface ScrewChoice { d: number | "auto"; length: number | "auto"; head: ScrewHead }
+    const SCREW_KEY = "layers.screwTool";
+    const readChoice = (): ScrewChoice => {
+      try {
+        const v = JSON.parse(localStorage.getItem(SCREW_KEY) || "null") as Partial<ScrewChoice> | null;
+        if (v && typeof v === "object") {
+          return {
+            d: SCREW_SIZES.some(x => x.d === v.d) ? (v.d as number) : "auto",
+            length: SCREW_LENGTHS.includes(v.length as number) ? (v.length as number) : "auto",
+            head: SCREW_HEADS.some(h => h.id === v.head) ? (v.head as ScrewHead) : "socket",
+          };
+        }
+      } catch {
+        // No storage here: start from Auto.
+      }
+      return { d: "auto", length: "auto", head: "socket" };
+    };
+    let screwChoice = readChoice();
+    let shiftDown = false;
+    const screwBar = $(".lyr-screw-bar");
+
+    function renderScrewBar(): void {
+      const opt = (v: string, label: string, on: boolean) => `<option value="${v}"${on ? " selected" : ""}>${esc(label)}</option>`;
+      screwBar.innerHTML = `
+        <span class="lyr-screw-bar-title">${icon("screw", 16)}<span>Screw</span></span>
+        <label title="Thread size. Auto: the biggest screw that goes through the hole"><span>Size</span><select data-screw="d">${opt("auto", "Auto", screwChoice.d === "auto")}${SCREW_SIZES.map(x => opt(String(x.d), `M${x.d}`, screwChoice.d === x.d)).join("")}</select></label>
+        <label title="Length in mm (overall for countersunk). Auto: as deep as a blind hole, or through the part with some to spare"><span>×</span><select data-screw="length">${opt("auto", "Auto", screwChoice.length === "auto")}${SCREW_LENGTHS.map(l => opt(String(l), `${l} mm`, screwChoice.length === l)).join("")}</select></label>
+        <label title="Head"><select data-screw="head">${SCREW_HEADS.map(h => opt(h.id, h.label, screwChoice.head === h.id)).join("")}</select></label>
+        <span class="lyr-screw-bar-hint">Click a hole · Shift-click: every hole like it · Esc: stop</span>
+        <button type="button" class="lyr-btn lyr-icon-btn" data-act="screw-stop" title="Stop putting screws in (Esc)" aria-label="Stop">${icon("close", 16)}</button>`;
+    }
+    screwBar.addEventListener("change", e => {
+      const el = e.target as HTMLSelectElement;
+      const key = el.dataset.screw;
+      if (!key) return;
+      if (key === "head") screwChoice.head = el.value as ScrewHead;
+      else screwChoice[key as "d" | "length"] = el.value === "auto" ? "auto" : Number(el.value);
+      try {
+        localStorage.setItem(SCREW_KEY, JSON.stringify(screwChoice));
+      } catch {
+        // Not kept: fine for this session.
+      }
+      screwSpecs.clear();
+      el.blur();
+      if (hover) placeSnaps();
+      draw();
+    });
+    screwBar.addEventListener("keydown", e => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        stopScrews();
+      }
+    });
+
+    function startScrews(): void {
+      if (joining) stopJoin();
+      if (section.picking()) section.stop();
+      if (draft) closeJointDialog();
+      screwing = true;
+      shownJoint = "";
+      renderScrewBar();
+      screwBar.hidden = false;
+      $("[data-act=screw]").classList.add("lyr-on");
+      layout();
+      canvasEl.classList.add("lyr-scene-picking");
+      attachGizmo();
+      status("Click a round hole to put a screw in it. Shift-click to fill every hole like it.", false, true);
+      draw();
+    }
+
+    function stopScrews(message = ""): void {
+      if (!screwing) return;
+      screwing = false;
+      screwBar.hidden = true;
+      $("[data-act=screw]").classList.remove("lyr-on");
+      layout();
+      clearHover();
+      canvasEl.classList.remove("lyr-scene-picking");
+      attachGizmo();
+      status(message);
+      draw();
+    }
+
+    /** The screw a hole takes, by the choice: as chosen, or measured from the hole. Kept per hole. */
+    const screwSpecs = new Map<string, ScrewSpec>();
+    function screwFor(partId: string, hole: Snap): ScrewSpec {
+      const key = `${partId}:${hole.p.map(n => n.toFixed(3)).join(",")}:${hole.n.map(n => n.toFixed(3)).join(",")}`;
+      const had = screwSpecs.get(key);
+      if (had) return had;
+      const head = screwChoice.head;
+      const d = screwChoice.d === "auto" ? fitDiameter(hole.radius || 1.5, head) : screwChoice.d;
+      let length = screwChoice.length;
+      if (length === "auto") {
+        const m = models.get(partId);
+        const topo = m && !(m instanceof Error) ? topologyOf(m) : null;
+        let depth = { depth: d * 2, through: true };
+        try {
+          if (topo) depth = holeDepth(topo, hole.p, hole.n, hole.radius || d / 2);
+        } catch (e) {
+          console.warn("Layers: the hole's depth couldn't be measured", e);
+        }
+        length = fitLength(d, depth);
+      }
+      const spec: ScrewSpec = { d, length, head };
+      screwSpecs.set(key, spec);
+      return spec;
+    }
+
+    /** The holes a click fills: this one, or (Shift) every one like it on the part. */
+    const holeSets = new Map<string, Snap[]>();
+    function holesFor(partId: string, hole: Snap, all: boolean): Snap[] {
+      if (!all) return [hole];
+      const key = `${partId}:${hole.p.join(",")}:${hole.n.join(",")}`;
+      let set = holeSets.get(key);
+      if (!set) {
+        const m = models.get(partId);
+        const topo = m && !(m instanceof Error) ? topologyOf(m) : null;
+        set = topo ? matchingHoles(topo, hole) : [hole];
+        holeSets.set(key, set);
+      }
+      return set;
+    }
+
+    /** What the label by the hole says: the screw it takes, and how many holes a Shift-click fills. */
+    function screwHint(partId: string, hole: Snap): string {
+      const spec = screwFor(partId, hole);
+      if (!shiftDown) return `${screwLabel(spec)} · Shift: all like it`;
+      const n = holesFor(partId, hole, true).length;
+      return `${screwLabel(spec)} in ${n} hole${n === 1 ? "" : "s"}`;
+    }
+
+    /** The screw already in this hole of this part, if any. */
+    function screwIn(partId: string, hole: Snap): ScenePart | undefined {
+      return scene.parts.find(p => {
+        if (!p.screw || p.parent !== partId || !p.joint?.point) return false;
+        const j = p.joint;
+        return Math.hypot(j.point![0] - hole.p[0], j.point![1] - hole.p[1], j.point![2] - hole.p[2]) < 0.05 && j.normal[0] * hole.n[0] + j.normal[1] * hole.n[1] + j.normal[2] * hole.n[2] > 0.99;
+      });
+    }
+
+    /** Each size's model, packed to carry in the graphic, made once (copies share it when saved). */
+    const screwData = new Map<string, Promise<string>>();
+    function screwModelData(spec: ScrewSpec): Promise<string> {
+      const key = JSON.stringify(spec);
+      let d = screwData.get(key);
+      if (!d) {
+        d = packMesh(screwMesh(spec).positions);
+        screwData.set(key, d);
+        d.catch(() => screwData.delete(key));
+      }
+      return d;
+    }
+
+    let screwBusy = false;
+    async function screwClick(all: boolean): Promise<void> {
+      if (screwBusy) return;
+      const snaps = hoverSnaps();
+      const hole = hover && hover.snap >= 0 ? snaps[hover.snap] : undefined;
+      const parent = hover ? partById(hover.id) : undefined;
+      if (!hover || !hole || !parent) {
+        status("Click a round hole to put a screw in it. Esc to stop.", true, true);
+        return;
+      }
+      screwBusy = true;
+      try {
+        const holes = holesFor(parent.id, hole, all);
+        let added = 0;
+        let changed = 0;
+        let last: ScrewSpec | null = null;
+        for (const h of holes) {
+          const spec = screwFor(parent.id, h);
+          last = spec;
+          const had = screwIn(parent.id, h);
+          if (had && JSON.stringify(had.screw) === JSON.stringify(spec)) continue;
+          const built = screwMesh(spec);
+          const data = await screwModelData(spec);
+          if (closed) return;
+          const part: ScenePart = had || { id: newPartId(scene.parts), name: "", position: [0, 0, 0], rotation: [0, 0, 0] };
+          part.name = screwName(spec);
+          part.file = screwFile(spec);
+          part.data = data;
+          part.screw = spec;
+          part.parent = parent.id;
+          part.joint = {
+            normal: [round(h.n[0], 5), round(h.n[1], 5), round(h.n[2], 5)],
+            distance: screwLift(spec),
+            point: [round(h.p[0], 3), round(h.p[1], 3), round(h.p[2], 3)],
+            childPoint: built.contact.map(n => round(n, 4)) as Vec3,
+            childNormal: built.normal,
+            spin: 0,
+            gap: 0,
+          };
+          // Drawn out of its hole here; the next step draws it fitted.
+          if (!had) part.explode = 1;
+          applyJoint(part);
+          const model = modelFromPositions(built.positions, null);
+          opts.store.put(part, model);
+          keepModel(part, model);
+          if (had) changed++;
+          else {
+            scene.parts.push(part);
+            added++;
+          }
+        }
+        if (!added && !changed) {
+          status(holes.length > 1 ? `Those holes have ${screwLabel(last!)} screws in already.` : `That hole has an ${screwLabel(last!)} screw in already. Undo (Ctrl+Z) takes one out.`);
+          return;
+        }
+        clearHover();
+        rebuild();
+        syncExplode();
+        commit();
+        renderProps();
+        const what = added + changed === 1 ? `An ${screwLabel(last!)} screw` : `${added + changed} ${screwLabel(last!)} screws`;
+        status(`${what} ${changed && !added ? "changed" : "put in"} “${parent.name}”. Click more holes, or Esc when done.`, false, true);
+      } finally {
+        screwBusy = false;
+      }
+    }
 
     /**
      * Keeps a moving joint's angle (turning) or slide (sliding) inside its
@@ -2017,6 +2293,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     function openJointDialog(childId: string): void {
       const p = partById(childId);
       if (!p) return;
+      stopScrews();
       const j = p.joint;
       draft = {
         childId,
@@ -2782,6 +3059,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       if (!b) return;
       if (b.dataset.tool) {
         tool = b.dataset.tool as typeof tool;
+        stopScrews();
         attachGizmo();
         draw();
       } else if (b.dataset.view) setView(b.dataset.view);
@@ -2789,6 +3067,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         case "add": if (menu.hidden) void openMenu(); else closeMenu(); break;
         case "upload": closeMenu(); fileInput.click(); break;
         case "fit": fitView(true); break;
+        case "screw": if (screwing) stopScrews(); else startScrews(); break;
+        case "screw-stop": stopScrews(); break;
         case "views": if (viewsMenu.hidden) openViews(); else viewsMenu.hidden = true; break;
         case "urdf": exportUrdf(); break;
         case "section": if (section.picking()) section.stop(""); else section.start(); break;
@@ -2796,6 +3076,15 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         case "redo": redo(); break;
         case "cancel": cancel(); break;
         case "done": void finish(); break;
+        case "explode-follow": {
+          const own = scene.parts.filter(p => p.explode !== undefined);
+          own.forEach(p => delete p.explode);
+          follow();
+          commit();
+          renderList();
+          status(`${own.length} joint${own.length === 1 ? "" : "s"} follow the Explode slider again.`);
+          break;
+        }
       }
     });
 
@@ -2809,6 +3098,10 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const mod = e.metaKey || e.ctrlKey;
       const key = e.key.toLowerCase();
       if (joining && (e.key === "Meta" || e.key === "Control")) setFaceHeld(holdKey(e) && !!hover);
+      if (e.key === "Shift" && screwing && !shiftDown) {
+        shiftDown = true;
+        if (hover) placeSnaps();
+      }
       if (e.key === "Shift") {
         gizmo.setTranslationSnap(5);
         gizmo.setRotationSnap(15 * DEG);
@@ -2835,6 +3128,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       } else if (e.key === "Escape") {
         if (!ctx.hidden) closeCtx();
         else if (section.picking()) section.stop(scene.section ? "" : "Section stopped.");
+        else if (screwing) stopScrews();
         else if (joining) stopJoin("Join stopped.");
         else if (!menu.hidden) closeMenu();
         else if (selectedId) select("");
@@ -2842,11 +3136,16 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       } else if ((e.key === "Delete" || e.key === "Backspace") && selectedId) {
         e.preventDefault();
         removePart(selectedId);
+      } else if (!mod && key === "s") {
+        if (screwing) stopScrews();
+        else startScrews();
       } else if (!mod && key === "m") {
+        stopScrews();
         tool = "translate";
         attachGizmo();
         draw();
       } else if (!mod && key === "r") {
+        stopScrews();
         tool = "rotate";
         attachGizmo();
         draw();
@@ -2857,6 +3156,10 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     };
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.key === "Meta" || e.key === "Control") setFaceHeld(false);
+      if (e.key === "Shift" && shiftDown) {
+        shiftDown = false;
+        if (screwing && hover) placeSnaps();
+      }
       if (e.key === "Shift") {
         gizmo.setTranslationSnap(null);
         gizmo.setRotationSnap(null);

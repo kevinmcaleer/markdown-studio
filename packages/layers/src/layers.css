@@ -482,6 +482,27 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
   border-radius: 10px;
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.12);
 }
+/* The screw tool's bar: size, length and head, over the top of the view while it's armed. */
+.lyr-screw-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 4px 4px 4px 10px;
+  background: #fff;
+  border: 1px solid var(--lyr-accent);
+  border-radius: 10px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.12);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.lyr-screw-bar[hidden] { display: none; }
+.lyr-screw-bar-title { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; color: var(--lyr-accent); }
+.lyr-screw-bar label { display: inline-flex; align-items: center; gap: 4px; color: var(--lyr-muted); }
+.lyr-screw-bar select { height: 26px; padding: 0 4px; border: 1px solid var(--lyr-line); border-radius: 6px; font: inherit; color: var(--lyr-ink); background: #fff; }
+.lyr-screw-bar-hint { overflow: hidden; text-overflow: ellipsis; color: var(--lyr-muted); }
 .lyr-scene-frame { position: relative; flex: 0 0 auto; box-shadow: 0 2px 12px rgb(0 0 0 / 0.14); }
 .lyr-scene-frame.lyr-clear {
   background-color: #fff;
@@ -799,3 +820,6 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 .lyr-scene-sect-bar.lyr-picking > :not(.lyr-sect-title):not([data-sect="off"]) { display: none; }
 .lyr-sect-title { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; color: #1f6fe0; }
 .lyr-scene-sect-bar .lyr-scene-check { margin: 0; }
+/* How many joints explode on their own, beside the main Explode slider. */
+.lyr-btn.lyr-scene-explode-follow { gap: 3px; padding: 0 6px; height: 28px; color: #1f6fe0; font-size: 12px; font-weight: 600; }
+.lyr-scene-explode-follow[hidden] { display: none; }
