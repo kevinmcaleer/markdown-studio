@@ -680,41 +680,100 @@ export async function frameAll(cam: SceneCamera, scenes: SceneData[], store: Mod
   return frame(cam, box, aspect, margin);
 }
 
-/** The camera for a close-up of one part: the scene's own direction, centred on the part and framed round it. */
-export async function detailCamera(scene: SceneData, partId: string, store: ModelStore): Promise<SceneCamera | null> {
-  const b = await partBounds(scene, partId, store);
-  if (!b) return null;
-  return { direction: [...scene.camera.direction] as Vec3, target: b.centre, size: Math.max(1, b.radius * 1.15) };
+/**
+ * The camera for a magnifier: the scene's own view, centred on `spot` (a
+ * fraction across and down the source picture) and `zoom` times closer:
+ * what the magnifier shows is the source picture's own scale times `zoom`,
+ * whatever size the magnifier is drawn at.
+ */
+export function magnifiedCamera(cam: SceneCamera, spot: { x: number; y: number }, zoom: number, src: { w: number; h: number }, det: { w: number; h: number }): SceneCamera {
+  const c = cameraFor(cam, src.w / src.h, 1);
+  c.updateMatrixWorld();
+  const e = c.matrixWorld.elements;
+  const right = new Vector3(e[0], e[1], e[2]).normalize();
+  const up = new Vector3(e[4], e[5], e[6]).normalize();
+  const dx = (spot.x - 0.5) * 2 * cam.size * (src.w / src.h);
+  const dy = (0.5 - spot.y) * 2 * cam.size;
+  const t = new Vector3(...cam.target).addScaledVector(right, dx).addScaledVector(up, dy);
+  const z = Math.max(0.25, zoom || 1);
+  return { direction: [...cam.direction] as Vec3, target: [t.x, t.y, t.z], size: Math.max(0.5, (cam.size * (det.h / src.h)) / z) };
+}
+
+/** The shown part under `spot` on the picture (nearest middle, within its reach), or null. */
+export async function partAt(scene: SceneData, spot: { x: number; y: number }, store: ModelStore, aspect: number): Promise<string | null> {
+  let best: { id: string; d: number } | null = null;
+  for (const part of scene.parts) {
+    if (part.hidden) continue;
+    const b = await partBounds(scene, part.id, store).catch(() => null);
+    if (!b) continue;
+    const [p] = pagePoints(scene, [b.centre], aspect);
+    // Distances in fractions of the picture's height.
+    const d = Math.hypot((p.x - spot.x) * aspect, p.y - spot.y);
+    const reach = b.radius / (2 * scene.camera.size);
+    if (d <= reach * 1.1 && (!best || d < best.d)) best = { id: part.id, d };
+  }
+  return best?.id ?? null;
+}
+
+export interface DetailLook {
+  ring: { colour: string; width: number };
+  /** The circle's diameter as a fraction of the picture's shorter side (the rest is room for a part to spill over). */
+  circle: number;
+  /** A part drawn whole over the ring, as a screw on a flat-pack sheet pokes out of its circle. */
+  featured?: string;
+  /** "2x", in a white box on the ring's top left. */
+  label?: string;
 }
 
 /**
  * A detail circle, as on a flat-pack sheet: the scene drawn close up on a
- * white disc with a bold ring round it, `w` × `h` on the page (an ellipse
- * when they differ), drawn `scale` times that size.
+ * white disc with a bold ring round it, in the middle of a `w` × `h`
+ * picture (drawn `scale` times that size). The featured part is drawn
+ * whole over the ring, and the label sits in a white box on the ring, so
+ * both break its line.
  */
-export async function renderDetail(scene: SceneData, store: ModelStore, w: number, h: number, scale = 1, ring = { colour: "#111111", width: 4 }): Promise<HTMLCanvasElement> {
+export async function renderDetail(scene: SceneData, store: ModelStore, w: number, h: number, scale = 1, look: DetailLook = { ring: { colour: "#111111", width: 4 }, circle: 0.72 }): Promise<HTMLCanvasElement> {
   const pic = await renderPicture(scene, store, w, h, scale);
   const out = document.createElement("canvas");
   out.width = pic.width;
   out.height = pic.height;
   const ctx = out.getContext("2d")!;
-  const rw = ring.width * scale;
+  const rw = look.ring.width * scale;
   const cx = out.width / 2;
   const cy = out.height / 2;
-  const rx = out.width / 2 - rw / 2;
-  const ry = out.height / 2 - rw / 2;
+  const r = (Math.min(out.width, out.height) * look.circle) / 2 - rw / 2;
   ctx.save();
   ctx.beginPath();
-  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.clip();
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, out.width, out.height);
   ctx.drawImage(pic, 0, 0);
   ctx.restore();
   ctx.beginPath();
-  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.lineWidth = rw;
-  ctx.strokeStyle = ring.colour;
+  ctx.strokeStyle = look.ring.colour;
   ctx.stroke();
+  if (look.featured && scene.parts.some(p => p.id === look.featured && !p.hidden)) {
+    const alone = { ...scene, parts: scene.parts.map(p => (p.id === look.featured ? p : { ...p, hidden: true })) };
+    ctx.drawImage(await renderPicture(alone, store, w, h, scale), 0, 0);
+  }
+  if (look.label) {
+    const px = Math.max(10, r * 0.26);
+    const lx = cx - r * Math.SQRT1_2;
+    const ly = cy - r * Math.SQRT1_2;
+    ctx.font = `700 ${px}px ui-sans-serif, system-ui, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const bw = ctx.measureText(look.label).width + px * 0.9;
+    const bh = px * 1.35;
+    ctx.fillStyle = "#ffffff";
+    ctx.beginPath();
+    ctx.roundRect(lx - bw / 2, ly - bh / 2, bw, bh, px * 0.3);
+    ctx.fill();
+    ctx.fillStyle = look.ring.colour;
+    ctx.fillText(look.label, lx, ly + px * 0.04);
+  }
   return out;
 }

@@ -1,6 +1,6 @@
 import { Vector3 } from "three";
 import { describe, expect, it } from "vitest";
-import { pagePoints, stepArrows, worldMatrices } from "./render";
+import { magnifiedCamera, pagePoints, stepArrows, worldMatrices } from "./render";
 import type { ScenePart } from "./model";
 
 const at = (m: { elements: ArrayLike<number> }, p: [number, number, number]) => new Vector3(...p).applyMatrix4(m as never).toArray().map(n => Math.round(n * 1000) / 1000 + 0);
@@ -89,5 +89,23 @@ describe("stepArrows", () => {
     const g = scene();
     (g.parts[1] as ScenePart).ghost = true;
     expect(stepArrows(g, 1)).toEqual([]);
+  });
+});
+
+describe("magnifiedCamera", () => {
+  const cam = { direction: [0, -1, 0] as [number, number, number], target: [0, 0, 0] as [number, number, number], size: 50 };
+  it("looks from the same side, as many times closer as the zoom, whatever the circle's size", () => {
+    const c = magnifiedCamera(cam, { x: 0.5, y: 0.5 }, 2, { w: 800, h: 400 }, { w: 200, h: 200 });
+    expect(c.direction).toEqual(cam.direction);
+    // The source shows 100 mm over 400 px; the circle shows 200 px at twice that scale: 50 mm, so half that is 25.
+    expect(c.size).toBeCloseTo(12.5);
+    expect(c.target.map(n => Math.round(n * 1000) / 1000)).toEqual([0, 0, 0]);
+  });
+  it("centres on the spot: right and up from the picture's middle", () => {
+    const c = magnifiedCamera(cam, { x: 1, y: 0 }, 1, { w: 800, h: 400 }, { w: 400, h: 400 });
+    // Looking along -Y (from +Y... the camera sits at -Y looking toward +Y): right is -X there, up is +Z.
+    expect(Math.abs(c.target[0])).toBeCloseTo(100);
+    expect(c.target[2]).toBeCloseTo(50);
+    expect(c.size).toBeCloseTo(50);
   });
 });

@@ -12,6 +12,7 @@ import {
 } from "fabric";
 import { alignBoxes, distributeBoxes, type AlignHow, type DistributeHow } from "./align";
 import { Connector, type ConnectorEnd } from "./connector";
+import { DetailTail, isTail } from "./detailTail";
 import { blankDoc, clampSide, embedDoc, defaultFetch, exportScales, MAX_EXPORT_BYTES, MAX_SIDE, MIN_SIDE, normalizeDoc, SIZES, type LayersDoc } from "./doc";
 import {
   ACCENT, badge, boundTo, canHoldText, FIGURES, FONTS, INK, INK_KINDS, isLine, isText, kindOf, LINES, makeShape, makeText, newId, PALETTE, SHAPES, SYMBOLS, shapeText, TEMPLATES, TEXT_STYLES, TOOLS,
@@ -22,7 +23,7 @@ import { icon } from "./icons";
 import { behindModel, blankScene, followModel, normalizeModel, normalizeScene, type ProjectModel, type SceneData } from "./scene/model";
 import type { ModelStore } from "./scene/render";
 import type { SceneModel } from "./scene/workspace";
-import { isDetail, isScene, placeholderPicture, SceneLayer } from "./sceneLayer";
+import { type DetailInfo, isDetail, isScene, placeholderPicture, SceneLayer } from "./sceneLayer";
 import { snap, type Box, type Guide } from "./snap";
 import { inventoryOf, isFastener, partsInStep, TURNED_DEGREES, turnedFromDefault } from "./stepFrame";
 import css from "./layers.css?inline";
@@ -345,8 +346,8 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       bakeScale(o, Math.min((Number(o.rx) || 0) * Math.abs(o.scaleX || 1), (Number(o.ry) || 0) * Math.abs(o.scaleY || 1)));
     }
     if (o instanceof Connector) {
-      // A line is changed by its two ends, which snap to other layers.
-      o.controls = lineControls;
+      // A line is changed by its two ends, which snap to other layers (a detail circle's tail by its tip alone).
+      o.controls = isTail(o) ? { p2: lineControls.p2 } : lineControls;
       o.hasBorders = false;
       o.objectCaching = false;
       o.setCoords();
@@ -412,6 +413,16 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     if (dist(na, a) > 0.01 || dist(nb, b) > 0.01) c.setEnds(na, nb);
   }
 
+  /** A detail circle's tail starts at the circle's middle; only its tip moves. */
+  function syncTail(tail: DetailTail): void {
+    const d = byId(tail.detailOf || "");
+    if (!d || !isDetail(d)) return;
+    const [a, b] = tail.ends();
+    const c = d.getCenterPoint();
+    tail.radius = ringRadius(d);
+    if (dist(a, c) > 0.01) tail.setEnds(c, b);
+  }
+
   function syncText(t: Textbox): void {
     const shape = byId(boundTo(t));
     if (!shape) return;
@@ -431,7 +442,8 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
   function follow(): void {
     for (const o of objects()) {
       if (o.group) continue;
-      if (o instanceof Connector) syncConnector(o);
+      if (isTail(o)) syncTail(o);
+      else if (o instanceof Connector) syncConnector(o);
       else if (boundTo(o)) syncText(o as Textbox);
     }
   }
@@ -467,6 +479,12 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
   function placeEnd(c: Connector, i: 0 | 1, pointer: Point, e: { altKey?: boolean; shiftKey?: boolean }, exclude: FabricObject[]): void {
     const ends = c.ends();
     const other = ends[1 - i];
+    if (isTail(c)) {
+      // The tip goes exactly where it's put: it's the spot the circle magnifies.
+      if (!i) return;
+      c.setEnds(other, pointer);
+      return;
+    }
     const hit = e.altKey ? null : findSnap(pointer, [c, ...exclude], other);
     const p = hit ? hit.at : e.shiftKey ? snapAngle(other, pointer) : pointer;
     const end = hit ? { id: idOf(hit.shape), side: hit.side } : null;
@@ -985,12 +1003,13 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
   /** A layer's picture from its scene: a detail circle on its white disc, or the plain picture. */
   async function drawLayer(layer: SceneLayer, scene: SceneData, w: number, h: number, scale: number): Promise<HTMLCanvasElement> {
     const t = await sceneTools();
-    if (isDetail(layer)) return t.renderDetail(scene, t.store, w, h, scale, { colour: INK, width: Math.max(3, Math.round(Math.min(W, H) * 0.006)) });
+    if (isDetail(layer)) return t.renderDetail(scene, t.store, w, h, scale, detailLook(layer));
     return t.renderPicture(scene, t.store, w, h, scale);
   }
 
   /** After a scene layer is stretched, its picture is drawn again at the new shape, so lines stay sharp. */
   async function redrawScene(layer: SceneLayer): Promise<void> {
+    if (isDetail(layer)) return redrawDetail(layer);
     const { w, h } = layer.pageSize();
     const scale = sceneScale(w, h);
     if (!layer.scene?.parts.length) {
@@ -1142,13 +1161,33 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     canvas.add(mark);
   }
 
-  const detailsOf = (layer: SceneLayer) => objects().filter(o => isDetail(o) && o.detail.of === idOf(layer)) as (SceneLayer & { detail: { of: string; part: string } })[];
-  const leaderOf = (detail: SceneLayer) => objects().find(o => (o as Owned & { detailOf?: string }).detailOf === idOf(detail)) as Connector | undefined;
+  const detailsOf = (layer: SceneLayer) => objects().filter(o => isDetail(o) && o.detail.of === idOf(layer)) as (SceneLayer & { detail: DetailInfo })[];
+  const tailOf = (detail: SceneLayer) => objects().find(o => isTail(o) && o.detailOf === idOf(detail)) as DetailTail | undefined;
+  const sourceOf = (detail: SceneLayer & { detail: DetailInfo }) => {
+    const o = byId(detail.detail.of);
+    return o && isScene(o) && !isDetail(o) ? o : undefined;
+  };
+  /** The ring's diameter as a fraction of the circle layer's shorter side; the rest is room for a part to poke out. */
+  const DETAIL_CIRCLE = 0.72;
+  const ringWidth = () => Math.max(3, Math.round(Math.min(W, H) * 0.006));
+  const zoomOf = (d: SceneLayer & { detail: DetailInfo }) => Math.max(0.5, Math.min(20, Number(d.detail.zoom) || 2));
+  const detailLook = (d: SceneLayer & { detail: DetailInfo }) => ({
+    ring: { colour: INK, width: ringWidth() },
+    circle: DETAIL_CIRCLE,
+    featured: d.detail.part,
+    label: d.detail.label === false ? undefined : `${String(zoomOf(d)).replace(/\.0$/, "")}x`,
+  });
+  const ringRadius = (d: SceneLayer) => {
+    const { w, h } = d.pageSize();
+    return (Math.min(w, h) * DETAIL_CIRCLE) / 2 - ringWidth() / 2;
+  };
 
   /**
-   * A detail circle: a close-up of one part, drawn on a white disc with a
-   * bold ring, and a line from it to the part on the picture. Drawn again
-   * whenever its scene is; stretch or move it and the line follows.
+   * A detail circle, as on a flat-pack sheet: a magnifier on one spot of
+   * the picture (a part's middle to start), its tail's tip on that spot.
+   * Drag the tip to magnify somewhere else, set its zoom, stretch it, or
+   * pick the part drawn whole over the ring. Drawn again whenever its
+   * picture is.
    */
   async function addDetail(layer: SceneLayer, partId: string): Promise<void> {
     const scene = layer.scene ? normalizeScene(layer.scene) : null;
@@ -1156,80 +1195,144 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     if (!scene || !part) return;
     status("Drawing the close-up…", false, true);
     try {
-      const t = await sceneTools();
-      const camera = await t.detailCamera(scene, partId, t.store);
-      if (!camera || destroyed) return;
-      const size = Math.round(Math.min(W, H) * 0.3);
-      const scale = sceneScale(size, size);
+      const spot = await spotOf(layer, partId);
+      if (!spot || destroyed) return;
+      const size = Math.round((Math.min(W, H) * 0.3) / DETAIL_CIRCLE);
       const detail = new SceneLayer(placeholderPicture(size, size), { name: `Detail: ${part.name}` } as Partial<SceneLayer>);
-      detail.detail = { of: idOf(layer), part: partId };
-      detail.scene = { ...scene, camera };
-      const picture = await t.renderDetail(detail.scene, t.store, size, size, scale, { colour: INK, width: Math.max(3, Math.round(Math.min(W, H) * 0.006)) });
-      if (destroyed) return;
-      await detail.setSrc(picture.toDataURL("image/png"));
-      detail.pictureScale = scale;
-      detail.set({ width: picture.width, height: picture.height, scaleX: size / picture.width, scaleY: size / picture.height });
+      detail.detail = { of: idOf(layer), part: partId, spot, zoom: 2, label: true };
+      detail.scene = scene;
+      detail.pictureScale = 1;
+      await detail.setSrc(placeholderPicture(size, size).toDataURL("image/png"));
       // Beside the picture where there's room: to its left, else its right, else over its top-left corner.
       const box = layer.getBoundingRect();
-      const gap = size * 0.15;
+      const gap = size * 0.05;
       const left = box.left - gap - size >= 0 ? box.left - gap - size : box.left + box.width + gap + size <= W ? box.left + box.width + gap : box.left + gap;
       detail.set({ left, top: Math.max(0, Math.min(H - size, box.top + gap)) });
       prepare(detail);
       canvas.add(detail);
-      // The line to the part on the picture.
-      const leader = makeShape("line", { x: 0, y: 0 }, INK) as Connector;
-      leader.set({ strokeWidth: Math.max(3, Math.round(Math.min(W, H) * 0.004)) });
-      leader.connFrom = { id: idOf(detail), side: "auto" };
-      Object.assign(leader, { name: `Line to ${part.name}`, detailOf: idOf(detail) });
-      prepare(leader);
-      canvas.add(leader);
-      await aimLeader(layer, detail as SceneLayer & { detail: { of: string; part: string } }, leader);
+      const tail = new DetailTail([0, 0, 0, 0], { stroke: INK, strokeWidth: ringWidth(), fill: "" });
+      Object.assign(tail, { name: `Tail to ${part.name}`, detailOf: idOf(detail) });
+      prepare(tail);
+      canvas.add(tail);
+      const d = detail as SceneLayer & { detail: DetailInfo };
+      d.detail.part = undefined;
+      await redrawDetail(d);
+      if (await fitsRing(d, scene, partId)) {
+        d.detail.part = partId;
+        await redrawDetail(d);
+      }
       canvas.setActiveObject(detail);
       canvas.requestRenderAll();
-      status(`A close-up of ${part.name}. Move or stretch it; the line follows.`);
+      status(`A close-up of ${part.name}. Drag the tail's tip to the spot to magnify; set its zoom in the bar.`);
       changed();
     } catch (e) {
       status(e instanceof Error && e.message ? `The close-up couldn't be drawn: ${e.message}` : "The close-up couldn't be drawn.", true);
     }
   }
 
-  /** Points a detail circle's line at its part on the picture. */
-  async function aimLeader(layer: SceneLayer, detail: SceneLayer & { detail: { of: string; part: string } }, leader: Connector): Promise<void> {
+  /** Where a part's middle is on its picture, as fractions across and down. */
+  async function spotOf(layer: SceneLayer, partId: string): Promise<{ x: number; y: number } | null> {
     const scene = layer.scene ? normalizeScene(layer.scene) : null;
-    if (!scene) return;
+    if (!scene) return null;
     const t = await sceneTools();
-    const b = await t.partBounds(scene, detail.detail.part, t.store);
-    if (!b || destroyed) return;
+    const b = await t.partBounds(scene, partId, t.store);
+    if (!b) return null;
     const box = layer.getBoundingRect();
     const [p] = t.pagePoints(scene, [b.centre], box.width / box.height);
-    const to = { x: box.left + p.x * box.width, y: box.top + p.y * box.height };
-    const from = detail.getCenterPoint();
-    leader.setEnds(from, to);
-    syncConnector(leader);
+    return { x: p.x, y: p.y };
   }
 
-  /** Draws a scene's detail circles again from it, and points their lines; a circle whose part is gone goes too. */
+  /** Puts a detail circle's tail from the circle's middle to its spot on the picture. */
+  function aimTail(detail: SceneLayer & { detail: DetailInfo }, tail = tailOf(detail)): void {
+    const layer = sourceOf(detail);
+    const spot = detail.detail.spot;
+    if (!tail || !layer || !spot) return;
+    const box = layer.getBoundingRect();
+    const to = { x: box.left + spot.x * box.width, y: box.top + spot.y * box.height };
+    tail.radius = ringRadius(detail);
+    tail.set({ strokeWidth: ringWidth() });
+    tail.setEnds(detail.getCenterPoint(), to);
+  }
+
+  /** Whether a part is small enough to draw whole over the ring (a screw, not a panel): no bigger than the circle and a half, magnified. */
+  async function fitsRing(d: SceneLayer & { detail: DetailInfo }, scene: SceneData, partId: string): Promise<boolean> {
+    const t = await sceneTools();
+    const b = await t.partBounds(scene, partId, t.store);
+    if (!b) return false;
+    const { h } = d.pageSize();
+    const pxPerMm = (h / (2 * normalizeScene(d.scene).camera.size)) * 1;
+    return b.radius * pxPerMm <= ringRadius(d) * 1.5;
+  }
+
+  /** A tail's tip was dragged: the circle magnifies the spot it now touches, and a small part there is drawn whole. */
+  async function tailMoved(tail: DetailTail): Promise<void> {
+    const detail = byId(tail.detailOf || "");
+    if (!detail || !isDetail(detail)) return;
+    const layer = sourceOf(detail);
+    if (!layer) return;
+    const box = layer.getBoundingRect();
+    const [, tip] = tail.ends();
+    detail.detail.spot = { x: Math.max(0, Math.min(1, (tip.x - box.left) / box.width)), y: Math.max(0, Math.min(1, (tip.y - box.top) / box.height)) };
+    try {
+      const t = await sceneTools();
+      const scene = layer.scene ? normalizeScene(layer.scene) : null;
+      if (scene) {
+        const under = await t.partAt(scene, detail.detail.spot, t.store, box.width / box.height);
+        detail.detail.part = undefined;
+        await redrawDetail(detail);
+        if (under && (await fitsRing(detail, scene, under))) {
+          detail.detail.part = under;
+          await redrawDetail(detail);
+        }
+      }
+      if (destroyed) return;
+      renderContext();
+      changed();
+    } catch {
+      aimTail(detail, tail);
+    }
+  }
+
+  /** Draws a detail circle again from its picture's scene: its spot, zoom and size set the camera. */
+  async function redrawDetail(d: SceneLayer & { detail: DetailInfo }): Promise<void> {
+    const layer = sourceOf(d);
+    const scene = layer?.scene ? normalizeScene(layer.scene) : null;
+    if (!layer || !scene) return;
+    const t = await sceneTools();
+    if (!d.detail.spot && d.detail.part) d.detail.spot = (await spotOf(layer, d.detail.part)) || undefined;
+    const spot = d.detail.spot || { x: 0.5, y: 0.5 };
+    const box = layer.getBoundingRect();
+    const { w, h } = d.pageSize();
+    const camera = t.magnifiedCamera(scene.camera, spot, zoomOf(d), { w: box.width, h: box.height }, { w, h });
+    const scale = sceneScale(w, h);
+    const next = { ...scene, camera };
+    const picture = await drawLayer(d, next, Math.round(w), Math.round(h), scale);
+    if (destroyed || !canvas.contains(d)) return;
+    await setScenePicture(d, next, picture, scale, w, h);
+    aimTail(d);
+  }
+
+  /** Draws a scene's detail circles again from it, and aims their tails; a circle whose picture or part is gone goes too. */
   async function followDetails(layer: SceneLayer): Promise<void> {
     for (const d of detailsOf(layer)) {
       const scene = layer.scene ? normalizeScene(layer.scene) : null;
-      const leader = leaderOf(d);
-      const part = scene?.parts.find(p => p.id === d.detail.part && !p.hidden);
-      if (!scene || !part) {
+      const tail = tailOf(d);
+      const part = d.detail.part ? scene?.parts.find(p => p.id === d.detail.part && !p.hidden) : null;
+      if (!scene || (d.detail.part && !part)) {
         canvas.remove(d);
-        if (leader) canvas.remove(leader);
+        if (tail) canvas.remove(tail);
         continue;
       }
+      if (!tail) {
+        // A circle from before tails: its old straight line goes, a tail comes.
+        objects().filter(o => !isTail(o) && (o as Owned & { detailOf?: string }).detailOf === idOf(d)).forEach(o => canvas.remove(o));
+        const made = new DetailTail([0, 0, 0, 0], { stroke: INK, strokeWidth: ringWidth(), fill: "" });
+        Object.assign(made, { name: `Tail to ${part?.name || "the spot"}`, detailOf: idOf(d) });
+        prepare(made);
+        canvas.add(made);
+      }
       try {
-        const t = await sceneTools();
-        const camera = await t.detailCamera(scene, part.id, t.store);
-        if (!camera || destroyed) return;
-        const { w, h } = d.pageSize();
-        const scale = sceneScale(w, h);
-        const next = { ...scene, camera };
-        const picture = await drawLayer(d, next, Math.round(w), Math.round(h), scale);
-        if (destroyed || !canvas.contains(d)) return;
-        await setScenePicture(d, next, picture, scale, w, h);
-        if (leader) await aimLeader(layer, d, leader);
+        await redrawDetail(d);
       } catch {
         // Its models can't be loaded here: it keeps its picture.
       }
@@ -1782,6 +1885,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
   });
   canvas.on("object:modified", e => {
     const o = e.target;
+    if (isTail(o)) void tailMoved(o);
     if (stretching && o === stretching.o) {
       bakeScale(o as Rect, stretching.r);
       stretching = null;
@@ -1983,8 +2087,16 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
             <span class="lyr-hint" data-badge-auto-hint${(g as Group & { badgePinned?: boolean }).badgePinned ? " hidden" : ""}>Numbered from its place in the write-up. Change it to fix it at your number.</span>`
           : ""}`;
     } else if (isDetail(o)) {
-      const part = o.scene?.parts.find(p => p.id === o.detail.part);
-      html += `<span class="lyr-hint">A close-up of ${esc(part?.name || "a part")}: drawn again with its picture. Stretch or move it; its line follows.</span>`;
+      const zoom = zoomOf(o);
+      const parts = o.scene?.parts.filter(p => !p.hidden) || [];
+      html += `
+        <label class="lyr-inline" title="How much closer the circle looks than its picture">Zoom <input class="lyr-num" type="number" min="0.5" max="20" step="0.5" data-prop="detailZoom" value="${zoom}" aria-label="Zoom">x</label>
+        <label class="lyr-inline" title="The zoom written in a box on the ring"><input type="checkbox" data-prop="detailLabel"${o.detail.label === false ? "" : " checked"}> Label</label>
+        <select class="lyr-select" data-prop="detailPart" aria-label="The part drawn whole over the ring" title="The part drawn whole, poking out of the circle (the one under the tail's tip, unless you pick one)">
+          <option value=""${o.detail.part ? "" : " selected"}>No part over the ring</option>
+          ${parts.map(p => `<option value="${esc(p.id)}"${p.id === o.detail.part ? " selected" : ""}>${esc(p.name)}</option>`).join("")}
+        </select>
+        <span class="lyr-hint">Drag the tail's tip to the spot to magnify. Stretch or move the circle; the tail follows.</span>`;
     } else if (isScene(o)) {
       const stale = behindModel(o.scene, projectModel);
       const shown = o.scene?.parts.filter(p => !p.hidden).length || 0;
@@ -2200,6 +2312,16 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       return;
     }
     if (!prop || !o) return;
+    if (prop.startsWith("detail") && isDetail(o)) {
+      if (prop === "detailZoom") o.detail.zoom = Math.max(0.5, Math.min(20, Number(el.value) || 2));
+      if (prop === "detailLabel") o.detail.label = (el as HTMLInputElement).checked;
+      if (prop === "detailPart") o.detail.part = el.value || undefined;
+      void redrawDetail(o).then(() => {
+        renderContext();
+        changed();
+      });
+      return;
+    }
     if (prop === "fontFamily") apply({ fontFamily: el.value }, textTargets());
     if (prop === "fontSize") applyFontSize(Number(el.value));
     if (prop === "strokeWidth") {
