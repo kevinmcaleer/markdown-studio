@@ -16,6 +16,7 @@ import {
   ShaderMaterial, Vector2, Vector3, WebGLRenderer, WebGLRenderTarget, NearestFilter, NoBlending, type Object3D,
 } from "three";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
+import { BufferGeometry as CutGeometry, DoubleSide, Float32BufferAttribute, Texture } from "three";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import type { SceneCamera, SceneData, ScenePart, SceneStyle, Vec3 } from "./model";
@@ -254,12 +255,22 @@ export class LineArt {
   private quadCamera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private outline: ShaderMaterial;
   private target: WebGLRenderTarget | null = null;
+  /** The parts' fills alone (no lines): what a draft line's halo paints, so it breaks lines but not the parts. */
+  private fillTarget: WebGLRenderTarget | null = null;
   private objects: PartObjects[] = [];
   private lineMaterials = new Map<string, LineMaterial>();
   private style: SceneStyle | null = null;
   /** Dashed draft lines: each exploded part's path back to where it fits. */
   private draft: LineSegments2 | null = null;
   private draftMaterial: LineMaterial | null = null;
+  /** A band under each draft line painted with the fills alone, so the lines it crosses break round it as on a flat-pack sheet. */
+  private draftHalo: LineSegments2 | null = null;
+  private draftHaloMaterial: LineMaterial | null = null;
+  private haloFill = { value: null as Texture | null };
+  /** Spots cut back to the fills alone (a detail circle's tail tip): the outline breaks round what the tail points at. */
+  cuts: Cut[] = [];
+  private cutMaterial: ShaderMaterial | null = null;
+  private cutScene = new Scene();
 
   constructor(canvas?: HTMLCanvasElement) {
     this.renderer = new WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
@@ -315,9 +326,13 @@ export class LineArt {
    */
   private drawDraft(world: Map<string, Matrix4>, explode: number): void {
     if (this.draft) {
-      this.scene.remove(this.draft);
+      this.overlay.remove(this.draft);
       this.draft.geometry.dispose();
       this.draft = null;
+    }
+    if (this.draftHalo) {
+      this.overlay.remove(this.draftHalo);
+      this.draftHalo = null;
     }
     const style = this.style;
     if (!style || style.draft === false || style.lineWidth <= 0) return;
@@ -356,13 +371,33 @@ export class LineArt {
       this.draftMaterial.dispose();
       this.draftMaterial = null;
     }
-    this.draftMaterial ??= new LineMaterial({ color: 0, linewidth: 1, worldUnits: false, dashed, dashSize: 3, gapSize: 2 });
+    // Transparent only so it sorts after its halo (both are drawn in the transparent pass, in renderOrder).
+    this.draftMaterial ??= new LineMaterial({ color: 0, linewidth: 1, worldUnits: false, dashed, dashSize: 3, gapSize: 2, depthTest: false, depthWrite: false, transparent: true });
     this.draftMaterial.color.set(style.line);
+    if (!this.draftHaloMaterial) {
+      // The halo paints the picture's fills (drawn without any lines) back over
+      // a band round the line: the lines and outlines it crosses break, the
+      // parts and the page show through unbroken, as on a flat-pack sheet.
+      const m = new LineMaterial({ color: 0xffffff, linewidth: 1, worldUnits: false, depthTest: false, depthWrite: false, transparent: true, blending: NoBlending });
+      m.onBeforeCompile = shader => {
+        shader.uniforms.tFill = this.haloFill;
+        shader.fragmentShader = shader.fragmentShader
+          .replace("uniform float linewidth;", "uniform float linewidth;\nuniform vec2 resolution;\nuniform sampler2D tFill;")
+          .replace("gl_FragColor = vec4( diffuseColor.rgb, alpha );", "gl_FragColor = texture2D( tFill, gl_FragCoord.xy / resolution );");
+      };
+      this.draftHaloMaterial = m;
+    }
     const geo = new LineSegmentsGeometry().setPositions(pts);
+    // Drawn over the parts and their outlines (the overlay), as the lines on a sheet run over everything.
+    this.draftHalo = new LineSegments2(geo, this.draftHaloMaterial);
+    this.draftHalo.raycast = () => {};
+    this.draftHalo.renderOrder = 0;
+    this.overlay.add(this.draftHalo);
     this.draft = new LineSegments2(geo, this.draftMaterial);
     this.draft.computeLineDistances();
     this.draft.raycast = () => {};
-    this.scene.add(this.draft);
+    this.draft.renderOrder = 1;
+    this.overlay.add(this.draft);
   }
 
   /** Follows the parts' new places without rebuilding the scene. */
@@ -439,13 +474,30 @@ export class LineArt {
       this.draftMaterial.dashSize = 7 * mmPerPx;
       this.draftMaterial.gapSize = 5 * mmPerPx;
     }
+    if (this.draftHaloMaterial) {
+      // Wide enough that a part's bold outline opens clearly either side of the line.
+      this.draftHaloMaterial.linewidth = (style.lineWidth * 2 + style.outline + 3) * ratio;
+      this.draftHaloMaterial.resolution.set(pw, ph);
+    }
     r.autoClear = true;
     r.setRenderTarget(this.target);
     r.setClearColor(0x000000, 0);
     r.render(this.idScene, camera);
-    r.setRenderTarget(null);
     if (background) r.setClearColor(new Color(background), 1);
     else r.setClearColor(0x000000, 0);
+    if ((this.draftHalo && this.draftHaloMaterial) || this.cuts.length) {
+      // The fills alone, for the draft lines' halos and the cuts.
+      if (!this.fillTarget || this.fillTarget.width !== pw || this.fillTarget.height !== ph) {
+        this.fillTarget?.dispose();
+        this.fillTarget = new WebGLRenderTarget(pw, ph, { minFilter: NearestFilter, magFilter: NearestFilter });
+      }
+      for (const o of this.objects) if (o.lines) o.lines.visible = false;
+      r.setRenderTarget(this.fillTarget);
+      r.render(this.scene, camera);
+      for (const o of this.objects) if (o.lines) o.lines.visible = true;
+      this.haloFill.value = this.fillTarget.texture;
+    }
+    r.setRenderTarget(null);
     r.render(this.scene, camera);
     if (style.outline > 0) {
       const u = this.outline.uniforms;
@@ -459,12 +511,55 @@ export class LineArt {
       r.render(this.quadScene, this.quadCamera);
       r.autoClear = true;
     }
+    if (this.cuts.length && this.fillTarget) this.drawCuts(pw, ph);
     if (this.overlay.children.length) {
       r.autoClear = false;
       r.clearDepth();
       r.render(this.overlay, camera);
       r.autoClear = true;
     }
+  }
+
+  /** Paints the fills alone back over each cut: a capsule from its spot back along its tail. */
+  private drawCuts(pw: number, ph: number): void {
+    this.cutMaterial ??= new ShaderMaterial({
+      uniforms: { tFill: this.haloFill, size: { value: new Vector2(1, 1) } },
+      vertexShader: "void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }",
+      fragmentShader: "uniform sampler2D tFill; uniform vec2 size; void main() { gl_FragColor = texture2D(tFill, gl_FragCoord.xy / size); }",
+      depthTest: false,
+      depthWrite: false,
+      transparent: true,
+      blending: NoBlending,
+      side: DoubleSide,
+    });
+    (this.cutMaterial.uniforms.size.value as Vector2).set(pw, ph);
+    const verts: number[] = [];
+    const N = 24;
+    for (const c of this.cuts) {
+      // In pixels: the tip, and the far end of the band back along the tail.
+      const r = Math.max(1, c.r * ph);
+      const tip = { x: c.x * pw, y: c.y * ph };
+      const far = { x: tip.x + c.dx * c.len * ph, y: tip.y + c.dy * c.len * ph };
+      const a0 = Math.atan2(c.dy, c.dx) + Math.PI / 2;
+      // A capsule as a fan of triangles round its middle.
+      const ring: { x: number; y: number }[] = [];
+      for (let i = 0; i <= N; i++) ring.push({ x: tip.x + r * Math.cos(a0 + (Math.PI * i) / N), y: tip.y + r * Math.sin(a0 + (Math.PI * i) / N) });
+      for (let i = 0; i <= N; i++) ring.push({ x: far.x + r * Math.cos(a0 + Math.PI + (Math.PI * i) / N), y: far.y + r * Math.sin(a0 + Math.PI + (Math.PI * i) / N) });
+      const mid = { x: (tip.x + far.x) / 2, y: (tip.y + far.y) / 2 };
+      const ndc = (p: { x: number; y: number }) => [(p.x / pw) * 2 - 1, 1 - (p.y / ph) * 2, 0];
+      for (let i = 0; i < ring.length; i++) verts.push(...ndc(mid), ...ndc(ring[i]), ...ndc(ring[(i + 1) % ring.length]));
+    }
+    const geo = new CutGeometry();
+    geo.setAttribute("position", new Float32BufferAttribute(verts, 3));
+    const mesh = new Mesh(geo, this.cutMaterial);
+    mesh.frustumCulled = false;
+    this.cutScene.add(mesh);
+    const r = this.renderer;
+    r.autoClear = false;
+    r.render(this.cutScene, this.quadCamera);
+    r.autoClear = true;
+    this.cutScene.remove(mesh);
+    geo.dispose();
   }
 
   clear(): void {
@@ -481,6 +576,9 @@ export class LineArt {
     this.clear();
     this.draft?.geometry.dispose();
     this.draftMaterial?.dispose();
+    this.draftHaloMaterial?.dispose();
+    this.cutMaterial?.dispose();
+    this.fillTarget?.dispose();
     this.lineMaterials.forEach(m => m.dispose());
     this.outline.dispose();
     this.target?.dispose();
@@ -530,7 +628,7 @@ export function frame(cam: SceneCamera, box: Box3, aspect: number, margin = 1.12
  * see-through background, drawn bigger and shrunk so its lines are smooth.
  * Parts whose models can't be read are left out.
  */
-export async function renderPicture(data: SceneData, store: ModelStore, w: number, h: number, scale = 1): Promise<HTMLCanvasElement> {
+export async function renderPicture(data: SceneData, store: ModelStore, w: number, h: number, scale = 1, cuts: Cut[] = []): Promise<HTMLCanvasElement> {
   const settled = await Promise.allSettled(data.parts.map(async part => ({ part, model: await store.get(part) })));
   const list = settled.flatMap(r => (r.status === "fulfilled" ? [r.value] : []));
   const ow = Math.max(1, Math.round(w * scale));
@@ -540,6 +638,7 @@ export async function renderPicture(data: SceneData, store: ModelStore, w: numbe
     const max = Math.min(art.renderer.capabilities.maxTextureSize || 4096, 8192);
     const ss = Math.max(1, Math.min(2, max / Math.max(ow, oh)));
     art.setParts(list, data.style, data.explode);
+    art.cuts = cuts;
     const camera = cameraFor(data.camera, w / h, radiusOf(art.bounds()) + Math.hypot(...data.camera.target));
     art.draw(camera, w, h, scale * ss);
     const out = document.createElement("canvas");
@@ -600,6 +699,14 @@ export function pagePoints(scene: SceneData, points: Vec3[], aspect: number): { 
   });
 }
 
+/**
+ * A spot on a picture to cut back to the parts' fills: where a detail
+ * circle's tail touches, so the outline breaks round it as on IKEA's sheets.
+ * `x`,`y` are fractions of the picture; `r` and `len` fractions of its height;
+ * `dx`,`dy` the way back along the tail (unit, in pixels).
+ */
+export interface Cut { x: number; y: number; dx: number; dy: number; len: number; r: number }
+
 export interface StepArrow {
   /** The part the arrow belongs to. */
   id: string;
@@ -617,7 +724,7 @@ export interface StepArrow {
  * picture. Parts that aren't exploded, are hidden or ghosts, or whose move
  * is too small to see get none.
  */
-export function stepArrows(scene: SceneData, aspect: number): StepArrow[] {
+export function stepArrows(scene: SceneData, aspect: number, boxes?: Map<string, Box3>): StepArrow[] {
   const world = worldMatrices(scene.parts, scene.explode);
   const out: StepArrow[] = [];
   const byId = new Map(scene.parts.map(p => [p.id, p]));
@@ -632,11 +739,36 @@ export function stepArrows(scene: SceneData, aspect: number): StepArrow[] {
     const slide = new Vector3(...p.joint.normal).transformDirection(pm).multiplyScalar(p.joint.distance * f);
     if (slide.lengthSq() < 1e-6) continue;
     const to = from.clone().sub(slide);
+    // With the part's size known, the arrow's line is the draft line: from the part's leading end (a screw's tip).
+    const bb = boxes?.get(p.id);
+    if (bb) {
+      const back = slide.clone().normalize().negate();
+      let lead = 0;
+      for (let k = 0; k < 8; k++) {
+        const c = new Vector3(k & 1 ? bb.max.x : bb.min.x, k & 2 ? bb.max.y : bb.min.y, k & 4 ? bb.max.z : bb.min.z).applyMatrix4(m);
+        lead = Math.max(lead, c.sub(from).dot(back));
+      }
+      if (lead < slide.length() - 1e-3) from.addScaledVector(back, lead);
+    }
     const [a, b] = pagePoints(scene, [[from.x, from.y, from.z], [to.x, to.y, to.z]], aspect);
     if (Math.hypot((b.x - a.x) * aspect, b.y - a.y) < 0.04) continue;
     out.push({ id: p.id, name: p.name, from: a, to: b, turns: p.joint.type === "revolute" });
   }
   return out;
+}
+
+/** `stepArrows` along the draft lines themselves: each from its part's leading end, with the parts' sizes from the store. */
+export async function stepRails(scene: SceneData, aspect: number, store: ModelStore): Promise<StepArrow[]> {
+  const boxes = new Map<string, Box3>();
+  for (const part of scene.parts) {
+    try {
+      const bb = (await store.get(part)).geometry.boundingBox;
+      if (bb) boxes.set(part.id, bb);
+    } catch {
+      // Its model can't be loaded: its arrow starts at its joint.
+    }
+  }
+  return stepArrows(scene, aspect, boxes);
 }
 
 // ------------------------------------------------------------ detail circles

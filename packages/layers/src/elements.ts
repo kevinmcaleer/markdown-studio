@@ -286,12 +286,13 @@ export const TEMPLATES: Template[] = [
   {
     id: "assembly",
     label: "Assembly step",
-    detail: "A 3D scene of your parts on grey, with a step number",
+    detail: "A 3D scene of your parts on grey, with a step number; the parts it uses are boxed beside it",
     background: "#ececec",
     scene: { left: 0.3, top: 0.06, width: 0.66, height: 0.88 },
+    // No words, as on a flat-pack sheet: the number, the parts box (drawn from the scene) and the picture.
     build: (w, h) => [
       named(new Polygon([{ x: 0, y: h * 0.55 }, { x: w, y: h * 0.38 }, { x: w, y: h }, { x: 0, y: h }], { fill: "#d6d6d6", strokeWidth: 0, objectCaching: false }), "Floor"),
-      ...stepHeading(w, h),
+      badge(1, { x: w * 0.05, y: h * 0.06 }, STEP_RED),
     ],
   },
   {
