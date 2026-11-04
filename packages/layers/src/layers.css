@@ -543,6 +543,10 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 .lyr-scene-joint-explode .lyr-icon-btn:disabled { opacity: 0.35; }
 /* Highlighted with the part above it, not by its own setting. */
 .lyr-icon-btn.lyr-on.lyr-inherited { opacity: 0.55; }
+/* The tree's row buttons stay quiet until pointed at; ones that are on keep their colour. */
+.lyr-scene-list .lyr-icon-btn:not(.lyr-on) { color: #c3c7cd; transition: color 0.12s; }
+.lyr-scene-list .lyr-icon-btn:not(.lyr-on):hover,
+.lyr-scene-list .lyr-icon-btn:not(.lyr-on):focus-visible { color: var(--lyr-ink); }
 .lyr-scene-explode:has(input:disabled) { opacity: 0.45; }
 .lyr-scene-canvas.lyr-scene-picking { cursor: crosshair; }
 .lyr-scene-join { margin-top: 10px; }
