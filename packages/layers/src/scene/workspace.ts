@@ -17,6 +17,8 @@ import {
   normalizeViews,
   type JointType, type NamedView, type PartJoint, type ProjectModel,
   type Box3 as PlainBox, type SceneCamera, type SceneData, type ScenePart, type SceneStyle, type Vec3,
+  explodeOf,
+  highlightedParts,
 } from "./model";
 import { applyJoint } from "./joint";
 import { frame, LineArt, modelFromPositions, modelFromStl, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
@@ -147,7 +149,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
               </span>
               <button type="button" class="lyr-btn" data-act="fit" title="Fit the parts in the picture (F)">${icon("frame", 16)}<span>Fit</span></button>
               <span class="lyr-sep"></span>
-              <label class="lyr-scene-explode" title="Slide joined parts apart along their joints, to show how they fit">${icon("expand", 16)}<span>Explode</span><input type="range" min="0" max="100" step="1" data-explode value="0" aria-label="Explode"></label>
+              <label class="lyr-scene-explode" title="Slide joined parts apart along their joints, to show how they fit">${icon("expand", 16)}<span>Explode</span><input type="range" min="0" max="100" step="1" data-explode value="0" aria-label="Explode"><input type="number" class="lyr-scene-explode-num" min="0" max="100" step="1" data-explode-num value="0" aria-label="Explode, per cent"><span class="lyr-scene-explode-unit">%</span></label>
             </div>
             <div class="lyr-scene-frame"><canvas class="lyr-scene-canvas"></canvas></div>
             <div class="lyr-scene-help">Drag to look around, right-drag to pan, scroll to zoom. Hold Shift on a handle for 5 mm or 15° steps.</div>
@@ -531,12 +533,13 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const p = partById(id);
       if (!p) return;
       // Parts joined to it stay where they are, standing on their own.
-      const world = worldMatrices(scene.parts, 0);
+      const world = worldMatrices(scene.parts, 0, false);
       for (const c of scene.parts) {
         if (c.parent !== id) continue;
         setLocalFromWorld(c, world.get(c.id)!, null);
         delete c.parent;
         delete c.joint;
+        delete c.explode;
       }
       scene.parts = scene.parts.filter(x => x.id !== id);
       models.delete(id);
@@ -553,8 +556,9 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       if (!part.parent) return new Matrix4();
       const world = worldMatrices(scene.parts, scene.explode);
       const m = world.get(part.parent)?.clone() || new Matrix4();
-      if (part.joint && scene.explode > 0) {
-        const n = new Vector3(...part.joint.normal).normalize().multiplyScalar(part.joint.distance * scene.explode);
+      const f = explodeOf(part, scene.explode);
+      if (part.joint && f > 0) {
+        const n = new Vector3(...part.joint.normal).normalize().multiplyScalar(part.joint.distance * f);
         m.multiply(new Matrix4().makeTranslation(n.x, n.y, n.z));
       }
       return m;
@@ -784,18 +788,29 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         if (!l) byParent.set(key, (l = []));
         l.push(p);
       }
+      const lit = highlightedParts(scene.parts);
       const row = (p: ScenePart, depth: number): string => {
         const m = models.get(p.id);
+        const on = lit.has(p.id);
+        // Lit by a part above it, not by its own setting.
+        const inherited = on && p.highlight === undefined;
+        const ownExplode = p.explode !== undefined;
+        const f = Math.round(explodeOf(p, scene.explode) * 100);
         const broken = m instanceof Error;
         const parent = p.parent ? partById(p.parent) : undefined;
         const joint = parent ? `<li class="lyr-scene-row lyr-scene-joint-row${shownJoint === p.id ? " lyr-on" : ""}" style="--depth:${depth}">
               <button type="button" class="lyr-scene-name" data-joint="${esc(p.id)}" title="Show where they join">${icon("link", 14)}<span>${esc(p.joint?.point && p.joint.type === "revolute" ? "Turns on" : p.joint?.point && p.joint.type === "prismatic" ? "Slides on" : "Joint to")} ${esc(parent.name)}</span></button>
+              <button type="button" class="lyr-btn lyr-icon-btn${ownExplode ? " lyr-on" : ""}" data-joint-explode="${esc(p.id)}" title="${ownExplode ? `Explodes ${f}% on its own` : "Explode just this joint"}" aria-label="Explode the joint of ${esc(p.name)}" aria-expanded="${explodeOpen === p.id}">${icon("expand", 16)}</button>
               <button type="button" class="lyr-btn lyr-icon-btn" data-rejoin="${esc(p.id)}" title="Change the joint: pick the two faces again" aria-label="Change the joint of ${esc(p.name)}">${icon("pencil", 16)}</button>
               <button type="button" class="lyr-btn lyr-icon-btn" data-unjoin="${esc(p.id)}" title="Remove the joint (the part stays where it is)" aria-label="Remove the joint of ${esc(p.name)}">${icon("unlink", 16)}</button>
-            </li>` : "";
+            </li>${explodeOpen === p.id ? `<li class="lyr-scene-row lyr-scene-joint-explode" style="--depth:${depth}" data-explode-for="${esc(p.id)}">
+              <input type="range" min="0" max="100" step="1" value="${f}" data-joint-explode-range aria-label="How far this joint comes apart, per cent">
+              <input type="number" class="lyr-scene-explode-num" min="0" max="100" step="1" value="${f}" data-joint-explode-num aria-label="How far this joint comes apart, per cent"><span class="lyr-scene-explode-unit">%</span>
+              <button type="button" class="lyr-btn lyr-icon-btn" data-joint-explode-reset="${esc(p.id)}" title="Follow the main Explode slider again" aria-label="Follow the main Explode slider"${ownExplode ? "" : " disabled"}>${icon("rotate", 16)}</button>
+            </li>` : ""}` : "";
         return `${joint}<li class="lyr-scene-row${p.id === selectedId && !shownJoint ? " lyr-on" : ""}${p.hidden ? " lyr-off" : ""}" data-id="${esc(p.id)}" style="--depth:${depth}">
               <button type="button" class="lyr-scene-name" data-pick="${esc(p.id)}" title="${broken ? "Its model couldn't be loaded" : "Select"}">${icon("cube", 14)}<span>${esc(p.name)}</span>${broken ? `<em>missing</em>` : ""}</button>
-              <button type="button" class="lyr-btn lyr-icon-btn${p.highlight ? " lyr-on" : ""}" data-highlight="${esc(p.id)}" title="${p.highlight ? "Stop highlighting" : "Highlight"}" aria-label="Highlight ${esc(p.name)}" aria-pressed="${!!p.highlight}">${icon("highlight", 16)}</button>
+              <button type="button" class="lyr-btn lyr-icon-btn${on ? " lyr-on" : ""}${inherited ? " lyr-inherited" : ""}" data-highlight="${esc(p.id)}" title="${inherited ? "Highlighted with the part above it: click to leave this one out" : on ? "Stop highlighting (and the parts under it)" : "Highlight (and the parts under it)"}" aria-label="Highlight ${esc(p.name)}" aria-pressed="${on}">${icon("highlight", 16)}</button>
               <button type="button" class="lyr-btn lyr-icon-btn${p.ghost ? " lyr-on" : ""}" data-ghost-part="${esc(p.id)}" title="${p.ghost ? "Draw it normally" : "Ghost: draw it faint, as fitted in an earlier step"}" aria-label="Ghost ${esc(p.name)}" aria-pressed="${!!p.ghost}">${icon("opacity", 16)}</button>
               <button type="button" class="lyr-btn lyr-icon-btn" data-hide="${esc(p.id)}" title="${linked() ? (p.hidden ? "Show it in this scene" : "Leave it out of this scene (it stays in the model)") : p.hidden ? "Show" : "Hide"}" aria-label="${p.hidden ? "Show" : "Hide"} ${esc(p.name)}">${icon(p.hidden ? "eyeOff" : "eye", 16)}</button>
               <button type="button" class="lyr-btn lyr-icon-btn" data-remove="${esc(p.id)}" title="${linked() ? "Remove it from the project's model (every scene)" : "Remove"}" aria-label="Remove ${esc(p.name)}">${icon("trash", 16)}</button>
@@ -867,11 +882,79 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       } else if (d.unjoin) {
         const p = partById(d.unjoin);
         if (p) unjoin(p);
-      } else if (d.highlight) toggle(d.highlight, "highlight");
+      } else if (d.jointExplode) {
+        explodeOpen = explodeOpen === d.jointExplode ? "" : d.jointExplode;
+        renderList();
+        if (explodeOpen) list.querySelector<HTMLInputElement>("[data-joint-explode-num]")?.focus();
+      } else if (d.jointExplodeReset) {
+        const p = partById(d.jointExplodeReset);
+        if (p && p.explode !== undefined) {
+          delete p.explode;
+          follow();
+          commit();
+          renderList();
+          list.querySelector<HTMLInputElement>("[data-joint-explode-num]")?.focus();
+        }
+      } else if (d.highlight) toggleHighlight(d.highlight);
       else if (d.ghostPart) toggle(d.ghostPart, "ghost");
       else if (d.hide) toggle(d.hide, "hidden");
       else if (d.remove) removePart(d.remove);
     });
+
+    // A joint's own explode, from its row's slider or number.
+    list.addEventListener("input", e => {
+      const t = e.target as HTMLInputElement;
+      const rowEl = t.closest<HTMLElement>("[data-explode-for]");
+      const p = rowEl ? partById(rowEl.dataset.explodeFor || "") : undefined;
+      if (!p || !rowEl) return;
+      const v = Number(t.value);
+      if (t.value === "" || !Number.isFinite(v)) return;
+      const pc = Math.max(0, Math.min(100, Math.round(v)));
+      p.explode = pc / 100;
+      const other = rowEl.querySelector<HTMLInputElement>(t.matches("[data-joint-explode-range]") ? "[data-joint-explode-num]" : "[data-joint-explode-range]");
+      if (other) other.value = String(pc);
+      rowEl.querySelector<HTMLButtonElement>("[data-joint-explode-reset]")!.disabled = false;
+      const btn = list.querySelector<HTMLElement>(`[data-joint-explode="${CSS.escape(p.id)}"]`);
+      btn?.classList.add("lyr-on");
+      if (btn) btn.title = `Explodes ${pc}% on its own`;
+      follow();
+    });
+    list.addEventListener("change", e => {
+      const t = e.target as HTMLInputElement;
+      if (!t.closest("[data-explode-for]")) return;
+      const p = partById(t.closest<HTMLElement>("[data-explode-for]")!.dataset.explodeFor || "");
+      if (p) t.value = String(Math.round(explodeOf(p, scene.explode) * 100));
+      commit();
+    });
+
+    /**
+     * Turns a part's highlight on or off, for its whole branch: the parts
+     * under it follow it again, and it keeps a setting of its own only
+     * where it differs from the part above it.
+     */
+    function toggleHighlight(id: string): void {
+      const p = partById(id);
+      if (!p) return;
+      const lit = highlightedParts(scene.parts);
+      const want = !lit.has(id);
+      const above = p.parent ? lit.has(p.parent) : false;
+      if (want === above) delete p.highlight;
+      else p.highlight = want;
+      const under = new Set([id]);
+      let grew = true;
+      while (grew) {
+        grew = false;
+        for (const c of scene.parts) if (c.parent && under.has(c.parent) && !under.has(c.id)) {
+          under.add(c.id);
+          grew = true;
+          delete c.highlight;
+        }
+      }
+      rebuild();
+      commit();
+      renderList();
+      renderProps();
+    }
 
     /** Turns a part's highlight, ghost or hidden on or off. */
     function toggle(id: string, key: "highlight" | "ghost" | "hidden"): void {
@@ -890,7 +973,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const p = partById(id);
       const model = models.get(id);
       if (!p || !model || model instanceof Error) return;
-      const world = worldMatrices(scene.parts, 0).get(id) || new Matrix4();
+      const world = worldMatrices(scene.parts, 0, false).get(id) || new Matrix4();
       const names = new Set(scene.parts.map(x => x.name));
       const base = p.name.replace(/ \d+$/, "");
       let n = 2;
@@ -1008,7 +1091,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           : { label: "Join to another part…", icon: "link", run: () => { select(id); openJointDialog(id); } },
         ...(parent ? [{ label: "Remove joint", icon: "unlink", run: () => unjoin(p) }] : []),
         null,
-        { label: "Highlight", on: !!p.highlight, run: () => toggle(id, "highlight") },
+        { label: "Highlight", on: highlightedParts(scene.parts).has(id), run: () => toggleHighlight(id) },
         { label: "Ghost", on: !!p.ghost, run: () => toggle(id, "ghost") },
         { label: linked() ? "Show in this scene" : "Show", on: !p.hidden, run: () => toggle(id, "hidden") },
         ...(others ? [{ label: "Show only this", icon: "eye", run: () => showOnly(id) }] : []),
@@ -1286,6 +1369,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
 
     /** The part whose joint is shown: both faces tinted, and the points joined. */
     let shownJoint = "";
+    /** The joint whose own explode slider is open in the list. */
+    let explodeOpen = "";
 
     // While joining, the face under the pointer is tinted and its snap
     // points shown: its middle, corners and edge middles, the centres of
@@ -1651,10 +1736,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     }
 
     function unjoin(p: ScenePart): void {
-      const world = worldMatrices(scene.parts, 0).get(p.id);
+      const world = worldMatrices(scene.parts, 0, false).get(p.id);
       if (world) setLocalFromWorld(p, world, null);
       delete p.parent;
       delete p.joint;
+      delete p.explode;
       if (shownJoint === p.id) shownJoint = "";
       follow();
       renderList();
@@ -2005,14 +2091,37 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     function syncExplode(): void {
       const any = scene.parts.some(p => p.parent && p.joint);
       explodeInput.disabled = !any;
-      explodeInput.value = String(Math.round(scene.explode * 100));
+      explodeInput.value = explodeNum.value = String(Math.round(scene.explode * 100));
+      explodeNum.disabled = !any;
       explodeInput.closest("label")!.title = any ? "Slide joined parts apart along their joints, to show how they fit" : "Join parts first: then this slides them apart";
     }
+    const explodeNum = $<HTMLInputElement>("[data-explode-num]");
     explodeInput.addEventListener("input", () => {
       scene.explode = Math.max(0, Math.min(1, Number(explodeInput.value) / 100));
+      explodeNum.value = explodeInput.value;
       follow();
+      syncJointExplode();
     });
     explodeInput.addEventListener("change", () => commit());
+    explodeNum.addEventListener("input", () => {
+      const v = Number(explodeNum.value);
+      if (explodeNum.value === "" || !Number.isFinite(v)) return;
+      scene.explode = Math.max(0, Math.min(100, Math.round(v))) / 100;
+      explodeInput.value = String(Math.round(scene.explode * 100));
+      follow();
+      syncJointExplode();
+    });
+    explodeNum.addEventListener("change", () => {
+      explodeNum.value = String(Math.round(scene.explode * 100));
+      commit();
+    });
+    /** An open joint explode row that follows the main slider shows its value. */
+    function syncJointExplode(): void {
+      const rowEl = list.querySelector<HTMLElement>("[data-explode-for]");
+      const p = rowEl ? partById(rowEl.dataset.explodeFor || "") : undefined;
+      if (!p || !rowEl || p.explode !== undefined) return;
+      rowEl.querySelectorAll<HTMLInputElement>("input").forEach(i => (i.value = String(Math.round(scene.explode * 100))));
+    }
 
     function renderProps(): void {
       const p = partById(selectedId);

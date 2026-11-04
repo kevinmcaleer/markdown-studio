@@ -24,8 +24,17 @@ export interface ScenePart {
   /** Roll, pitch, yaw in degrees. */
   rotation: Vec3;
   hidden?: boolean;
-  /** Drawn in the style's highlight colour. */
+  /**
+   * Drawn in the style's highlight colour. A part without its own setting
+   * follows its parent, so highlighting a part highlights its whole branch;
+   * false turns one part off inside a highlighted branch.
+   */
   highlight?: boolean;
+  /**
+   * How far this part's joint comes apart in this scene (0 to 1 of its
+   * distance), instead of the scene's explode.
+   */
+  explode?: number;
   /**
    * The part this one is joined to. Its position and rotation are then in
    * that part's frame, so it moves with it (joints, phase 2).
@@ -207,7 +216,9 @@ export function normalizeScene(value: unknown): SceneData {
         if (typeof p.data === "string" && p.data) part.data = p.data;
         if (part.url && typeof p.body === "number" && Number.isInteger(p.body) && p.body >= 0 && p.body < 100_000) part.body = p.body;
         if (p.hidden) part.hidden = true;
-        if (p.highlight) part.highlight = true;
+        if (p.highlight === false) part.highlight = false;
+        else if (p.highlight) part.highlight = true;
+        if (typeof p.explode === "number" && Number.isFinite(p.explode)) part.explode = num(p.explode, 0, 0, 1);
         if (typeof p.parent === "string" && p.parent) part.parent = p.parent;
         if (p.ghost) part.ghost = true;
         if (p.joint && typeof p.joint === "object") {
@@ -309,7 +320,7 @@ export function normalizeViews(value: unknown): NamedView[] {
 // ------------------------------------------------------------ the project model
 
 /** What a scene shows of a part, as opposed to what the part is. */
-const SHOWING = ["hidden", "ghost", "highlight"] as const;
+const SHOWING = ["hidden", "ghost", "highlight", "explode"] as const;
 
 /** A part as the model has it: without one scene's hidden / ghost / highlight. */
 export function modelPart(p: ScenePart): ScenePart {
@@ -349,7 +360,7 @@ export function followModel(scene: SceneData, model: ProjectModel): SceneData {
   const parts = model.parts.map(m => {
     const p: ScenePart = { ...structuredClone(m) };
     const was = had.get(m.id);
-    if (was) for (const k of SHOWING) if (was[k]) p[k] = true;
+    if (was) for (const k of SHOWING) if (was[k] !== undefined) Object.assign(p, { [k]: was[k] });
     if (!was && !fresh) p.hidden = true;
     return p;
   });
@@ -359,6 +370,29 @@ export function followModel(scene: SceneData, model: ProjectModel): SceneData {
 /** Whether the scene was drawn from an older version of `model`. */
 export function behindModel(scene: SceneData | undefined, model: ProjectModel | { stamp: number } | null | undefined): boolean {
   return !!(scene?.model && model && scene.model.stamp < model.stamp);
+}
+
+/** How far a part's joint comes apart: its own setting, or the scene's. */
+export function explodeOf(part: ScenePart, explode: number): number {
+  return part.explode ?? explode;
+}
+
+/**
+ * The parts drawn highlighted: each that is highlighted itself, or has no
+ * setting of its own and sits under one that is.
+ */
+export function highlightedParts(parts: ScenePart[]): Set<string> {
+  const byId = new Map(parts.map(p => [p.id, p]));
+  const memo = new Map<string, boolean>();
+  const on = (p: ScenePart, depth: number): boolean => {
+    const done = memo.get(p.id);
+    if (done !== undefined) return done;
+    const parent = p.parent ? byId.get(p.parent) : undefined;
+    const v = p.highlight ?? (parent && depth < 64 ? on(parent, depth + 1) : false);
+    memo.set(p.id, v);
+    return v;
+  };
+  return new Set(parts.filter(p => on(p, 0)).map(p => p.id));
 }
 
 /** The style a preset gives, keeping the highlight colour already chosen. */
