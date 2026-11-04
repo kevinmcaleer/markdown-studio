@@ -1303,11 +1303,17 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
   const DETAIL_CIRCLE = 0.72;
   const ringWidth = () => Math.max(3, Math.round(Math.min(W, H) * 0.006));
   const zoomOf = (d: SceneLayer & { detail: DetailInfo }) => Math.max(0.5, Math.min(20, Number(d.detail.zoom) || 2));
+  /** The words on a detail circle's ring: the repeat count ("x1"), none when turned off or emptied. */
+  const ringLabel = (d: SceneLayer & { detail: DetailInfo }): string => {
+    const l = d.detail.label;
+    if (l === false || l === "") return "";
+    return typeof l === "string" ? l.slice(0, 12) : "x1";
+  };
   const detailLook = (d: SceneLayer & { detail: DetailInfo }) => ({
     ring: { colour: INK, width: ringWidth() },
     circle: DETAIL_CIRCLE,
     featured: d.detail.part,
-    label: d.detail.label === false ? undefined : `${String(zoomOf(d)).replace(/\.0$/, "")}x`,
+    label: ringLabel(d) || undefined,
   });
   const ringRadius = (d: SceneLayer) => {
     const { w, h } = d.pageSize();
@@ -1331,7 +1337,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       if (!spot || destroyed) return;
       const size = Math.round((Math.min(W, H) * 0.3) / DETAIL_CIRCLE);
       const detail = new SceneLayer(placeholderPicture(size, size), { name: `Detail: ${part.name}` } as Partial<SceneLayer>);
-      detail.detail = { of: idOf(layer), part: partId, spot, zoom: 2, label: true };
+      detail.detail = { of: idOf(layer), part: partId, spot, zoom: 2, label: "x1" };
       detail.scene = scene;
       detail.pictureScale = 1;
       await detail.setSrc(placeholderPicture(size, size).toDataURL("image/png"));
@@ -2277,7 +2283,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     const zoom = zoomOf(d);
     const parts = d.scene?.parts.filter(p => !p.hidden) || [];
     return `<label class="lyr-inline" title="How much closer the circle looks than its picture">Zoom <input class="lyr-num" type="number" min="0.5" max="20" step="0.5" data-prop="detailZoom" value="${zoom}" aria-label="Zoom">x</label>
-        <label class="lyr-inline" title="The zoom written in a box on the ring"><input type="checkbox" data-prop="detailLabel"${d.detail.label === false ? "" : " checked"}> Label</label>
+        <label class="lyr-inline" title="How many times this is done, written in a box on the ring (x1, x4…); empty for none">Repeat <input class="lyr-num lyr-num-text" type="text" maxlength="12" data-prop="detailLabel" value="${esc(ringLabel(d))}" placeholder="x1" aria-label="Repeat count on the ring"></label>
         <select class="lyr-select" data-prop="detailLook" aria-label="How the circle is joined to its spot" title="How the circle is joined to its spot: a flared tail, a thin line, or nothing">
           ${TAIL_LOOKS.map(l => `<option value="${l.id}"${(d.detail.look || "tail") === l.id ? " selected" : ""} title="${esc(l.detail)}">${esc(l.label)}</option>`).join("")}
         </select>
@@ -2540,7 +2546,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     if (prop.startsWith("detail") && d && isDetail(d)) {
       const o = d;
       if (prop === "detailZoom") o.detail.zoom = Math.max(0.5, Math.min(20, Number(el.value) || 2));
-      if (prop === "detailLabel") o.detail.label = (el as HTMLInputElement).checked;
+      if (prop === "detailLabel") o.detail.label = el.value.trim().slice(0, 12) || false;
       if (prop === "detailPart") o.detail.part = el.value || undefined;
       if (prop === "detailLook") {
         o.detail.look = el.value === "line" || el.value === "none" ? el.value : undefined;

@@ -127,8 +127,9 @@ const editor = mount(el, {
   the spot at that many times the picture's own scale (2x to start),
   whatever size the circle is stretched to. The bar's **look** joins the
   circle to its spot with the flared tail, a thin straight line (as in a
-  brick set), or nothing. The zoom is
-  written in a white box on the ring ("2x"; *Label* turns it off), and a
+  brick set), or nothing. The bar's **Repeat** is written in a white box
+  on the ring: how many times the step is done ("x1" to start; empty it
+  for no box), and a
   small part under the tip (a screw, not a panel) is drawn whole over the
   ring, so both break its line as on IKEA's sheets; the bar's part list
   picks which part, or none. Where the tail's tip touches, the picture's
