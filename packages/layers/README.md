@@ -60,8 +60,15 @@ const editor = mount(el, {
   picture is drawn at twice the page size, and stretching the layer draws
   it again in the new shape. Models from the host are stored by URL;
   uploads are carried inside the graphic (up to 6 MB). three.js loads only
-  when a scene is opened. The scene data already has joints (`parent`,
-  `joint`) and an `explode` amount, for exploded views.
+  when a scene is opened.
+- **Joints and exploded views** in 3D scenes: *Join to another part…* picks
+  a face on the part and then the face on another part it fits against;
+  it turns to meet it flush and moves with it from then on (the maths of
+  Snakie's Build-workspace joints, `src/scene/joint.ts`). Spin and Gap
+  adjust it about and along the joint. The **Explode** slider slides every
+  joined part out along its joint by its own Explode distance, so a joined
+  branch comes apart together. **Ghost** draws a part faint, for parts
+  fitted in an earlier step.
 - Shapes have **W** and **H** fields for exact sizes. Stretching a box keeps
   its corner size.
 - Smart guides snap to the page's and other layers' edges and middles
