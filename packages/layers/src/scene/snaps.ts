@@ -186,6 +186,28 @@ function grow(topo: Topology, seed: number, joins: (from: number, to: number) =>
 
 const areaOf = (topo: Topology, tris: number[]) => tris.reduce((s, t) => s + topo.area[t], 0);
 
+/** Whether these flat triangles make a long thin strip, as one facet of a round surface does. */
+function isStrip(topo: Topology, tris: number[], n: V3): boolean {
+  // Two directions across the face's plane, to measure it in.
+  let u: V3 = Math.abs(n[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+  u = unit(sub(u, mul(n, dot(u, n))));
+  const v = cross(n, u);
+  let uLo = Infinity, uHi = -Infinity, vLo = Infinity, vHi = -Infinity;
+  for (const t of tris) {
+    for (let k = 0; k < 3; k++) {
+      const p = topo.point(topo.corner[t * 3 + k]);
+      const a = dot(p, u), b = dot(p, v);
+      if (a < uLo) uLo = a;
+      if (a > uHi) uHi = a;
+      if (b < vLo) vLo = b;
+      if (b > vHi) vHi = b;
+    }
+  }
+  const w = uHi - uLo, h = vHi - vLo;
+  const short = Math.min(w, h), long = Math.max(w, h);
+  return long > 0 && short / long < 0.35;
+}
+
 function findFace(topo: Topology, seed: number): Face {
   const n0 = topo.normalOf(seed);
   const p0 = topo.point(topo.corner[seed * 3]);
@@ -197,10 +219,18 @@ function findFace(topo: Topology, seed: number): Face {
   });
   const smooth = grow(topo, seed, (a, b) => dot(topo.normalOf(a), topo.normalOf(b)) > SMOOTH_COS);
   // A facet of a round surface is a thin flat strip of a bigger smooth one.
-  const curved = smooth.length > flat.length && areaOf(topo, flat) < 0.15 * areaOf(topo, smooth);
-  const tris = curved ? smooth : flat;
-  const snaps = curved ? curvedSnaps(topo, tris, seed) : flatSnaps(topo, tris, n0);
-  return { tris, curved, normal: n0, snaps };
+  // It has to be a strip: a shallow part (a small pad above sloping sides,
+  // the bottom of a recess) grows a huge smooth region too, and reading
+  // that as round left its face with nothing to click (Kev, 2026-11-04).
+  const curved = smooth.length > flat.length && areaOf(topo, flat) < 0.15 * areaOf(topo, smooth) && isStrip(topo, flat, n0);
+  let tris = curved ? smooth : flat;
+  let snaps = curved ? curvedSnaps(topo, tris, seed) : flatSnaps(topo, tris, n0);
+  // A round surface with no rim to speak of still offers its facet.
+  if (!snaps.length && curved) {
+    tris = flat;
+    snaps = flatSnaps(topo, flat, n0);
+  }
+  return { tris, curved: curved && snaps.length > 0 && tris !== flat, normal: n0, snaps };
 }
 
 // ------------------------------------------------------------ edges of a face
@@ -209,41 +239,65 @@ interface Loop {
   ids: number[];
   /** For each edge (ids[i] to ids[i+1]), the triangle outside the face across it, or -1. */
   outside: number[];
+  /** Whether it comes back to where it started (a real ring, not a broken run). */
+  closed: boolean;
 }
 
-/** The face's border, as closed loops of corner ids. */
+/**
+ * The face's border, as runs of corner ids: closed loops where the border
+ * is sound, and open runs where it isn't. The edges are followed whichever
+ * way round they face, because a model whose triangles don't all wind the
+ * same way (plenty of STLs, especially inside a recess) would otherwise
+ * give no loop at all, and so no snaps on a face that looks perfectly fine.
+ */
 function borderLoops(topo: Topology, tris: number[]): Loop[] {
   const inFace = new Set(tris);
-  // Each border edge, from corner a to b in the triangle's own winding.
-  const from = new Map<number, { to: number; out: number }[]>();
+  interface Edge { a: number; b: number; out: number; used: boolean }
+  const edges: Edge[] = [];
+  const at = new Map<number, Edge[]>();
+  const put = (v: number, e: Edge) => {
+    let list = at.get(v);
+    if (!list) at.set(v, (list = []));
+    list.push(e);
+  };
   for (const t of tris) {
     for (let k = 0; k < 3; k++) {
       const o = topo.next[t * 3 + k];
       if (o >= 0 && inFace.has(o)) continue;
       const a = topo.corner[t * 3 + k], b = topo.corner[t * 3 + ((k + 1) % 3)];
       if (a === b) continue;
-      let list = from.get(a);
-      if (!list) from.set(a, (list = []));
-      list.push({ to: b, out: o });
+      const e: Edge = { a, b, out: o, used: false };
+      edges.push(e);
+      put(a, e);
+      put(b, e);
     }
   }
+  /** The next unused edge at `v`, if any. */
+  const stepFrom = (v: number): Edge | undefined => (at.get(v) || []).find(e => !e.used);
   const loops: Loop[] = [];
-  for (const start of [...from.keys()]) {
-    while (from.get(start)?.length) {
-      const ids = [start];
-      const outside: number[] = [];
-      let cur = start;
-      for (let guard = 0; guard < 1_000_000; guard++) {
-        const list = from.get(cur);
-        const e = list?.pop();
-        if (!e) break;
-        outside.push(e.out);
-        cur = e.to;
-        if (cur === start) break;
-        ids.push(cur);
+  for (const first of edges) {
+    if (first.used) continue;
+    // Start a run where the border ends (a corner with one edge), so an open
+    // run comes out whole rather than split in two.
+    let start = first.a;
+    if ((at.get(first.b) || []).filter(e => !e.used).length === 1) start = first.b;
+    const ids = [start];
+    const outside: number[] = [];
+    let cur = start;
+    let closed = false;
+    for (let guard = 0; guard < 1_000_000; guard++) {
+      const e = stepFrom(cur);
+      if (!e) break;
+      e.used = true;
+      outside.push(e.out);
+      cur = e.a === cur ? e.b : e.a;
+      if (cur === start) {
+        closed = true;
+        break;
       }
-      if (cur === start && ids.length >= 3) loops.push({ ids, outside });
+      ids.push(cur);
     }
+    if (ids.length >= 3) loops.push({ ids, outside, closed });
   }
   return loops;
 }
@@ -284,28 +338,34 @@ function ringOf(topo: Topology, ids: number[]): Ring {
 
 function flatSnaps(topo: Topology, tris: number[], n: V3): Snap[] {
   const loops = borderLoops(topo, tris);
-  if (!loops.length) return [];
+  // Whatever its border turns out like, the face always offers its middle.
+  const snaps: Snap[] = [{ p: areaCentre(topo, tris), n, role: "centre" }];
+  if (!loops.length) return snaps;
   const rings = loops.map(l => ringOf(topo, l.ids));
-  // The outer border is the longest.
-  let outer = 0;
-  rings.forEach((r, i) => {
-    if (r.length > rings[outer].length) outer = i;
+  // The outer border is the longest; a broken run only stands in for it when
+  // nothing closed, since an unclosed run says nothing about what's a hole.
+  let outer = -1;
+  loops.forEach((l, i) => {
+    if (!l.closed) return;
+    if (outer < 0 || rings[i].length > rings[outer].length) outer = i;
   });
-  const snaps: Snap[] = [];
+  const sound = outer >= 0;
+  if (!sound) loops.forEach((l, i) => (outer = outer < 0 || rings[i].length > rings[outer].length ? i : outer));
   const o = rings[outer];
-  if (o.round) {
-    snaps.push({ p: o.centre, n, role: "centre", radius: o.radius });
+  if (sound && o.round) {
+    snaps[0] = { p: o.centre, n, role: "centre", radius: o.radius };
   } else {
-    snaps.push({ p: areaCentre(topo, tris), n, role: "centre" });
     const pts = loops[outer].ids.map(i => topo.point(i));
     const { corners, mids } = straightRuns(pts, o.length);
     corners.forEach(p => snaps.push({ p, n, role: "corner" }));
     mids.forEach(p => snaps.push({ p, n, role: "edge" }));
   }
-  rings.forEach((r, i) => {
-    if (i === outer) return;
-    snaps.push(r.round ? { p: r.centre, n, role: "hole", radius: r.radius } : { p: r.centre, n, role: "pocket" });
-  });
+  if (sound) {
+    rings.forEach((r, i) => {
+      if (i === outer || !loops[i].closed) return;
+      snaps.push(r.round ? { p: r.centre, n, role: "hole", radius: r.radius } : { p: r.centre, n, role: "pocket" });
+    });
+  }
   return dedupe(snaps);
 }
 
@@ -368,6 +428,7 @@ function curvedSnaps(topo: Topology, tris: number[], seed: number): Snap[] {
   const snaps: Snap[] = [];
   const hit = areaCentre(topo, [seed]);
   for (const loop of borderLoops(topo, tris)) {
+    if (!loop.closed) continue;
     const r = ringOf(topo, loop.ids);
     if (!r.round) continue;
     // Face the way the surface beyond the rim faces: a screw head's underside

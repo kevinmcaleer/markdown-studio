@@ -115,7 +115,6 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           <button type="button" class="lyr-btn" data-act="redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo">${icon("redo")}</button>
           <span class="lyr-status" role="status"></span>
           <span class="lyr-grow"></span>
-          <button type="button" class="lyr-btn" data-act="urdf" title="Download the parts and their joints as a robot (URDF and meshes in a .zip) that opens in Snakie's Build workspace">${icon("download", 16)}<span>URDF</span></button>
           <button type="button" class="lyr-btn lyr-cancel" data-act="cancel">Cancel</button>
           <button type="button" class="lyr-btn lyr-done" data-act="done">${icon("check", 16)}<span>Done</span></button>
         </div>
@@ -125,7 +124,10 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
               <button type="button" class="lyr-wide-btn lyr-primary" data-act="add" aria-haspopup="menu">${icon("plus", 16)} Add a part</button>
               <div class="lyr-scene-menu" role="menu" hidden></div>
             </div>
-            <div class="lyr-panel-title lyr-scene-parts-title">Parts</div>
+            <div class="lyr-scene-parts-head">
+              <div class="lyr-panel-title lyr-scene-parts-title">Parts</div>
+              <button type="button" class="lyr-btn" data-act="urdf" title="Download the parts and their joints as a robot (URDF and meshes in a .zip) that opens in Snakie's Build workspace">${icon("download", 16)}<span>URDF</span></button>
+            </div>
             <div class="lyr-scene-model"></div>
             <ul class="lyr-scene-list"></ul>
             <p class="lyr-note">Add STL files, or drop them on the view. Click a part to place it.</p>
@@ -1110,11 +1112,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
             tint.visible = true;
             for (const sn of jf.face.snaps) {
               const at = project(sn.p, g.matrixWorld);
-              marks.push(`<i class="lyr-snap lyr-snap-${sn.role} lyr-snap-faint" style="left:${at.x}px;top:${at.y}px"></i>`);
+              marks.push(`<span class="lyr-snap lyr-snap-${sn.role} lyr-snap-faint" style="left:${at.x}px;top:${at.y}px"></span>`);
             }
           }
           const at = project(jf.point, g.matrixWorld);
-          marks.push(`<i class="lyr-snap ${i ? "lyr-snap-picked" : "lyr-snap-joined"}" style="left:${at.x}px;top:${at.y}px"></i>`);
+          marks.push(`<span class="lyr-snap ${i ? "lyr-snap-picked" : "lyr-snap-joined"}" style="left:${at.x}px;top:${at.y}px"></span>`);
           } catch (e) {
             console.warn("Layers: the joint couldn't be shown", e);
           }
@@ -1124,7 +1126,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         const g = art.groupOf(joining.childId);
         if (g) {
           const at = project(joining.childPoint, g.matrix);
-          marks.push(`<i class="lyr-snap lyr-snap-picked" style="left:${at.x}px;top:${at.y}px"></i>`);
+          marks.push(`<span class="lyr-snap lyr-snap-picked" style="left:${at.x}px;top:${at.y}px"></span>`);
         }
       }
       if (hover) {
@@ -1133,7 +1135,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         const screen = snaps.map(s => project(s.p, m));
         hover.snap = nearestSnap(screen, snaps, pointer);
         screen.forEach((p, i) => {
-          marks.push(`<i class="lyr-snap lyr-snap-${snaps[i].role}${i === hover!.snap ? " lyr-on" : ""}" style="left:${p.x}px;top:${p.y}px"></i>`);
+          marks.push(`<span class="lyr-snap lyr-snap-${snaps[i].role}${i === hover!.snap ? " lyr-on" : ""}" style="left:${p.x}px;top:${p.y}px"></span>`);
         });
         const on = hover.snap >= 0 ? snaps[hover.snap] : null;
         if (on) {

@@ -112,6 +112,9 @@ const editor = mount(el, {
 - **Zoom to what you pick**: clicking a part or a joint in the parts list
   turns the camera to it (a joint: its two faces with a little of each part
   round them). Fit shows everything again.
+- Snaps are found on faces that export badly too: a border that doesn't
+  join up still gives its middle and corners, and a small flat face above
+  shallow sides is read as flat, not as part of a round surface.
 - **Named views** (Views in the scene's toolbar), like Fusion 360's: save
   the camera under a name, then use, update or delete it. With the host's
   project model they're the project's (saved with it, without making

@@ -585,8 +585,10 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 }
 
 /* Join snaps: dots over the view at a face's middle, corners, edges and holes. */
-.lyr-scene-snaps { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.lyr-scene-snaps { position: absolute; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; }
 .lyr-snap {
+  display: block;
+  z-index: 1;
   position: absolute;
   width: 9px;
   height: 9px;
@@ -655,3 +657,7 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 .lyr-scene-view-row .lyr-scene-menu-item { flex: 1; min-width: 0; }
 .lyr-scene-view-save { display: flex; gap: 6px; margin: 8px 4px 2px; }
 .lyr-scene-view-save input { flex: 1; min-width: 0; padding: 6px 8px; border: 1px solid var(--lyr-line); border-radius: 6px; font: inherit; }
+.lyr-scene-parts-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.lyr-scene-parts-head { margin: 12px 0 6px; }
+.lyr-scene-parts-head .lyr-panel-title { margin: 0; }
+.lyr-scene-parts-head .lyr-btn { display: inline-flex; align-items: center; gap: 4px; }
