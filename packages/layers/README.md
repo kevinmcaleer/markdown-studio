@@ -86,6 +86,12 @@ const editor = mount(el, {
   start from it, and a step that looks from more than 30° off it gets a
   "turn it" mark at the picture's top right (removed when it looks from
   the default view again).
+- **Detail circles**: from a scene's bar, *Detail circle…* picks one part
+  and adds a close-up of it on a white disc with a bold ring, and a line
+  from the disc to the part on the picture. It's drawn again whenever its
+  scene is (the same style and view, framed round the part); stretch or
+  move it and the line follows. A circle whose part is hidden or gone is
+  removed with its scene's next drawing.
 - **Join snaps**, as in Snakie's Build workspace: while joining, the face
   under the pointer is tinted and its snap points shown: its middle,
   corners and edge middles, the centre of each round hole in it, or, on a

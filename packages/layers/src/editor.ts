@@ -19,15 +19,15 @@ import {
 } from "./elements";
 import { boxSides, dist, distToSegment, facingSide, polygonSides, SIDES, snapAngle, type Pt, type Side } from "./geometry";
 import { icon } from "./icons";
-import { behindModel, blankScene, followModel, normalizeModel, normalizeScene, type ProjectModel } from "./scene/model";
+import { behindModel, blankScene, followModel, normalizeModel, normalizeScene, type ProjectModel, type SceneData } from "./scene/model";
 import type { ModelStore } from "./scene/render";
 import type { SceneModel } from "./scene/workspace";
-import { isScene, placeholderPicture, SceneLayer } from "./sceneLayer";
+import { isDetail, isScene, placeholderPicture, SceneLayer } from "./sceneLayer";
 import { snap, type Box, type Guide } from "./snap";
 import { partsInStep, TURNED_DEGREES, turnedFromDefault } from "./stepFrame";
 import css from "./layers.css?inline";
 
-FabricObject.customProperties = ["name", "layerId", "layerLocked", "badge", "badgePinned", "boundTo", "partsStrip", "stepArrow", "turnMark"];
+FabricObject.customProperties = ["name", "layerId", "layerLocked", "badge", "badgePinned", "boundTo", "partsStrip", "stepArrow", "turnMark", "detailOf"];
 // Corner handles that are easier to grab, and a selection colour that reads on any picture.
 Object.assign(FabricObject.ownDefaults, {
   borderColor: "#8b3dff",
@@ -853,13 +853,13 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     status(`Drawing ${layers.length === 1 ? "the picture" : `${layers.length} pictures`} again…`, false, true);
     let done = 0;
     try {
-      const t = await sceneTools();
+      await sceneTools();
       for (const layer of layers) {
         if (!layer.scene?.parts.length && !(model && layer.scene?.model)) continue;
         const scene = model && layer.scene?.model ? followModel(normalizeScene(layer.scene), model) : normalizeScene(layer.scene);
         const { w, h } = layer.pageSize();
         const scale = sceneScale(w, h);
-        const picture = await t.renderPicture(scene, t.store, Math.round(w), Math.round(h), scale);
+        const picture = await drawLayer(layer, scene, Math.round(w), Math.round(h), scale);
         if (destroyed) return done;
         await setScenePicture(layer, scene, picture, scale, w, h);
         await followScene(layer);
@@ -967,6 +967,13 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     canvas.requestRenderAll();
   }
 
+  /** A layer's picture from its scene: a detail circle on its white disc, or the plain picture. */
+  async function drawLayer(layer: SceneLayer, scene: SceneData, w: number, h: number, scale: number): Promise<HTMLCanvasElement> {
+    const t = await sceneTools();
+    if (isDetail(layer)) return t.renderDetail(scene, t.store, w, h, scale, { colour: INK, width: Math.max(3, Math.round(Math.min(W, H) * 0.006)) });
+    return t.renderPicture(scene, t.store, w, h, scale);
+  }
+
   /** After a scene layer is stretched, its picture is drawn again at the new shape, so lines stay sharp. */
   async function redrawScene(layer: SceneLayer): Promise<void> {
     const { w, h } = layer.pageSize();
@@ -980,8 +987,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     const same = Math.abs((layer.width || 0) - w * scale) < 2 && Math.abs((layer.height || 0) - h * scale) < 2;
     if (same) return;
     try {
-      const t = await sceneTools();
-      const picture = await t.renderPicture(normalizeScene(layer.scene), t.store, Math.round(w), Math.round(h), scale);
+      const picture = await drawLayer(layer, normalizeScene(layer.scene), Math.round(w), Math.round(h), scale);
       if (destroyed || !canvas.contains(layer)) return;
       await setScenePicture(layer, layer.scene, picture, scale, w, h);
       changed();
@@ -1121,10 +1127,105 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     canvas.add(mark);
   }
 
-  /** After a scene is drawn again: its parts strip follows, and the turn mark comes or goes. */
+  const detailsOf = (layer: SceneLayer) => objects().filter(o => isDetail(o) && o.detail.of === idOf(layer)) as (SceneLayer & { detail: { of: string; part: string } })[];
+  const leaderOf = (detail: SceneLayer) => objects().find(o => (o as Owned & { detailOf?: string }).detailOf === idOf(detail)) as Connector | undefined;
+
+  /**
+   * A detail circle: a close-up of one part, drawn on a white disc with a
+   * bold ring, and a line from it to the part on the picture. Drawn again
+   * whenever its scene is; stretch or move it and the line follows.
+   */
+  async function addDetail(layer: SceneLayer, partId: string): Promise<void> {
+    const scene = layer.scene ? normalizeScene(layer.scene) : null;
+    const part = scene?.parts.find(p => p.id === partId);
+    if (!scene || !part) return;
+    status("Drawing the close-up…", false, true);
+    try {
+      const t = await sceneTools();
+      const camera = await t.detailCamera(scene, partId, t.store);
+      if (!camera || destroyed) return;
+      const size = Math.round(Math.min(W, H) * 0.3);
+      const scale = sceneScale(size, size);
+      const detail = new SceneLayer(placeholderPicture(size, size), { name: `Detail: ${part.name}` } as Partial<SceneLayer>);
+      detail.detail = { of: idOf(layer), part: partId };
+      detail.scene = { ...scene, camera };
+      const picture = await t.renderDetail(detail.scene, t.store, size, size, scale, { colour: INK, width: Math.max(3, Math.round(Math.min(W, H) * 0.006)) });
+      if (destroyed) return;
+      await detail.setSrc(picture.toDataURL("image/png"));
+      detail.pictureScale = scale;
+      detail.set({ width: picture.width, height: picture.height, scaleX: size / picture.width, scaleY: size / picture.height });
+      // Beside the picture where there's room: to its left, else its right, else over its top-left corner.
+      const box = layer.getBoundingRect();
+      const gap = size * 0.15;
+      const left = box.left - gap - size >= 0 ? box.left - gap - size : box.left + box.width + gap + size <= W ? box.left + box.width + gap : box.left + gap;
+      detail.set({ left, top: Math.max(0, Math.min(H - size, box.top + gap)) });
+      prepare(detail);
+      canvas.add(detail);
+      // The line to the part on the picture.
+      const leader = makeShape("line", { x: 0, y: 0 }, INK) as Connector;
+      leader.set({ strokeWidth: Math.max(3, Math.round(Math.min(W, H) * 0.004)) });
+      leader.connFrom = { id: idOf(detail), side: "auto" };
+      Object.assign(leader, { name: `Line to ${part.name}`, detailOf: idOf(detail) });
+      prepare(leader);
+      canvas.add(leader);
+      await aimLeader(layer, detail as SceneLayer & { detail: { of: string; part: string } }, leader);
+      canvas.setActiveObject(detail);
+      canvas.requestRenderAll();
+      status(`A close-up of ${part.name}. Move or stretch it; the line follows.`);
+      changed();
+    } catch (e) {
+      status(e instanceof Error && e.message ? `The close-up couldn't be drawn: ${e.message}` : "The close-up couldn't be drawn.", true);
+    }
+  }
+
+  /** Points a detail circle's line at its part on the picture. */
+  async function aimLeader(layer: SceneLayer, detail: SceneLayer & { detail: { of: string; part: string } }, leader: Connector): Promise<void> {
+    const scene = layer.scene ? normalizeScene(layer.scene) : null;
+    if (!scene) return;
+    const t = await sceneTools();
+    const b = await t.partBounds(scene, detail.detail.part, t.store);
+    if (!b || destroyed) return;
+    const box = layer.getBoundingRect();
+    const [p] = t.pagePoints(scene, [b.centre], box.width / box.height);
+    const to = { x: box.left + p.x * box.width, y: box.top + p.y * box.height };
+    const from = detail.getCenterPoint();
+    leader.setEnds(from, to);
+    syncConnector(leader);
+  }
+
+  /** Draws a scene's detail circles again from it, and points their lines; a circle whose part is gone goes too. */
+  async function followDetails(layer: SceneLayer): Promise<void> {
+    for (const d of detailsOf(layer)) {
+      const scene = layer.scene ? normalizeScene(layer.scene) : null;
+      const leader = leaderOf(d);
+      const part = scene?.parts.find(p => p.id === d.detail.part && !p.hidden);
+      if (!scene || !part) {
+        canvas.remove(d);
+        if (leader) canvas.remove(leader);
+        continue;
+      }
+      try {
+        const t = await sceneTools();
+        const camera = await t.detailCamera(scene, part.id, t.store);
+        if (!camera || destroyed) return;
+        const { w, h } = d.pageSize();
+        const scale = sceneScale(w, h);
+        const next = { ...scene, camera };
+        const picture = await drawLayer(d, next, Math.round(w), Math.round(h), scale);
+        if (destroyed || !canvas.contains(d)) return;
+        await setScenePicture(d, next, picture, scale, w, h);
+        if (leader) await aimLeader(layer, d, leader);
+      } catch {
+        // Its models can't be loaded here: it keeps its picture.
+      }
+    }
+  }
+
+  /** After a scene is drawn again: its parts strip and detail circles follow, and the turn mark comes or goes. */
   async function followScene(layer: SceneLayer, firstDone = false): Promise<void> {
-    if (destroyed || !canvas.contains(layer)) return;
+    if (destroyed || !canvas.contains(layer) || isDetail(layer)) return;
     turnMark(layer);
+    await followDetails(layer);
     const has = ownedBy("partsStrip", layer).length > 0;
     // An assembly step (one with a step number) lists its parts by itself the first time its scene is drawn.
     if (has || (firstDone && badges().length && layer.scene && partsInStep(normalizeScene(layer.scene)).length)) await partsStrip(layer, true);
@@ -1614,13 +1715,20 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
           ? `<button type="button" class="lyr-btn" data-act="badge-auto" title="Number it from its place in the write-up again (step ${opts.stepNumber})"${(g as Group & { badgePinned?: boolean }).badgePinned ? "" : " hidden"}>${icon("rotate")}<span>Auto-number</span></button>
             <span class="lyr-hint" data-badge-auto-hint${(g as Group & { badgePinned?: boolean }).badgePinned ? " hidden" : ""}>Numbered from its place in the write-up. Change it to fix it at your number.</span>`
           : ""}`;
+    } else if (isDetail(o)) {
+      const part = o.scene?.parts.find(p => p.id === o.detail.part);
+      html += `<span class="lyr-hint">A close-up of ${esc(part?.name || "a part")}: drawn again with its picture. Stretch or move it; its line follows.</span>`;
     } else if (isScene(o)) {
       const stale = behindModel(o.scene, projectModel);
       const shown = o.scene?.parts.filter(p => !p.hidden).length || 0;
       html += `
         <button type="button" class="lyr-btn" data-act="edit-scene" title="Add parts, place them and pick the style (or double-click it)">${icon("cube")}<span>Edit 3D scene</span></button>
         ${o.scene?.parts.length ? `<button type="button" class="lyr-btn" data-act="parts-strip" title="List the parts this step uses beside the picture, each with its count (the highlighted parts)">${icon("list")}<span>Parts strip</span></button>
-        <button type="button" class="lyr-btn" data-act="step-arrows" title="Solid arrows along the joints of the parts drawn apart (explode the scene first)">${icon("arrow")}<span>Arrows</span></button>` : ""}
+        <button type="button" class="lyr-btn" data-act="step-arrows" title="Solid arrows along the joints of the parts drawn apart (explode the scene first)">${icon("arrow")}<span>Arrows</span></button>
+        <select class="lyr-select" data-detail-part aria-label="Add a detail circle" title="A close-up of one part in a circle, with a line to it">
+          <option value="">Detail circle…</option>
+          ${o.scene.parts.filter(p => !p.hidden).map(p => `<option value="${esc(p.id)}">${esc(p.name)}${p.ghost ? " (ghost)" : ""}</option>`).join("")}
+        </select>` : ""}
         ${stale ? `<button type="button" class="lyr-btn lyr-stale-btn" data-act="update-scene" title="Draw it again from the project's model as it is now">${icon("rotate")}<span>Update picture</span></button>
         <span class="lyr-hint lyr-stale-hint">Out of date: the project's model has changed since this was drawn.</span>`
         : `<span class="lyr-hint">${o.scene?.parts.length ? `${o.scene.model ? `${shown} of the model's ${o.scene.parts.length} parts` : `${o.scene.parts.length} part${o.scene.parts.length === 1 ? "" : "s"}`}` : "No parts yet"}. Stretch it to change the picture's shape.</span>`}`;
@@ -1819,6 +1927,11 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     const el = e.target as HTMLInputElement | HTMLSelectElement;
     const prop = el.dataset.prop;
     const o = active();
+    if (el.dataset.detailPart !== undefined && o && isScene(o) && el.value) {
+      void addDetail(o, el.value);
+      el.value = "";
+      return;
+    }
     if (!prop || !o) return;
     if (prop === "fontFamily") apply({ fontFamily: el.value }, textTargets());
     if (prop === "fontSize") applyFontSize(Number(el.value));
@@ -2560,7 +2673,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
         } else if (o) apply({ flipX: !o.flipX });
         break;
       case "shape-text": if (o && canHoldText(o)) editShapeText(o); break;
-      case "edit-scene": if (isScene(o)) void editScene(o); break;
+      case "edit-scene": if (isScene(o) && !isDetail(o)) void editScene(o); break;
       case "update-scene": if (isScene(o)) void updateScenes([o]); break;
       case "parts-strip": if (isScene(o)) void partsStrip(o); break;
       case "step-arrows": if (isScene(o)) void stepArrows(o); break;
@@ -2632,7 +2745,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     if (!t) {
       const p = canvas.getScenePoint(e.e);
       addTextStyle("body", { x: p.x + 280, y: p.y + 20 });
-    } else if (isScene(t) && !locked(t)) {
+    } else if (isScene(t) && !locked(t) && !isDetail(t)) {
       void editScene(t);
     } else if (canHoldText(t) && !locked(t)) {
       // Double-click a shape: type in it.

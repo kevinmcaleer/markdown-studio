@@ -637,3 +637,58 @@ export function stepArrows(scene: SceneData, aspect: number): StepArrow[] {
   }
   return out;
 }
+
+// ------------------------------------------------------------ detail circles
+
+/** Where a part is in the scene as drawn (exploded), in mm: its middle and half its size. */
+export async function partBounds(scene: SceneData, partId: string, store: ModelStore): Promise<{ centre: Vec3; radius: number } | null> {
+  const part = scene.parts.find(p => p.id === partId);
+  if (!part) return null;
+  const model = await store.get(part);
+  const m = worldMatrices(scene.parts, scene.explode).get(partId);
+  const bb = model.geometry.boundingBox;
+  if (!m || !bb) return null;
+  const box = new Box3();
+  for (let k = 0; k < 8; k++) box.expandByPoint(new Vector3(k & 1 ? bb.max.x : bb.min.x, k & 2 ? bb.max.y : bb.min.y, k & 4 ? bb.max.z : bb.min.z).applyMatrix4(m));
+  const c = box.getCenter(new Vector3());
+  return { centre: [c.x, c.y, c.z], radius: radiusOf(box) };
+}
+
+/** The camera for a close-up of one part: the scene's own direction, centred on the part and framed round it. */
+export async function detailCamera(scene: SceneData, partId: string, store: ModelStore): Promise<SceneCamera | null> {
+  const b = await partBounds(scene, partId, store);
+  if (!b) return null;
+  return { direction: [...scene.camera.direction] as Vec3, target: b.centre, size: Math.max(1, b.radius * 1.15) };
+}
+
+/**
+ * A detail circle, as on a flat-pack sheet: the scene drawn close up on a
+ * white disc with a bold ring round it, `w` × `h` on the page (an ellipse
+ * when they differ), drawn `scale` times that size.
+ */
+export async function renderDetail(scene: SceneData, store: ModelStore, w: number, h: number, scale = 1, ring = { colour: "#111111", width: 4 }): Promise<HTMLCanvasElement> {
+  const pic = await renderPicture(scene, store, w, h, scale);
+  const out = document.createElement("canvas");
+  out.width = pic.width;
+  out.height = pic.height;
+  const ctx = out.getContext("2d")!;
+  const rw = ring.width * scale;
+  const cx = out.width / 2;
+  const cy = out.height / 2;
+  const rx = out.width / 2 - rw / 2;
+  const ry = out.height / 2 - rw / 2;
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, out.width, out.height);
+  ctx.drawImage(pic, 0, 0);
+  ctx.restore();
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  ctx.lineWidth = rw;
+  ctx.strokeStyle = ring.colour;
+  ctx.stroke();
+  return out;
+}

@@ -351,7 +351,7 @@ export const TEMPLATES: Template[] = [
 export function kindOf(o: FabricObject): { icon: string; label: string } {
   const t = String(o.type || "").toLowerCase();
   if (t === "image") return { icon: "image", label: "Picture" };
-  if (t === "scenelayer") return { icon: "cube", label: "3D scene" };
+  if (t === "scenelayer") return { icon: "cube", label: (o as FabricObject & { detail?: unknown }).detail ? "Detail circle" : "3D scene" };
   if (t === "textbox" || t === "i-text" || t === "text") return { icon: "text", label: "Text" };
   if (t === "group" || t === "activeselection") return { icon: "group", label: (o as Group & { badge?: number }).badge ? "Step number" : "Group" };
   if (o instanceof Connector) return { icon: "dash", label: o.arrowStart || o.arrowEnd ? "Arrow" : "Line" };
