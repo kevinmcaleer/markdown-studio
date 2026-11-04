@@ -34,6 +34,10 @@ export type LayersOptions = {
   load: () => Promise<LayersApi>;
   /** Fetches a picture's bytes (to read a graphic's layers or draw on a photo). Defaults to fetch with credentials. */
   fetchImage?: (url: string) => Promise<Blob>;
+  /** The host's 3D models (STL files), offered in a graphic's 3D scenes. */
+  listModels?: () => Promise<{ url: string; title?: string }[]>;
+  /** Fetches a model's bytes for a 3D scene. Defaults to fetch with credentials. */
+  fetchModel?: (url: string) => Promise<ArrayBuffer | Blob>;
   /** Where "/Graphic" opens a new one: in the page (the default) or full screen. */
   mode?: "inline" | "full";
   /** After a graphic is saved: its old picture's link (to tidy up, say) and the new one. */
@@ -194,6 +198,8 @@ export function openLayers(view: EditorView, host: LayersHost, pos: number, mode
         mode,
         fetchImage,
         listImages: host.listImages,
+        listModels: host.listModels,
+        fetchModel: host.fetchModel ?? (async (url: string) => (await defaultFetch(url)).arrayBuffer()),
         doneLabel: "Save",
         onDone: async (result: LayersResult) => {
           const file = new File([result.png], graphicFileName(result.title), { type: "image/png" });
