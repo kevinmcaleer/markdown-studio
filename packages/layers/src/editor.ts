@@ -12,7 +12,7 @@ import {
 } from "fabric";
 import { alignBoxes, distributeBoxes, type AlignHow, type DistributeHow } from "./align";
 import { Connector, type ConnectorEnd } from "./connector";
-import { DetailTail, isTail } from "./detailTail";
+import { DetailTail, isTail, TAIL_LOOKS } from "./detailTail";
 import { blankDoc, clampSide, embedDoc, defaultFetch, exportScales, MAX_EXPORT_BYTES, MAX_SIDE, MIN_SIDE, normalizeDoc, SIZES, type LayersDoc } from "./doc";
 import {
   ACCENT, badge, boundTo, canHoldText, FIGURES, FONTS, INK, INK_KINDS, isLine, isText, kindOf, LINES, makeShape, makeText, newId, PALETTE, SHAPES, SYMBOLS, shapeText, STEP_RED, TEMPLATES, TEXT_STYLES, TOOLS,
@@ -31,7 +31,7 @@ import css from "./layers.css?inline";
 // Saved with every layer. Set on the base class: Fabric's toObject reads them
 // from there, and a subclass with its own list (a scene, a line) would
 // otherwise lose its name, id and links when the graphic is saved.
-BaseFabricObject.customProperties = FabricObject.customProperties = ["name", "layerId", "layerLocked", "badge", "badgePinned", "boundTo", "partsStrip", "stepArrow", "turnMark", "detailOf", "rail"];
+BaseFabricObject.customProperties = FabricObject.customProperties = ["name", "layerId", "layerLocked", "badge", "badgePinned", "boundTo", "partsStrip", "stepArrow", "turnMark", "detailOf"];
 // Corner handles that are easier to grab, and a selection colour that reads on any picture.
 Object.assign(FabricObject.ownDefaults, {
   borderColor: "#8b3dff",
@@ -348,9 +348,14 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       // Older graphics stretched boxes by scaling them, which stretched their corners too.
       bakeScale(o, Math.min((Number(o.rx) || 0) * Math.abs(o.scaleX || 1), (Number(o.ry) || 0) * Math.abs(o.scaleY || 1)));
     }
+    // A detail circle: zoom buttons under the ring.
+    if (isDetail(o)) {
+      o.controls = { ...o.controls, zoomOut: zoomControls.out, zoomIn: zoomControls.in };
+      o.setCoords();
+    }
     if (o instanceof Connector) {
-      // A line is changed by its two ends, which snap to other layers (a detail circle's tail by its tip alone).
-      o.controls = isTail(o) ? { p2: lineControls.p2 } : lineControls;
+      // A line is changed by its two ends, which snap to other layers (a detail circle's tail by its tip, and the size of the spot it magnifies).
+      o.controls = isTail(o) ? { p2: lineControls.p2, target: targetControl } : lineControls;
       o.hasBorders = false;
       o.objectCaching = false;
       o.setCoords();
@@ -446,7 +451,6 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     for (const o of objects()) {
       if (o.group) continue;
       if (isTail(o)) syncTail(o);
-      else if (isRailed(o)) syncArrow(o);
       else if (o instanceof Connector) syncConnector(o);
       else if (boundTo(o)) syncText(o as Textbox);
     }
@@ -484,22 +488,11 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     const ends = c.ends();
     const other = ends[1 - i];
     if (isTail(c)) {
-      // The tip goes exactly where it's put: it's the spot the circle magnifies.
+      // The tip goes exactly where it's put: it's the spot the circle magnifies, drawn again as it goes.
       if (!i) return;
       c.setEnds(other, pointer);
+      aimAt(c);
       return;
-    }
-    if (isRailed(c)) {
-      // A step arrow's end slides along its draft line; Alt takes it off the line.
-      if (e.altKey) (c as RailedArrow).rail = undefined;
-      else {
-        const r = railOnPage(c);
-        if (r) {
-          const p = onRail(r, pointer);
-          c.setEnds(i ? other : p, i ? p : other);
-          return;
-        }
-      }
     }
     const hit = e.altKey ? null : findSnap(pointer, [c, ...exclude], other);
     const p = hit ? hit.at : e.shiftKey ? snapAngle(other, pointer) : pointer;
@@ -530,6 +523,102 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     });
   }
   const lineControls = { p1: endControl(0), p2: endControl(1) };
+
+  /** A tail's tip, its circle and the spot's size on the page (the ring's radius over the zoom). */
+  function targetOf(tail: DetailTail): { detail: SceneLayer & { detail: DetailInfo }; tip: Point; r: number } | null {
+    const d = byId(tail.detailOf || "");
+    if (!d || !isDetail(d)) return null;
+    const [, tip] = tail.ends();
+    return { detail: d, tip, r: ringRadius(d) / zoomOf(d) };
+  }
+
+  /** On the target circle's edge, out along the tail: drag it to take in more or less (the zoom follows). */
+  const targetControl = new Control({
+    cursorStyle: "nwse-resize",
+    actionName: "targetSize",
+    positionHandler: (_dim, _m, obj) => {
+      const tail = obj as DetailTail;
+      const t = targetOf(tail);
+      const p = tail.calcLinePoints();
+      if (!t) return new Point(p.x2, p.y2).transform(util.multiplyTransformMatrices(obj.getViewportTransform(), obj.calcTransformMatrix()));
+      const [c] = tail.ends();
+      const len = dist(c, t.tip) || 1;
+      const at = new Point(t.tip.x + ((t.tip.x - c.x) / len) * t.r, t.tip.y + ((t.tip.y - c.y) / len) * t.r);
+      return at.transform(obj.getViewportTransform());
+    },
+    actionHandler: (_e, transform, x, y) => {
+      const tail = transform.target as DetailTail;
+      const t = targetOf(tail);
+      if (!t || tail.group) return false;
+      const r = Math.max(2, dist(t.tip, { x, y }));
+      const z = Math.round(Math.max(0.5, Math.min(20, ringRadius(t.detail) / r)) * 10) / 10;
+      if (z === zoomOf(t.detail)) return false;
+      t.detail.detail.zoom = z;
+      liveDetail(t.detail);
+      floatBar.hidden = true;
+      return true;
+    },
+    render: (ctx, left, top) => {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(left - 6, top - 6, 12, 12);
+      ctx.fillStyle = "#ffffff";
+      ctx.strokeStyle = "#8b3dff";
+      ctx.lineWidth = 1.5;
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    },
+  });
+
+  /** The − and + under a detail circle: a step of zoom each. */
+  function zoomControl(by: number): Control {
+    return new Control({
+      x: 0,
+      y: 0.5,
+      offsetX: by < 0 ? -34 : 34,
+      offsetY: 20,
+      sizeX: 22,
+      sizeY: 22,
+      cursorStyle: "pointer",
+      actionName: "zoomStep",
+      actionHandler: () => false,
+      mouseUpHandler: (_e, transform) => {
+        const d = transform.target;
+        if (!isDetail(d)) return false;
+        const z = Math.round(Math.max(0.5, Math.min(20, zoomOf(d) + by)) * 10) / 10;
+        if (z === zoomOf(d)) return false;
+        d.detail.zoom = z;
+        void redrawDetail(d).then(() => {
+          renderContext();
+          changed();
+        });
+        return true;
+      },
+      render: (ctx, left, top) => {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(left, top, 10, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        ctx.strokeStyle = "#8b3dff";
+        ctx.lineWidth = 1.5;
+        ctx.fill();
+        ctx.stroke();
+        ctx.strokeStyle = "#8b3dff";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(left - 5, top);
+        ctx.lineTo(left + 5, top);
+        if (by > 0) {
+          ctx.moveTo(left, top - 5);
+          ctx.lineTo(left, top + 5);
+        }
+        ctx.stroke();
+        ctx.restore();
+      },
+    });
+  }
+  const zoomControls = { out: zoomControl(-0.5), in: zoomControl(0.5) };
 
   function editShapeText(shape: FabricObject): void {
     let t = textFor(shape);
@@ -705,7 +794,16 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
   (canvas as unknown as { _pointIsInObjectSelectionArea(o: FabricObject, p: Point): boolean })._pointIsInObjectSelectionArea = (o, p) => {
     if (o instanceof Connector && !o.group) {
       const [a, b] = o.ends();
-      return distToSegment(p, a, b) <= (Number(o.strokeWidth) || 1) / 2 + 8 / zoom;
+      let half = (Number(o.strokeWidth) || 1) / 2 + 8 / zoom;
+      if (isTail(o)) {
+        // A tail flares out from its tip to the ring: wider to grab near the circle, and no grab inside the ring. Without a line, it's picked at its tip.
+        const r = Number(o.radius) || 0;
+        const len = dist(a, b);
+        if (dist(p, a) < r) return false;
+        if (o.look === "none") return dist(p, b) <= 14 / zoom;
+        if (o.look !== "line") half += Math.max(0, Math.min(1, dist(p, b) / (len || 1))) * r * 0.45;
+      }
+      return distToSegment(p, a, b) <= half;
     }
     return inArea(o, p);
   };
@@ -1150,135 +1248,26 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     }
   }
 
-  /** Where a step arrow sits: along its part's draft line (as fractions of the scene's picture), from `t[0]` to `t[1]` of the way along it. */
-  interface Rail { part: string; from: { x: number; y: number }; to: { x: number; y: number }; t: [number, number] }
-  type RailedArrow = Connector & { stepArrow?: string; rail?: Rail };
-  const isRailed = (o: unknown): o is RailedArrow & { rail: Rail } => o instanceof Connector && !!(o as RailedArrow).rail && !!(o as RailedArrow).stepArrow;
-
-  /** A step arrow's rail on the page: its scene's picture box maps the fractions. */
-  function railOnPage(a: RailedArrow): { from: Pt; to: Pt } | null {
-    const layer = byId(a.stepArrow || "");
-    if (!a.rail || !layer || !isScene(layer)) return null;
-    const box = layer.getBoundingRect();
-    const page = (p: { x: number; y: number }) => ({ x: box.left + p.x * box.width, y: box.top + p.y * box.height });
-    return { from: page(a.rail.from), to: page(a.rail.to) };
-  }
-
-  /** How far along the rail (0 at its start, 1 at its end) `p` falls, by its nearest point. */
-  function alongRail(r: { from: Pt; to: Pt }, p: Pt): number {
-    const dx = r.to.x - r.from.x;
-    const dy = r.to.y - r.from.y;
-    const d2 = dx * dx + dy * dy;
-    return d2 < 1e-6 ? 0 : ((p.x - r.from.x) * dx + (p.y - r.from.y) * dy) / d2;
-  }
-
-  const atRail = (r: { from: Pt; to: Pt }, t: number): Pt => ({ x: r.from.x + (r.to.x - r.from.x) * t, y: r.from.y + (r.to.y - r.from.y) * t });
-  /** The point on the rail nearest `p`, kept on the line. */
-  const onRail = (r: { from: Pt; to: Pt }, p: Pt) => atRail(r, Math.min(1, Math.max(0, alongRail(r, p))));
-
-  /** Puts a step arrow where its rail says. */
-  function syncArrow(a: RailedArrow): void {
-    const r = railOnPage(a);
-    if (!r || !a.rail) return;
-    const [na, nb] = [atRail(r, a.rail.t[0]), atRail(r, a.rail.t[1])];
-    const [ca, cb] = a.ends();
-    if (dist(na, ca) > 0.01 || dist(nb, cb) > 0.01) a.setEnds(na, nb);
-  }
-
-  /** After a step arrow was moved: it drops onto its rail where it was put, the same length, and no further than the rail's ends. */
-  function settleArrow(a: RailedArrow): void {
-    const r = railOnPage(a);
-    if (!r || !a.rail || a.group) return;
-    const [ca, cb] = a.ends();
-    let t0 = alongRail(r, ca);
-    let t1 = alongRail(r, cb);
-    const span = Math.min(1, Math.abs(t1 - t0));
-    const lo = Math.min(t0, t1);
-    const shift = lo < 0 ? -lo : lo + span > 1 ? 1 - span - lo : 0;
-    t0 += shift;
-    t1 += shift;
-    a.rail.t = [t0, t1];
-    syncArrow(a);
-  }
-
-  /** The step arrows of a scene drawn again: each follows its part's draft line, and one whose part is no longer drawn apart goes. */
-  async function followArrows(layer: SceneLayer): Promise<void> {
-    const arrows = ownedBy("stepArrow", layer).filter(isRailed);
-    if (!arrows.length || !layer.scene) return;
-    try {
-      const t = await sceneTools();
-      const box = layer.getBoundingRect();
-      const list = await t.stepRails(normalizeScene(layer.scene), box.width / box.height, t.store);
-      for (const a of arrows) {
-        const now = list.find(x => x.id === a.rail.part);
-        if (!now) {
-          canvas.remove(a);
-          continue;
-        }
-        a.rail.from = now.from;
-        a.rail.to = now.to;
-        syncArrow(a);
-      }
-      canvas.requestRenderAll();
-    } catch {
-      // The scene can't be worked out here: the arrows stay put.
-    }
-  }
-
   /**
-   * Solid arrows along the joints of the parts drawn apart in the scene,
-   * from each part towards where it fits, plus a turn arrow on a part that
-   * turns. Each arrow stays on its draft line: it slides along it, and
-   * follows it when the scene is drawn again or moved. Its size follows the
-   * line's length, so it suits the drawing.
+   * The scene's assembly arrows, on or off: solid arrows drawn in the
+   * picture along each exploded part's gap, from the part to where it fits.
+   * They're part of the picture, so a part in front hides them, and each
+   * is set per part in the 3D workspace (From, To, or none).
    */
-  async function stepArrows(layer: SceneLayer): Promise<void> {
+  async function stepArrows(layer: SceneLayer, on?: boolean): Promise<void> {
     if (!layer.scene?.parts.length) return status("Add parts and explode the scene first.", true);
-    if (Math.abs(layer.angle || 0) > 0.5) return status("Arrows follow an unturned scene: turn it back to 0° first.", true);
-    try {
-      const t = await sceneTools();
-      const scene = normalizeScene(layer.scene);
-      const box = layer.getBoundingRect();
-      const list = await t.stepRails(scene, box.width / box.height, t.store);
-      if (!list.length) return status("No part is drawn apart from where it fits: slide Explode up in the 3D scene, then add arrows.", true);
-      ownedBy("stepArrow", layer).forEach(o => canvas.remove(o));
-      const page = (p: { x: number; y: number }) => ({ x: box.left + p.x * box.width, y: box.top + p.y * box.height });
-      const made: FabricObject[] = [];
-      const unit = Math.min(W, H);
-      for (const a of list) {
-        const from = page(a.from);
-        const to = page(a.to);
-        const len = dist(from, to);
-        // A thin shaft in keeping with the line art: never heavier than the drawing warrants.
-        const sw = Math.max(2, Math.min(Math.round(unit * 0.007), Math.round(len * 0.05)));
-        // The arrow sits in the gap: it starts clear of the part and stops short of where it fits.
-        const t0 = 0.3;
-        const t1 = 0.92;
-        const arrow = makeShape("solid-arrow", { x: 0, y: 0 }, INK) as RailedArrow;
-        arrow.set({ strokeWidth: sw });
-        arrow.setEnds(atRail({ from, to }, t0), atRail({ from, to }, t1));
-        Object.assign(arrow, { name: `Arrow: ${a.name}`, stepArrow: idOf(layer), rail: { part: a.id, from: a.from, to: a.to, t: [t0, t1] } });
-        prepare(arrow);
-        canvas.add(arrow);
-        made.push(arrow);
-        if (a.turns) {
-          const turn = makeShape("rotate", { x: 0, y: 0 }, INK)!;
-          const size = Math.max(24, Math.min(unit * 0.1, len * 0.5));
-          turn.scale(size / 200);
-          turn.set({ left: from.x - size * 1.2, top: from.y - size * 1.2 });
-          Object.assign(turn, { name: `Turns: ${a.name}`, stepArrow: idOf(layer) });
-          prepare(turn);
-          canvas.add(turn);
-          made.push(turn);
-        }
-      }
-      selectAll(made);
-      canvas.requestRenderAll();
-      status(`${made.length === 1 ? "One arrow" : `${made.length} arrows`} added. Slide an arrow along its line, or delete it; Alt-drag an end to take it off the line.`);
-      changed();
-    } catch (e) {
-      status(e instanceof Error && e.message ? `Arrows couldn't be worked out: ${e.message}` : "Arrows couldn't be worked out.", true);
-    }
+    const scene = normalizeScene(layer.scene);
+    const next = on ?? !scene.arrows;
+    if (next && !scene.explode && !scene.parts.some(p => p.explode)) return status("No part is drawn apart from where it fits: slide Explode up in the 3D scene, then turn arrows on.", true);
+    if (next) scene.arrows = true;
+    else delete scene.arrows;
+    layer.scene = scene;
+    // Arrows from before they were drawn in the picture go.
+    ownedBy("stepArrow", layer).forEach(o => canvas.remove(o));
+    await redrawScene(layer, true);
+    renderContext();
+    status(next ? "Arrows on: each part drawn apart gets one, along its gap. Set a part's arrow (From, To, or none) in the 3D scene." : "Arrows off.");
+    changed();
   }
 
   /**
@@ -1394,8 +1383,48 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     const box = layer.getBoundingRect();
     const to = { x: box.left + spot.x * box.width, y: box.top + spot.y * box.height };
     tail.radius = ringRadius(detail);
+    tail.look = detail.detail.look || "tail";
     tail.set({ strokeWidth: ringWidth() });
     tail.setEnds(detail.getCenterPoint(), to);
+  }
+
+  /** The spot a tail's tip is on now, as fractions of its picture (kept on the picture). */
+  function spotOfTip(tail: DetailTail): { detail: SceneLayer & { detail: DetailInfo }; layer: SceneLayer } | null {
+    const detail = byId(tail.detailOf || "");
+    if (!detail || !isDetail(detail)) return null;
+    const layer = sourceOf(detail);
+    if (!layer) return null;
+    const box = layer.getBoundingRect();
+    const [, tip] = tail.ends();
+    detail.detail.spot = { x: Math.max(0, Math.min(1, (tip.x - box.left) / box.width)), y: Math.max(0, Math.min(1, (tip.y - box.top) / box.height)) };
+    return { detail, layer };
+  }
+
+  /** While a tail's tip is dragged: the circle magnifies where the tip is now, drawn as it goes. */
+  function aimAt(tail: DetailTail): void {
+    const at = spotOfTip(tail);
+    if (at) liveDetail(at.detail);
+  }
+
+  // One live redraw at a time: the latest asked for follows when it's done.
+  let liveBusy = false;
+  let liveNext: (SceneLayer & { detail: DetailInfo }) | null = null;
+  function liveDetail(d: SceneLayer & { detail: DetailInfo }): void {
+    if (liveBusy) {
+      liveNext = d;
+      return;
+    }
+    liveBusy = true;
+    redrawDetail(d)
+      .catch(() => {})
+      .finally(() => {
+        liveBusy = false;
+        if (destroyed) return;
+        canvas.requestRenderAll();
+        const next = liveNext;
+        liveNext = null;
+        if (next) liveDetail(next);
+      });
   }
 
   /** Whether a part is small enough to draw whole over the ring (a screw, not a panel): no bigger than the circle and a half, magnified. */
@@ -1410,18 +1439,16 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
 
   /** A tail's tip was dragged: the circle magnifies the spot it now touches, and a small part there is drawn whole. */
   async function tailMoved(tail: DetailTail): Promise<void> {
-    const detail = byId(tail.detailOf || "");
-    if (!detail || !isDetail(detail)) return;
-    const layer = sourceOf(detail);
-    if (!layer) return;
+    const at = spotOfTip(tail);
+    if (!at) return;
+    const { detail, layer } = at;
+    const spot = detail.detail.spot!;
     const box = layer.getBoundingRect();
-    const [, tip] = tail.ends();
-    detail.detail.spot = { x: Math.max(0, Math.min(1, (tip.x - box.left) / box.width)), y: Math.max(0, Math.min(1, (tip.y - box.top) / box.height)) };
     try {
       const t = await sceneTools();
       const scene = layer.scene ? normalizeScene(layer.scene) : null;
       if (scene) {
-        const under = await t.partAt(scene, detail.detail.spot, t.store, box.width / box.height);
+        const under = await t.partAt(scene, spot, t.store, box.width / box.height);
         detail.detail.part = undefined;
         await redrawDetail(detail);
         if (under && (await fitsRing(detail, scene, under))) {
@@ -1726,7 +1753,6 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
         const layer = await place(scenes[step.n], SCENE);
         if (destroyed) return;
         await partsStrip(layer, true);
-        await stepArrows(layer);
       });
     }
     status(`Assembly guide: ${made} pages.`);
@@ -1738,7 +1764,6 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     if (destroyed || !canvas.contains(layer) || isDetail(layer)) return;
     turnMark(layer);
     await followDetails(layer);
-    await followArrows(layer);
     const has = ownedBy("partsStrip", layer).length > 0;
     // An assembly step (one with a step number) lists its parts by itself the first time its scene is drawn.
     if (has || (firstDone && badges().length && layer.scene && partsInStep(normalizeScene(layer.scene)).length)) await partsStrip(layer, true);
@@ -1988,7 +2013,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     floatBar.hidden = true;
     const t = e.target;
     const ev = e.e as MouseEvent;
-    if (!t || ev?.altKey) {
+    if (!t || ev?.altKey || isTail(t)) {
       guides = [];
       return;
     }
@@ -2003,8 +2028,26 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     guides = r.guides;
   });
   // Lines and shape text keep up while things move. Moving a line itself unfastens it.
+  // A tail dragged by its body: the tip goes with the pointer, the start stays on the circle.
+  let tailGrab: { tail: DetailTail; off: Point } | null = null;
+  function dragTail(tail: DetailTail, e: { e: Event }): void {
+    if (!(e.e instanceof MouseEvent || e.e instanceof PointerEvent || e.e instanceof TouchEvent)) return;
+    const p = canvas.getScenePoint(e.e);
+    if (tailGrab?.tail !== tail) {
+      // The first move: the tip has gone with the pointer so far, so where it was is the tip less that.
+      const [, tip] = tail.ends();
+      tailGrab = { tail, off: new Point(tip.x - p.x, tip.y - p.y) };
+    }
+    const d = byId(tail.detailOf || "");
+    const c = d && isDetail(d) ? d.getCenterPoint() : tail.ends()[0];
+    tail.setEnds(c, { x: p.x + tailGrab.off.x, y: p.y + tailGrab.off.y });
+    aimAt(tail);
+  }
+  canvas.on("mouse:up", () => {
+    tailGrab = null;
+  });
   canvas.on("object:moving", e => {
-    if (isRailed(e.target)) settleArrow(e.target);
+    if (isTail(e.target)) dragTail(e.target, e);
     else if (e.target instanceof Connector) {
       e.target.connFrom = null;
       e.target.connTo = null;
@@ -2035,7 +2078,6 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       const src = sourceOf(o);
       if (src) void redrawScene(src, true);
     }
-    if (isRailed(o)) settleArrow(o);
     if (stretching && o === stretching.o) {
       bakeScale(o as Rect, stretching.r);
       stretching = null;
@@ -2059,6 +2101,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     if (!ctx || ctx !== canvas.getContext()) return;
     drawStale(ctx);
     drawConnectHints(ctx);
+    drawTarget(ctx);
     if (!guides.length) return;
     const r = canvas.getRetinaScaling();
     ctx.save();
@@ -2079,6 +2122,27 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     ctx.stroke();
     ctx.restore();
   });
+  /** A faint circle at a selected tail's tip: the spot its circle magnifies, the ring's size over the zoom (only on screen). */
+  function drawTarget(ctx: CanvasRenderingContext2D): void {
+    const a = active();
+    const tail = isTail(a) ? a : isDetail(a) ? tailOf(a) : isTail(hover) ? hover : null;
+    if (!tail) return;
+    const t = targetOf(tail);
+    if (!t) return;
+    const r = canvas.getRetinaScaling();
+    ctx.save();
+    ctx.setTransform(r * zoom, 0, 0, r * zoom, 0, 0);
+    ctx.beginPath();
+    ctx.arc(t.tip.x, t.tip.y, t.r, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(139, 61, 255, 0.08)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(139, 61, 255, 0.7)";
+    ctx.lineWidth = 1.5 / zoom;
+    ctx.setLineDash([5 / zoom, 4 / zoom]);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   /** An amber dashed frame and "Out of date" on scene pictures drawn from an older model (only on screen). */
   function drawStale(ctx: CanvasRenderingContext2D): void {
     const stale = projectModel ? staleScenes() : [];
@@ -2184,7 +2248,8 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     let x = (b.left + b.width / 2) * zoom - bw / 2;
     x = Math.max(4, Math.min(W * zoom - bw - 4, x));
     let y = b.top * zoom - 48;
-    if (y < 4) y = (b.top + b.height) * zoom + 12;
+    // Under it when there's no room above (clear of a detail circle's zoom buttons).
+    if (y < 4) y = (b.top + b.height) * zoom + (isDetail(o) ? 40 : 12);
     if (y > H * zoom - 40) y = Math.max(4, b.top * zoom + 8);
     floatBar.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
     const lockBtn = floatBar.querySelector("[data-act=lock]") as HTMLElement;
@@ -2205,6 +2270,22 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       <button type="button" class="lyr-btn" data-pop="position" title="Position">${icon("position")}<span>Position</span></button>
       ${o instanceof ActiveSelection ? `<button type="button" class="lyr-btn" data-act="group" title="Group (Ctrl+G)">${icon("group")}<span>Group</span></button>` : ""}
       ${o instanceof Group && !(o instanceof ActiveSelection) && !(o as Group & { badge?: number }).badge ? `<button type="button" class="lyr-btn" data-act="ungroup" title="Ungroup (Ctrl+Shift+G)">${icon("ungroup")}<span>Ungroup</span></button>` : ""}`;
+  }
+
+  /** The options of a detail circle (shown for the circle and its tail alike). */
+  function detailBar(d: SceneLayer & { detail: DetailInfo }): string {
+    const zoom = zoomOf(d);
+    const parts = d.scene?.parts.filter(p => !p.hidden) || [];
+    return `<label class="lyr-inline" title="How much closer the circle looks than its picture">Zoom <input class="lyr-num" type="number" min="0.5" max="20" step="0.5" data-prop="detailZoom" value="${zoom}" aria-label="Zoom">x</label>
+        <label class="lyr-inline" title="The zoom written in a box on the ring"><input type="checkbox" data-prop="detailLabel"${d.detail.label === false ? "" : " checked"}> Label</label>
+        <select class="lyr-select" data-prop="detailLook" aria-label="How the circle is joined to its spot" title="How the circle is joined to its spot: a flared tail, a thin line, or nothing">
+          ${TAIL_LOOKS.map(l => `<option value="${l.id}"${(d.detail.look || "tail") === l.id ? " selected" : ""} title="${esc(l.detail)}">${esc(l.label)}</option>`).join("")}
+        </select>
+        <select class="lyr-select" data-prop="detailPart" aria-label="The part drawn whole over the ring" title="The part drawn whole, poking out of the circle (the one under the tail's tip, unless you pick one)">
+          <option value=""${d.detail.part ? "" : " selected"}>No part over the ring</option>
+          ${parts.map(p => `<option value="${esc(p.id)}"${p.id === d.detail.part ? " selected" : ""}>${esc(p.name)}</option>`).join("")}
+        </select>
+        <span class="lyr-hint">Drag the tail to the spot to magnify; drag the faint circle's corner to take in more or less. Stretch or move the circle; the tail follows.</span>`;
   }
 
   function renderContext(): void {
@@ -2236,24 +2317,17 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
           ? `<button type="button" class="lyr-btn" data-act="badge-auto" title="Number it from its place in the write-up again (step ${opts.stepNumber})"${(g as Group & { badgePinned?: boolean }).badgePinned ? "" : " hidden"}>${icon("rotate")}<span>Auto-number</span></button>
             <span class="lyr-hint" data-badge-auto-hint${(g as Group & { badgePinned?: boolean }).badgePinned ? " hidden" : ""}>Numbered from its place in the write-up. Change it to fix it at your number.</span>`
           : ""}`;
-    } else if (isDetail(o)) {
-      const zoom = zoomOf(o);
-      const parts = o.scene?.parts.filter(p => !p.hidden) || [];
-      html += `
-        <label class="lyr-inline" title="How much closer the circle looks than its picture">Zoom <input class="lyr-num" type="number" min="0.5" max="20" step="0.5" data-prop="detailZoom" value="${zoom}" aria-label="Zoom">x</label>
-        <label class="lyr-inline" title="The zoom written in a box on the ring"><input type="checkbox" data-prop="detailLabel"${o.detail.label === false ? "" : " checked"}> Label</label>
-        <select class="lyr-select" data-prop="detailPart" aria-label="The part drawn whole over the ring" title="The part drawn whole, poking out of the circle (the one under the tail's tip, unless you pick one)">
-          <option value=""${o.detail.part ? "" : " selected"}>No part over the ring</option>
-          ${parts.map(p => `<option value="${esc(p.id)}"${p.id === o.detail.part ? " selected" : ""}>${esc(p.name)}</option>`).join("")}
-        </select>
-        <span class="lyr-hint">Drag the tail's tip to the spot to magnify. Stretch or move the circle; the tail follows.</span>`;
+    } else if (isDetail(o) || (isTail(o) && isDetail(byId(o.detailOf || "")))) {
+      // A tail is changed through its circle's options.
+      const d = (isTail(o) ? byId(o.detailOf || "") : o) as SceneLayer & { detail: DetailInfo };
+      html += detailBar(d);
     } else if (isScene(o)) {
       const stale = behindModel(o.scene, projectModel);
       const shown = o.scene?.parts.filter(p => !p.hidden).length || 0;
       html += `
         <button type="button" class="lyr-btn" data-act="edit-scene" title="Add parts, place them and pick the style (or double-click it)">${icon("cube")}<span>Edit 3D scene</span></button>
         ${o.scene?.parts.length ? `<button type="button" class="lyr-btn" data-act="parts-strip" title="List the parts this step uses beside the picture, each with its count (the highlighted parts)">${icon("list")}<span>Parts strip</span></button>
-        <button type="button" class="lyr-btn" data-act="step-arrows" title="Solid arrows along the joints of the parts drawn apart (explode the scene first)">${icon("arrow")}<span>Arrows</span></button>
+        <button type="button" class="lyr-btn${o.scene?.arrows ? " lyr-on" : ""}" data-act="step-arrows" aria-pressed="${!!o.scene?.arrows}" title="Solid arrows in the picture along the gaps of the parts drawn apart (explode the scene first); set each part's in the 3D scene">${icon("arrow")}<span>Arrows</span></button>
         <select class="lyr-select" data-detail-part aria-label="Add a detail circle" title="A close-up of one part in a circle, with a line to it">
           <option value="">Detail circle…</option>
           ${o.scene.parts.filter(p => !p.hidden).map(p => `<option value="${esc(p.id)}">${esc(p.name)}${p.ghost ? " (ghost)" : ""}</option>`).join("")}
@@ -2462,10 +2536,19 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       return;
     }
     if (!prop || !o) return;
-    if (prop.startsWith("detail") && isDetail(o)) {
+    const d = isTail(o) ? byId(o.detailOf || "") : o;
+    if (prop.startsWith("detail") && d && isDetail(d)) {
+      const o = d;
       if (prop === "detailZoom") o.detail.zoom = Math.max(0.5, Math.min(20, Number(el.value) || 2));
       if (prop === "detailLabel") o.detail.label = (el as HTMLInputElement).checked;
       if (prop === "detailPart") o.detail.part = el.value || undefined;
+      if (prop === "detailLook") {
+        o.detail.look = el.value === "line" || el.value === "none" ? el.value : undefined;
+        aimTail(o);
+        canvas.requestRenderAll();
+        changed();
+        return;
+      }
       void redrawDetail(o).then(() => {
         renderContext();
         changed();
@@ -3268,9 +3351,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
   };
   canvas.on("selection:created", onSelect);
   canvas.on("selection:updated", onSelect);
-  canvas.on("selection:cleared", e => {
-    // Step arrows moved as part of a selection drop back onto their lines.
-    (e as { deselected?: FabricObject[] }).deselected?.forEach(o => isRailed(o) && settleArrow(o));
+  canvas.on("selection:cleared", () => {
     follow();
     onSelect();
   });

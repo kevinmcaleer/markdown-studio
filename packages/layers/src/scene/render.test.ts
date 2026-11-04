@@ -1,6 +1,6 @@
 import { Vector3 } from "three";
 import { describe, expect, it } from "vitest";
-import { magnifiedCamera, pagePoints, stepArrows, worldMatrices } from "./render";
+import { magnifiedCamera, pagePoints, worldMatrices } from "./render";
 import type { ScenePart } from "./model";
 
 const at = (m: { elements: ArrayLike<number> }, p: [number, number, number]) => new Vector3(...p).applyMatrix4(m as never).toArray().map(n => Math.round(n * 1000) / 1000 + 0);
@@ -54,15 +54,12 @@ describe("jointPlace", () => {
   });
 });
 
-describe("stepArrows", () => {
+describe("pagePoints", () => {
   const scene = () => ({
     version: 1 as const, explode: 1,
     camera: { direction: [0, -1, 0] as [number, number, number], target: [0, 0, 0] as [number, number, number], size: 100 },
     style: { preset: "line-art", fill: "#fff", line: "#000", lineWidth: 1, outline: 3, crease: 30, highlight: "#9db8f5", ghost: "#aaa" },
-    parts: [
-      { id: "base", name: "Base", position: [0, 0, 0] as [number, number, number], rotation: [0, 0, 0] as [number, number, number] },
-      { id: "peg", name: "Peg", position: [0, 0, 10] as [number, number, number], rotation: [0, 0, 0] as [number, number, number], parent: "base", joint: { normal: [0, 0, 1] as [number, number, number], distance: 50, childPoint: [0, 0, 0] as [number, number, number], type: "revolute" as const } },
-    ],
+    parts: [],
   });
 
   it("puts a scene point on the picture as fractions", () => {
@@ -71,24 +68,6 @@ describe("stepArrows", () => {
     expect(mid.x).toBeCloseTo(0.5);
     expect(mid.y).toBeCloseTo(0.5);
     expect(top.y).toBeCloseTo(0);
-  });
-
-  it("draws an arrow from the exploded part down its joint to where it fits", () => {
-    const [a] = stepArrows(scene(), 1);
-    expect(a.name).toBe("Peg");
-    expect(a.turns).toBe(true);
-    // From 60 mm up (10 + 50 exploded) to 10 mm up: downwards on the page.
-    expect(a.from.y).toBeLessThan(a.to.y);
-    expect(a.to.y - a.from.y).toBeCloseTo(0.25);
-  });
-
-  it("gives nothing for ghosts, hidden parts or an assembled scene", () => {
-    const s = scene();
-    s.explode = 0;
-    expect(stepArrows(s, 1)).toEqual([]);
-    const g = scene();
-    (g.parts[1] as ScenePart).ghost = true;
-    expect(stepArrows(g, 1)).toEqual([]);
   });
 });
 

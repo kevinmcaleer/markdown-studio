@@ -12,6 +12,8 @@ export interface DetailInfo {
   spot?: { x: number; y: number };
   zoom?: number;
   label?: boolean;
+  /** How it's joined to its spot: a flared tail, a thin line, or nothing (see detailTail.ts). */
+  look?: "tail" | "line" | "none";
 }
 
 export class SceneLayer extends FabricImage {

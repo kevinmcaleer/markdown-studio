@@ -45,6 +45,21 @@ describe("normalizeScene", () => {
     expect(by.d.parent).toBe("a");
     expect(by.b.joint).toEqual({ normal: [0, 0, 1], distance: 20 });
   });
+
+  it("keeps the scene's arrows switch and each part's arrow, within the gap", () => {
+    const s = normalizeScene({
+      ...blankScene(),
+      arrows: true,
+      parts: [
+        { id: "a", name: "A", position: [0, 0, 0], rotation: [0, 0, 0], arrow: { from: 0.3, to: 1.7, off: true } },
+        { id: "b", name: "B", position: [0, 0, 0], rotation: [0, 0, 0], arrow: {} },
+      ],
+    });
+    expect(s.arrows).toBe(true);
+    expect(s.parts[0].arrow).toEqual({ from: 0.3, to: 1, off: true });
+    expect(s.parts[1].arrow).toBeUndefined();
+    expect(normalizeScene({ ...blankScene(), arrows: "yes" as unknown as boolean }).arrows).toBeUndefined();
+  });
 });
 
 describe("highlight and explode per part", () => {

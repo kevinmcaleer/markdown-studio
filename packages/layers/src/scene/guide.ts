@@ -108,7 +108,7 @@ export function stepScene(model: Pick<ProjectModel, "parts">, steps: GuideStep[]
     } else out.hidden = true;
     return out;
   });
-  return { ...blankScene(), parts, camera: structuredClone(camera), style: structuredClone(style), explode: 0 };
+  return { ...blankScene(), parts, camera: structuredClone(camera), style: structuredClone(style), explode: 0, arrows: true };
 }
 
 /** The scene for the cover: everything fitted, nothing highlighted. */

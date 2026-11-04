@@ -82,12 +82,15 @@ const editor = mount(el, {
   part sits inside the box (the highlighted parts, or every shown part when
   none is highlighted). An assembly step (one with a step number) gets its
   strip the first time its scene is drawn, under the number, and a strip is
-  drawn again whenever its scene is. *Arrows* adds a solid arrow along
-  each exploded joint, from the part towards where it fits, sized to the
-  drawing, and a turn arrow on a part that turns. An arrow stays on its
-  draft line: drag it and it slides along the line, drag an end and the
-  end slides too, and it follows the line when the scene is drawn again or
-  moved (Alt-drag an end to take it off the line). Under Views, the star
+  drawn again whenever its scene is. *Arrows* turns the scene's **assembly
+  arrows** on: a solid arrow drawn in the picture itself along each
+  exploded part's gap, from the part to where it fits, flat on to the
+  camera and sized to the picture. Being part of the picture, a part in
+  front hides an arrow, and a screw's arrow stops at its hole. In the 3D
+  workspace (Style: *Arrows when exploded*, and under a joined part's
+  joint) each part's arrow can be left out or shortened: *From* and *To*
+  are how far along the gap it starts and ends (10% to 92% to start).
+  Guide steps have arrows on. Under Views, the star
   marks the project's **default view**: new steps start from it, and a step
   that looks from more than 30° off it gets a "turn it" mark at the
   picture's top right (removed when it looks from the default view again).
@@ -116,9 +119,15 @@ const editor = mount(el, {
 - **Detail circles**, as on a flat-pack sheet: from a scene's bar, *Detail
   circle…* picks a part and adds a magnifier: a white disc with a bold ring
   and a **tail** that curves in to the spot it magnifies (the part's middle
-  to start). Drag the tail's tip to magnify somewhere else; the circle
-  shows that spot at **zoom** times the picture's own scale (2x to start,
-  set in the bar), whatever size the circle is stretched to. The zoom is
+  to start). Drag the tail (anywhere along it, or by its tip) to magnify
+  somewhere else: the circle is drawn again as you drag, and a faint
+  **target circle** at the tip shows how much it takes in. Drag the
+  target's handle to take in more or less (the zoom follows), press the −
+  and + under the ring, or set the **zoom** in the bar: the circle shows
+  the spot at that many times the picture's own scale (2x to start),
+  whatever size the circle is stretched to. The bar's **look** joins the
+  circle to its spot with the flared tail, a thin straight line (as in a
+  brick set), or nothing. The zoom is
   written in a white box on the ring ("2x"; *Label* turns it off), and a
   small part under the tip (a screw, not a panel) is drawn whole over the
   ring, so both break its line as on IKEA's sheets; the bar's part list
