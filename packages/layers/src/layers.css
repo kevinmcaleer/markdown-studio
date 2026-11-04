@@ -513,6 +513,7 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
   background: #fff;
 }
 .lyr-scene-presets { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.lyr-scene-jtypes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 8px; }
 .lyr-scene-preset {
   height: 32px;
   border: 1px solid var(--lyr-line);

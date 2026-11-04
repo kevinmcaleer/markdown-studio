@@ -15,6 +15,8 @@ export interface ScenePart {
   /** Where the model comes from: the host's URL for it, or the model itself (base64 STL) for an upload. */
   url?: string;
   data?: string;
+  /** The STL's file name, for a URDF's mesh paths. */
+  file?: string;
   /** The middle of the part, in mm. */
   position: Vec3;
   /** Roll, pitch, yaw in degrees. */
@@ -47,7 +49,25 @@ export interface PartJoint {
   spin?: number;
   /** Millimetres standing off the face. */
   gap?: number;
+  /**
+   * How the part moves on its joint: fixed, turning about the normal
+   * (revolute: spin is its angle) or sliding along it (prismatic: gap is
+   * how far). Fixed unless set.
+   */
+  type?: JointType;
+  /** A moving joint's limits: degrees for turning, mm for sliding. */
+  lower?: number;
+  upper?: number;
 }
+
+export type JointType = "fixed" | "revolute" | "prismatic";
+export const JOINT_TYPES: { id: JointType; label: string; detail: string }[] = [
+  { id: "fixed", label: "Fixed", detail: "Held in place" },
+  { id: "revolute", label: "Turns", detail: "Turns about the joined faces, like a servo horn" },
+  { id: "prismatic", label: "Slides", detail: "Slides along the joined faces' normal, like a drawer" },
+];
+/** Limits a new moving joint starts with. */
+export const DEFAULT_LIMITS: Record<Exclude<JointType, "fixed">, [number, number]> = { revolute: [-90, 90], prismatic: [0, 20] };
 
 export interface SceneCamera {
   /** Where the camera looks from, as a direction from the target. */
@@ -153,6 +173,7 @@ export function normalizeScene(value: unknown): SceneData {
           rotation: vec(p.rotation, [0, 0, 0], 100_000).map(wrapAngle) as Vec3,
         };
         if (typeof p.url === "string" && p.url) part.url = p.url;
+        if (typeof p.file === "string" && p.file) part.file = p.file.slice(0, 200);
         if (typeof p.data === "string" && p.data) part.data = p.data;
         if (p.hidden) part.hidden = true;
         if (p.highlight) part.highlight = true;
@@ -171,6 +192,16 @@ export function normalizeScene(value: unknown): SceneData {
             part.joint.childNormal = unit(j.childNormal);
             part.joint.spin = wrapAngle(num(j.spin, 0));
             part.joint.gap = num(j.gap, 0, -LIMITS.position, LIMITS.position);
+          }
+          if (j.type === "revolute" || j.type === "prismatic") {
+            const [lo, hi] = DEFAULT_LIMITS[j.type];
+            const max = j.type === "revolute" ? 180 : LIMITS.position;
+            let lower = num(j.lower, lo, -max, max);
+            let upper = num(j.upper, hi, -max, max);
+            if (lower > upper) [lower, upper] = [upper, lower];
+            part.joint.type = j.type;
+            part.joint.lower = lower;
+            part.joint.upper = upper;
           }
         }
         return part;

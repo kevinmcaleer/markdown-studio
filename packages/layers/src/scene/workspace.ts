@@ -12,12 +12,14 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { icon } from "../icons";
 import {
-  applyPreset, normalizeScene, newPartId, partName, placeBeside, STYLE_PRESETS, VIEWS, wrapAngle,
+  applyPreset, DEFAULT_LIMITS, JOINT_TYPES, normalizeScene, newPartId, partName, placeBeside, STYLE_PRESETS, VIEWS, wrapAngle,
+  type JointType, type PartJoint,
   type Box3 as PlainBox, type SceneData, type ScenePart, type SceneStyle, type Vec3,
 } from "./model";
 import { applyJoint } from "./joint";
 import { frame, LineArt, modelFromStl, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
 import { MAX_EMBED, parseStl, toBase64, toBinaryStl } from "./stl";
+import { toUrdf, zip } from "./urdf";
 import { MAX_SNAP_TRIANGLES, nearestSnap, Topology, type Face, type Snap } from "./snaps";
 
 export interface SceneModel {
@@ -95,6 +97,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           <button type="button" class="lyr-btn" data-act="redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo">${icon("redo")}</button>
           <span class="lyr-status" role="status"></span>
           <span class="lyr-grow"></span>
+          <button type="button" class="lyr-btn" data-act="urdf" title="Download the parts and their joints as a robot (URDF and meshes in a .zip) that opens in Snakie's Build workspace">${icon("download", 16)}<span>URDF</span></button>
           <button type="button" class="lyr-btn lyr-cancel" data-act="cancel">Cancel</button>
           <button type="button" class="lyr-btn lyr-done" data-act="done">${icon("check", 16)}<span>Done</span></button>
         </div>
@@ -282,7 +285,35 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       return out;
     }
 
-    async function addModel(source: { url?: string; buffer?: ArrayBuffer; name: string }): Promise<void> {
+    /** Downloads the parts as a URDF robot: robot.urdf and meshes/*.stl in a .zip. */
+    function exportUrdf(): void {
+      const parts = scene.parts.filter(p => {
+        const m = models.get(p.id);
+        return m && !(m instanceof Error);
+      });
+      if (!parts.length) {
+        status(scene.parts.length ? "The parts' models haven't loaded yet." : "Add a part first.", true);
+        return;
+      }
+      const { urdf, meshes } = toUrdf("robot", parts);
+      const files = [{ name: "robot.urdf", data: new TextEncoder().encode(urdf) }];
+      for (const m of meshes) {
+        const model = models.get(m.partId) as Model;
+        files.push({ name: m.path, data: new Uint8Array(toBinaryStl(model.geometry.getAttribute("position").array as Float32Array)) });
+      }
+      const blob = new Blob([zip(files) as BlobPart], { type: "application/zip" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "robot-urdf.zip";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+      const skipped = scene.parts.length - parts.length;
+      status(`Downloaded robot-urdf.zip: ${parts.length} part${parts.length === 1 ? "" : "s"}${skipped ? ` (${skipped} not loaded, left out)` : ""}. Unzip it and open robot.urdf in Snakie.`);
+    }
+
+    async function addModel(source: { url?: string; buffer?: ArrayBuffer; name: string; file?: string }): Promise<void> {
       status(`Adding ${source.name}…`, false, true);
       try {
         let model: Model;
@@ -304,6 +335,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           name: source.name.slice(0, 120),
           position: placeBeside(boxes, model.centre, model.size).map(n => round(n)) as Vec3,
           rotation: [0, 0, 0],
+          ...(source.file ? { file: source.file.slice(0, 200) } : {}),
           ...(source.url ? { url: source.url } : { data }),
         };
         opts.store.put(part, model);
@@ -326,7 +358,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           status(`${f.name} isn't an STL file.`, true);
           continue;
         }
-        await addModel({ buffer: await f.arrayBuffer(), name: partName(f.name) });
+        await addModel({ buffer: await f.arrayBuffer(), name: partName(f.name), file: f.name });
       }
     }
 
@@ -531,7 +563,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         const broken = m instanceof Error;
         const parent = p.parent ? partById(p.parent) : undefined;
         const joint = parent ? `<li class="lyr-scene-row lyr-scene-joint-row${shownJoint === p.id ? " lyr-on" : ""}" style="--depth:${depth}">
-              <button type="button" class="lyr-scene-name" data-joint="${esc(p.id)}" title="Show where they join">${icon("link", 14)}<span>Joint to ${esc(parent.name)}</span></button>
+              <button type="button" class="lyr-scene-name" data-joint="${esc(p.id)}" title="Show where they join">${icon("link", 14)}<span>${esc(p.joint?.point && p.joint.type === "revolute" ? "Turns on" : p.joint?.point && p.joint.type === "prismatic" ? "Slides on" : "Joint to")} ${esc(parent.name)}</span></button>
               <button type="button" class="lyr-btn lyr-icon-btn" data-rejoin="${esc(p.id)}" title="Change the joint: pick the two faces again" aria-label="Change the joint of ${esc(p.name)}">${icon("pencil", 16)}</button>
               <button type="button" class="lyr-btn lyr-icon-btn" data-unjoin="${esc(p.id)}" title="Remove the joint (the part stays where it is)" aria-label="Remove the joint of ${esc(p.name)}">${icon("unlink", 16)}</button>
             </li>` : "";
@@ -599,6 +631,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         case "spin": return p?.joint?.spin || 0;
         case "gap": return p?.joint?.gap || 0;
         case "distance": return p?.joint?.distance || 0;
+        case "lower": return p?.joint?.lower ?? 0;
+        case "upper": return p?.joint?.upper ?? 0;
       }
       return 0;
     }
@@ -620,8 +654,26 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       } else if ((key === "spin" || key === "gap") && p?.joint?.point) {
         if (key === "spin") p.joint.spin = round(wrapAngle(value));
         else p.joint.gap = round(Math.max(-100_000, Math.min(100_000, value)));
+        keepInLimits(p.joint);
         applyJoint(p);
         follow();
+        syncFields();
+      } else if ((key === "lower" || key === "upper") && p?.joint?.type && p.joint.type !== "fixed") {
+        const j = p.joint;
+        const max = j.type === "revolute" ? 180 : 100_000;
+        const v = round(Math.max(-max, Math.min(max, value)));
+        // The other end moves along rather than letting the range turn inside out.
+        if (key === "lower") {
+          j.lower = v;
+          if ((j.upper ?? v) < v) j.upper = v;
+        } else {
+          j.upper = v;
+          if ((j.lower ?? v) > v) j.lower = v;
+        }
+        if (j.point && keepInLimits(j)) {
+          applyJoint(p);
+          follow();
+        }
         syncFields();
       } else if (key === "distance" && p?.joint) {
         p.joint.distance = round(Math.max(0, Math.min(100_000, value)));
@@ -726,7 +778,10 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         }
       }
       child.parent = parent.id;
+      // Picking the faces again keeps how it moves.
+      const was = child.joint?.type ? { type: child.joint.type, lower: child.joint.lower, upper: child.joint.upper } : {};
       child.joint = {
+        ...was,
         normal: f.normal,
         distance: Math.max(10, Math.round(reach + Math.max(size * 0.6, 8))),
         point: f.point,
@@ -991,6 +1046,40 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       if (joining) clearHover();
     });
 
+    /**
+     * Keeps a moving joint's angle (turning) or slide (sliding) inside its
+     * limits. Says whether it moved it.
+     */
+    function keepInLimits(j: PartJoint): boolean {
+      if (j.type !== "revolute" && j.type !== "prismatic") return false;
+      const key = j.type === "revolute" ? "spin" : "gap";
+      const v = j[key] || 0;
+      const to = Math.max(j.lower ?? -Infinity, Math.min(j.upper ?? Infinity, v));
+      if (to === v) return false;
+      j[key] = to;
+      return true;
+    }
+
+    function setJointType(p: ScenePart, type: JointType): void {
+      const j = p.joint;
+      if (!j) return;
+      if (type === "fixed") {
+        delete j.type;
+        delete j.lower;
+        delete j.upper;
+      } else {
+        j.type = type;
+        [j.lower, j.upper] = DEFAULT_LIMITS[type];
+        // The range starts round where it is now, so nothing jumps.
+        const now = type === "revolute" ? j.spin || 0 : j.gap || 0;
+        if (now < j.lower) j.lower = round(now);
+        if (now > j.upper) j.upper = round(now);
+      }
+      renderList();
+      renderProps();
+      commit();
+    }
+
     /** Stops a part following its picked faces once it's placed by hand. Says whether it did. */
     function looseJoint(p: ScenePart): boolean {
       const j = p.joint;
@@ -1024,11 +1113,22 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           : "";
       }
       const picked = !!p.joint?.point;
+      const type: JointType = (picked && p.joint?.type) || "fixed";
+      const turns = type === "revolute";
+      const slides = type === "prismatic";
       return `<div class="lyr-scene-join">
         <p class="lyr-note">Joined to <strong>${esc(parent.name)}</strong>. Its place is from that part, and it moves with it.</p>
-        ${picked ? `<div class="lyr-scene-fields">
-          ${field("spin", "Spin", "°", p.joint?.spin || 0, 1, "Turn it about the joint, keeping the faces together")}
-          ${field("gap", "Gap", "mm", p.joint?.gap || 0, 0.1, "How far it stands off the face")}
+        ${picked ? `<div class="lyr-scene-sub">Joint</div>
+        <div class="lyr-scene-jtypes" role="radiogroup" aria-label="How it moves">
+          ${JOINT_TYPES.map(t => `<button type="button" class="lyr-scene-preset${t.id === type ? " lyr-on" : ""}" role="radio" aria-checked="${t.id === type}" data-jtype="${t.id}" title="${esc(t.detail)}">${esc(t.label)}</button>`).join("")}
+        </div>
+        ${turns || slides ? `<div class="lyr-scene-fields">
+          ${field("lower", "From", turns ? "°" : "mm", p.joint?.lower ?? 0, turns ? 1 : 0.5, turns ? "How far it can turn one way" : "The nearest it slides in")}
+          ${field("upper", "To", turns ? "°" : "mm", p.joint?.upper ?? 0, turns ? 1 : 0.5, turns ? "How far it can turn the other way" : "The furthest it slides out")}
+        </div>` : ""}
+        <div class="lyr-scene-fields">
+          ${field("spin", turns ? "Angle" : "Spin", "°", p.joint?.spin || 0, 1, turns ? "Where it's turned to in this picture, between From and To" : "Turn it about the joint, keeping the faces together")}
+          ${field("gap", slides ? "Slide" : "Gap", "mm", p.joint?.gap || 0, 0.1, slides ? "How far it's slid out in this picture, between From and To" : "How far it stands off the face")}
           ${field("distance", "Explode", "mm", p.joint?.distance || 0, 1, "How far it slides out in the exploded view")}
         </div>` : `<div class="lyr-scene-fields">${field("distance", "Explode", "mm", p.joint?.distance || 0, 1, "How far it slides out in the exploded view")}</div>`}
         <div class="lyr-scene-quick">
@@ -1169,6 +1269,9 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         follow();
         syncFields();
         commit();
+      } else if (b.dataset.jtype) {
+        const p = partById(selectedId);
+        if (p) setJointType(p, b.dataset.jtype as JointType);
       } else if (b.dataset.act === "join") {
         if (selectedId) startJoin(selectedId);
       } else if (b.dataset.act === "unjoin") {
@@ -1233,7 +1336,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           const m = found[Number(b.dataset.model)];
           b.addEventListener("click", () => {
             closeMenu();
-            void addModel({ url: m.url, name: partName(m.title || m.url) });
+            void addModel({ url: m.url, name: partName(m.title || m.url), file: m.title || decodeURIComponent(m.url.split(/[?#]/)[0].split("/").pop() || "") });
           });
           showThumb(b.querySelector<HTMLElement>(".lyr-scene-thumb")!, m);
         });
@@ -1371,6 +1474,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         case "add": if (menu.hidden) void openMenu(); else closeMenu(); break;
         case "upload": closeMenu(); fileInput.click(); break;
         case "fit": fitView(); commit(); break;
+        case "urdf": exportUrdf(); break;
         case "undo": undo(); break;
         case "redo": redo(); break;
         case "cancel": cancel(); break;

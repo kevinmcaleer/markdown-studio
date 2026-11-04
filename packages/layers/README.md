@@ -81,6 +81,15 @@ const editor = mount(el, {
   it (the parent's face tinted blue, the joined part's orange, and the
   points joined); the pencil picks the faces again and the unlink button
   removes the joint, leaving the part where it is.
+- **Joint types**: a joint is **Fixed**, **Turns** (revolute, about the
+  joined faces' normal) or **Slides** (prismatic, along it). A moving joint
+  has From/To limits (degrees or mm), and its Angle or Slide is where it
+  sits in this picture, kept inside them.
+- **URDF** in the top bar downloads the parts as a robot: `robot.urdf` and
+  `meshes/*.stl` in a .zip, in Snakie's conventions (metres, meshes scaled
+  0.001, each joined part's link frame at its joint point, joints at their
+  zero pose with axis and limits), so it opens in Snakie's Build workspace
+  (`src/scene/urdf.ts`).
 - Shapes have **W** and **H** fields for exact sizes. Stretching a box keeps
   its corner size.
 - Smart guides snap to the page's and other layers' edges and middles
