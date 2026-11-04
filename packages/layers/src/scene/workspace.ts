@@ -1089,12 +1089,13 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       renderJointDialog();
       status(half === "child"
         ? `Click the face on “${esc(partById(draft.childId)?.name)}” that meets the other part. Esc to stop.`
-        : "Click where it goes on another part: a face, a corner, an edge, a hole or a round rim. Esc to stop.", false, true);
+        : `Click where it goes on another part: a face, a corner, an edge, a hole or a round rim. Hold ${isMacKeys ? "⌘" : "Ctrl"} to stay on a face while you choose its point. Esc to stop.`, false, true);
       draw();
     }
 
     function stopJoin(message = ""): void {
       joining = null;
+      faceHeld = false;
       clearHover();
       canvasEl.classList.remove("lyr-scene-picking");
       attachGizmo();
@@ -1298,6 +1299,53 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     }
     let hover: Hover | null = null;
     let pointer = { x: 0, y: 0 };
+    // ⌘ (Ctrl elsewhere) held while picking: stay on the face under the
+    // pointer and move between its points, wherever the pointer goes.
+    let faceHeld = false;
+    const isMacKeys = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+    const holdKey = (e: { metaKey: boolean; ctrlKey: boolean }) => (isMacKeys ? e.metaKey : e.ctrlKey);
+    function setFaceHeld(on: boolean): void {
+      if (on === faceHeld) return;
+      faceHeld = on;
+      if (joining && hover) placeSnaps();
+      draw();
+    }
+    /** How far (px) each of the face's round snaps reaches: its circle as drawn. */
+    function snapReach(snaps: Snap[], m: Matrix4, project: (p: Vec3, m: Matrix4) => { x: number; y: number }): number[] {
+      return snaps.map(sn => {
+        if (!sn.radius || !(sn.role === "hole" || sn.role === "rim" || sn.role === "centre" || sn.role === "pocket")) return 0;
+        const n = new Vector3(...sn.n).normalize();
+        const u = new Vector3(1, 0, 0).cross(n);
+        if (u.lengthSq() < 1e-6) u.set(0, 1, 0).cross(n);
+        u.normalize();
+        const w = n.clone().cross(u);
+        const c = project(sn.p, m);
+        let r = 0;
+        for (let k = 0; k < 8; k++) {
+          const a = (k / 8) * Math.PI * 2;
+          const q = new Vector3(...sn.p).addScaledVector(u, Math.cos(a) * sn.radius).addScaledVector(w, Math.sin(a) * sn.radius);
+          const at = project([q.x, q.y, q.z], m);
+          r = Math.max(r, Math.hypot(at.x - c.x, at.y - c.y));
+        }
+        // Inside the circle, a little short of its edge (the edge's own points stay catchable).
+        return r * 0.85;
+      });
+    }
+    /** Whether the pointer is inside one of the hovered face's round snaps, as drawn. */
+    function insideRound(): boolean {
+      if (!hover?.face) return false;
+      const m = hover.mesh.matrixWorld;
+      const project = (p: Vec3, mm: Matrix4) => {
+        const v = new Vector3(...p).applyMatrix4(mm).project(camera);
+        return { x: ((v.x + 1) / 2) * viewW, y: ((1 - v.y) / 2) * viewH };
+      };
+      const reach = snapReach(hover.face.snaps, m, project);
+      return hover.face.snaps.some((sn, i) => {
+        if (!reach[i]) return false;
+        const c = project(sn.p, m);
+        return Math.hypot(c.x - pointer.x, c.y - pointer.y) < reach[i];
+      });
+    }
 
     const ROLE_LABEL: Record<Snap["role"], string> = { centre: "middle of the face", corner: "corner", edge: "middle of the edge", hole: "centre of the hole", rim: "centre of the rim", pocket: "middle of the recess" };
 
@@ -1314,9 +1362,28 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     function hoverAt(e: { clientX: number; clientY: number }): void {
       const r = canvasEl.getBoundingClientRect();
       pointer = { x: e.clientX - r.left, y: e.clientY - r.top };
+      // The face is held: only its points move.
+      if (faceHeld && hover) {
+        placeSnaps();
+        draw();
+        return;
+      }
       art.scene.updateMatrixWorld(true);
       raycaster.setFromCamera(new Vector2((pointer.x / r.width) * 2 - 1, -(pointer.y / r.height) * 2 + 1), camera);
       const hit = raycaster.intersectObjects(pickable(), false).find(h => h.face && h.faceIndex !== undefined);
+      // Over a hole in the face (seeing its wall, another part, or nothing),
+      // the face stays, so the hole's centre can be had. A face parallel to
+      // it on the same part (a counterbore's floor) takes over as usual.
+      if (hover && insideRound()) {
+        const sameSide = hit && hit.object === hover.mesh && Math.abs(hit.face!.normal.clone().normalize().dot(new Vector3(...hover.normal))) > 0.9;
+        const model = hit ? models.get(String(hit.object.userData.partId || "")) : undefined;
+        const other = sameSide && model && !(model instanceof Error) ? topologyOf(model)?.faceAt(hit!.faceIndex!) : null;
+        if (!sameSide || !other || other === hover.face) {
+          placeSnaps();
+          draw();
+          return;
+        }
+      }
       if (!hit) {
         // Off the part, a snap still near the pointer (a hole's centre is
         // over empty space) stays catchable.
@@ -1397,14 +1464,14 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         const snaps = hover.face?.snaps || [];
         const m = hover.mesh.matrixWorld;
         const screen = snaps.map(s => project(s.p, m));
-        hover.snap = nearestSnap(screen, snaps, pointer);
+        hover.snap = nearestSnap(screen, snaps, pointer, 22, 40, snapReach(snaps, m, project), faceHeld);
         screen.forEach((p, i) => {
           marks.push(`<span class="lyr-snap lyr-snap-${snaps[i].role}${i === hover!.snap ? " lyr-on" : ""}" style="left:${p.x}px;top:${p.y}px"></span>`);
         });
         const on = hover.snap >= 0 ? snaps[hover.snap] : null;
         if (on) {
           const p = screen[hover.snap];
-          marks.push(`<span class="lyr-snap-label" style="left:${p.x}px;top:${p.y}px">${esc(ROLE_LABEL[on.role])}</span>`);
+          marks.push(`<span class="lyr-snap-label" style="left:${p.x}px;top:${p.y}px">${esc(ROLE_LABEL[on.role])}${faceHeld ? " · face held" : ""}</span>`);
         }
         if (on?.radius && (on.role === "hole" || on.role === "rim" || on.role === "centre")) {
           const n = new Vector3(...on.n).normalize();
@@ -1439,6 +1506,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     let hoverQueued = 0;
     canvasEl.addEventListener("pointermove", e => {
       if (!joining || e.buttons) return;
+      faceHeld = holdKey(e) && !!hover;
       const at = { clientX: e.clientX, clientY: e.clientY };
       cancelAnimationFrame(hoverQueued);
       hoverQueued = requestAnimationFrame(() => joining && hoverAt(at));
@@ -2280,6 +2348,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       e.stopPropagation();
       const mod = e.metaKey || e.ctrlKey;
       const key = e.key.toLowerCase();
+      if (joining && (e.key === "Meta" || e.key === "Control")) setFaceHeld(holdKey(e) && !!hover);
       if (e.key === "Shift") {
         gizmo.setTranslationSnap(5);
         gizmo.setRotationSnap(15 * DEG);
@@ -2326,6 +2395,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       }
     };
     const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === "Meta" || e.key === "Control") setFaceHeld(false);
       if (e.key === "Shift") {
         gizmo.setTranslationSnap(null);
         gizmo.setRotationSnap(null);

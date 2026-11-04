@@ -1,6 +1,6 @@
 import { BoxGeometry, type BufferGeometry, ExtrudeGeometry, LatheGeometry, Path, Shape, Vector2 } from "three";
 import { describe, expect, it } from "vitest";
-import { Topology, type Snap } from "./snaps";
+import { nearestSnap, Topology, type Snap } from "./snaps";
 
 const soup = (g: BufferGeometry) => (g.index ? g.toNonIndexed() : g).getAttribute("position").array as ArrayLike<number>;
 const r = (v: number[]) => v.map(n => Math.round(n * 100) / 100 + 0);
@@ -139,5 +139,19 @@ describe("snaps", () => {
     const top = of(face.snaps, "rim").find(s => s.p[2] > 4)!;
     expect(r(top.p)).toEqual([0, 0, 5]);
     expect(r(top.n)).toEqual([0, 0, 1]);
+  });
+
+  it("takes a wide hole's centre from anywhere inside it, and any point while the face is held", () => {
+    const snaps: Snap[] = [
+      { p: [0, 0, 0], n: [0, 0, 1], role: "hole", radius: 10 },
+      { p: [0, 0, 0], n: [0, 0, 1], role: "corner" },
+    ];
+    const screen = [{ x: 100, y: 100 }, { x: 300, y: 100 }];
+    // 80 px from the hole's centre: out of its usual 40 px reach…
+    expect(nearestSnap(screen, snaps, { x: 180, y: 100 })).toBe(-1);
+    // …but inside the hole as drawn (100 px across its radius).
+    expect(nearestSnap(screen, snaps, { x: 180, y: 100 }, 22, 40, [100, 0])).toBe(0);
+    // Held: the nearest point, however far.
+    expect(nearestSnap(screen, snaps, { x: 250, y: 400 }, 22, 40, [], true)).toBe(1);
   });
 });
