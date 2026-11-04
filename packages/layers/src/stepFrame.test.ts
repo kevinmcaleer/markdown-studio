@@ -34,3 +34,15 @@ describe("turnedFromDefault", () => {
     expect(turnedFromDefault(s, { ...model, defaultView: undefined })).toBeNull();
   });
 });
+
+describe("fixings and the inventory", () => {
+  it("counts small parts as fixings by their middle dimension", async () => {
+    const { isFastener, inventoryOf } = await import("./stepFrame");
+    expect(isFastener([5.5, 5.5, 20])).toBe(true); // an M3 screw, 20 long
+    expect(isFastener([7, 7, 2.4])).toBe(true); // a nut
+    expect(isFastener([40, 40, 3])).toBe(false); // a plate
+    expect(isFastener([3, 60, 3])).toBe(true); // an axle
+    const list = inventoryOf([part("a", "plate.stl", { hidden: true }), part("b", "screw.stl", { ghost: true }), part("c", "screw.stl"), part("d", "plate.stl")]);
+    expect(list.map(g => [g.part.url, g.count])).toEqual([["plate.stl", 2], ["screw.stl", 2]]);
+  });
+});

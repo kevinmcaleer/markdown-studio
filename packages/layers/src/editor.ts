@@ -24,7 +24,7 @@ import type { ModelStore } from "./scene/render";
 import type { SceneModel } from "./scene/workspace";
 import { isDetail, isScene, placeholderPicture, SceneLayer } from "./sceneLayer";
 import { snap, type Box, type Guide } from "./snap";
-import { partsInStep, TURNED_DEGREES, turnedFromDefault } from "./stepFrame";
+import { inventoryOf, isFastener, partsInStep, TURNED_DEGREES, turnedFromDefault } from "./stepFrame";
 import css from "./layers.css?inline";
 
 FabricObject.customProperties = ["name", "layerId", "layerLocked", "badge", "badgePinned", "boundTo", "partsStrip", "stepArrow", "turnMark", "detailOf"];
@@ -1221,6 +1221,98 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     }
   }
 
+  /**
+   * The project's parts list, as the first page of a flat-pack sheet: every
+   * kind of part drawn at one scale with its name and count, and the
+   * fixings (small parts) together in a box at the bottom, each with its
+   * count. From the project's model, or the first 3D scene's parts.
+   */
+  async function partsInventory(): Promise<void> {
+    const model = await getProjectModel();
+    const first = objects().find((o): o is SceneLayer => isScene(o) && !isDetail(o) && !!o.scene?.parts.length);
+    const parts = model?.parts.length ? model.parts : first?.scene ? normalizeScene(first.scene).parts : [];
+    const style = first?.scene ? normalizeScene(first.scene).style : blankScene().style;
+    const direction = first?.scene ? normalizeScene(first.scene).camera.direction : blankScene().camera.direction;
+    if (!parts.length) return status("No parts yet: add a 3D scene with the project's parts first, then the parts list.", true);
+    status("Drawing the parts…", false, true);
+    try {
+      const t = await sceneTools();
+      const thumbnailer = new t.Thumbnailer();
+      const made: FabricObject[] = [];
+      try {
+        const kinds = [];
+        for (const g of inventoryOf(parts)) {
+          const m = await t.store.get(g.part);
+          if (destroyed) return;
+          kinds.push({ ...g, size: m.size, radius: Math.hypot(...m.size) / 2, model: m });
+        }
+        const big = kinds.filter(k => !isFastener(k.size));
+        const small = kinds.filter(k => isFastener(k.size));
+        const maxR = Math.max(1, ...big.map(k => k.radius));
+        const margin = Math.round(W * 0.05);
+        const labelPx = Math.round(Math.min(W, H) * 0.032);
+        let y = margin;
+        made.push(tbox("Parts", { left: margin, top: y, width: W * 0.4, fontSize: Math.round(Math.min(W, H) * 0.07), fontWeight: "800" }));
+        y += Math.round(Math.min(W, H) * 0.11);
+        // The big parts in a grid, each drawn to the same scale (the biggest fills its cell).
+        const cols = Math.max(1, Math.min(4, Math.ceil(Math.sqrt(big.length))));
+        const cell = Math.floor((W - margin * 2) / cols);
+        const boxH = small.length ? Math.round(H * 0.22) : 0;
+        const rows = Math.max(1, Math.ceil(big.length / cols));
+        const cellH = Math.max(labelPx * 3, Math.floor((H - y - margin - boxH - (small.length ? margin : 0)) / rows));
+        const pic = Math.max(16, Math.min(cell, cellH - labelPx * 2.6) - margin / 2);
+        for (let i = 0; i < big.length; i++) {
+          const k = big[i];
+          const x = margin + (i % cols) * cell;
+          const top = y + Math.floor(i / cols) * cellH;
+          const px = Math.max(pic * 0.3, pic * (k.radius / maxR));
+          const img = await FabricImage.fromURL(thumbnailer.draw(k.model, style, direction, Math.round(px * 2)));
+          img.scaleToWidth(px);
+          img.set({ left: x + (cell - px) / 2, top: top + (pic - px) / 2 });
+          Object.assign(img, { name: k.part.name || "Part", layerId: newId() });
+          made.push(img, tbox(`${k.count}x ${k.part.name || "part"}`, { left: x, top: top + pic + labelPx * 0.4, width: cell, fontSize: labelPx, fontWeight: "600", textAlign: "center" }));
+        }
+        if (small.length) {
+          // The fixings together in a box, each at a size that shows it, with its count.
+          const top = H - margin - boxH;
+          made.push(named(new Rect({ left: margin, top, width: W - margin * 2, height: boxH, rx: 24, ry: 24, fill: "#ffffff", stroke: INK, strokeWidth: Math.max(3, Math.round(Math.min(W, H) * 0.005)), strokeUniform: true }), "Fixings"));
+          const perRow = Math.min(small.length, 6);
+          const slot = Math.floor((W - margin * 2) / perRow);
+          const px = Math.max(16, Math.min(boxH - labelPx * 2.4, slot * 0.6));
+          for (const [i, k] of small.slice(0, 12).entries()) {
+            const x = margin + (i % perRow) * slot + (slot - px) / 2;
+            const yy = top + margin * 0.4 + Math.floor(i / perRow) * (px + labelPx * 1.6);
+            const img = await FabricImage.fromURL(thumbnailer.draw(k.model, style, direction, Math.round(px * 2)));
+            if (destroyed) return;
+            img.scaleToWidth(px);
+            img.set({ left: x, top: yy });
+            Object.assign(img, { name: k.part.name || "Fixing", layerId: newId() });
+            made.push(img, tbox(`${k.count}x`, { left: x - px * 0.5, top: yy + px + labelPx * 0.2, width: px * 2, fontSize: labelPx, fontWeight: "700", textAlign: "center" }));
+          }
+        }
+      } finally {
+        thumbnailer.dispose();
+      }
+      if (destroyed) return;
+      made.forEach(o => {
+        prepare(o);
+        canvas.add(o);
+      });
+      selectAll(made);
+      canvas.requestRenderAll();
+      status(`${parts.length} parts listed.`);
+      changed();
+    } catch (e) {
+      status(e instanceof Error && e.message ? `The parts couldn't be drawn: ${e.message}` : "The parts couldn't be drawn.", true);
+    }
+  }
+  const tbox = (text: string, o: Record<string, unknown>) => {
+    const t = new Textbox(text, { fontFamily: FONTS[0][1], fill: INK, ...o });
+    Object.assign(t, { name: text, layerId: newId() });
+    return t;
+  };
+  const named = <T extends FabricObject>(o: T, name: string): T => Object.assign(o, { name, layerId: newId() });
+
   /** After a scene is drawn again: its parts strip and detail circles follow, and the turn mark comes or goes. */
   async function followScene(layer: SceneLayer, firstDone = false): Promise<void> {
     if (destroyed || !canvas.contains(layer) || isDetail(layer)) return;
@@ -2268,6 +2360,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
         });
         numberStep();
         if (t.scene) void addScene(undefined, t.scene);
+        else if (t.inventory) void partsInventory();
         else selectAll(list);
       }
     }

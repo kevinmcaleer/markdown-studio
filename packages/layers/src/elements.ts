@@ -265,6 +265,8 @@ export interface Template {
   background?: string;
   /** Where a 3D scene goes, as fractions of the page; it opens to add parts. */
   scene?: { left: number; top: number; width: number; height: number };
+  /** The project's parts list: every part drawn at one scale with its count (the editor builds it from the model). */
+  inventory?: boolean;
 }
 
 const tb = (text: string, o: Record<string, unknown>) => named(new Textbox(text, { fontFamily: FONTS[0][1], fill: INK, ...o }), text);
@@ -289,6 +291,14 @@ export const TEMPLATES: Template[] = [
       named(new Polygon([{ x: 0, y: h * 0.55 }, { x: w, y: h * 0.38 }, { x: w, y: h }, { x: 0, y: h }], { fill: "#d6d6d6", strokeWidth: 0, objectCaching: false }), "Floor"),
       ...stepHeading(w, h),
     ],
+  },
+  {
+    id: "parts-list",
+    label: "Parts list",
+    detail: "Every part in the project at one scale, with counts; fixings in a box",
+    background: "#ffffff",
+    inventory: true,
+    build: () => [],
   },
   {
     id: "step-heading",
