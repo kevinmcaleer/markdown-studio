@@ -780,3 +780,6 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 .lyr-scene-placing:disabled .lyr-scene-scrub { cursor: default; pointer-events: none; }
 .lyr-scene-locked-note { display: flex; gap: 6px; align-items: flex-start; }
 .lyr-scene-locked-note .lyr-icon { flex: 0 0 auto; margin-top: 2px; color: #1f6fe0; }
+/* How many joints explode on their own, beside the main Explode slider. */
+.lyr-btn.lyr-scene-explode-follow { gap: 3px; padding: 0 6px; height: 28px; color: #1f6fe0; font-size: 12px; font-weight: 600; }
+.lyr-scene-explode-follow[hidden] { display: none; }
