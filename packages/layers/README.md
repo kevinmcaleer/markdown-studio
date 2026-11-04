@@ -20,6 +20,9 @@ const editor = mount(el, {
   listImages: async () => [{ url, title }],   // offered under Uploads
   listModels: async () => [{ url, title, thumbnail }],   // STL files offered in a 3D scene; thumbnail (optional) is an image URL or () => Promise<Blob|URL>, else the model is drawn
   fetchModel: url => fetch(url, { credentials: "include" }).then(r => r.arrayBuffer()),
+  loadModel: async () => model,      // the project's 3D model ({ version, stamp, parts } or null); with saveModel, scenes share it
+  saveModel: async model => { ... }, // store it; called on a scene's Done when its parts or joints changed
+  updateScenes: false,               // true: draw every 3D picture again from the model as it opens (Update / Next step)
   onDone: async ({ png, doc, title }) => { /* upload png, put it in the page */ },
   onCancel: () => editor.destroy(),
 });
@@ -81,6 +84,30 @@ const editor = mount(el, {
   it (the parent's face tinted blue, the joined part's orange, and the
   points joined); the pencil picks the faces again and the unlink button
   removes the joint, leaving the part where it is.
+- **Joint types**: a joint is **Fixed**, **Turns** (revolute, about the
+  joined faces' normal) or **Slides** (prismatic, along it). A moving joint
+  has From/To limits (degrees or mm), and its Angle or Slide is where it
+  sits in this picture, kept inside them.
+- **URDF** in the top bar downloads the parts as a robot: `robot.urdf` and
+  `meshes/*.stl` in a .zip, in Snakie's conventions (metres, meshes scaled
+  0.001, each joined part's link frame at its joint point, joints at their
+  zero pose with axis and limits), so it opens in Snakie's Build workspace
+  (`src/scene/urdf.ts`).
+- **One project model**: with the host's `loadModel`/`saveModel`, a
+  project's 3D scenes share one model of parts and joints. A new scene shows
+  all of it; each scene keeps only what it shows of each part (the eye,
+  ghost and highlight buttons in the parts list), plus its own camera,
+  explode and style. Done saves any change to the parts or joints as a new
+  version (`stamp`), and a scene opened again follows the model (parts new
+  to it start hidden). A scene from before there was a model becomes the
+  model, or, when one exists, offers **Use the project model**.
+- **Out of date**: a 3D picture drawn from an older version of the model has
+  an amber frame and "Out of date" in the editor (never in the saved PNG),
+  and **Update picture** on its bar. Nothing is redrawn without asking.
+- **Next step** (`nextStepDoc` in doc.ts): a copy of a graphic whose 3D
+  scenes show what was shown as ghosts (fitted already) and whose step
+  numbers go up by one. The Markdown editor offers it on graphics with a 3D
+  scene, and an "Out of date · Update" mark on ones behind the model.
 - Shapes have **W** and **H** fields for exact sizes. Stretching a box keeps
   its corner size.
 - Smart guides snap to the page's and other layers' edges and middles

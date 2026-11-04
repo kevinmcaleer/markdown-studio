@@ -16,9 +16,21 @@ export function layersUrl(url: string): string {
   return url.trim().replace(/#.*$/, "") + LAYERS_MARK;
 }
 
+/** Fired on window when the project's 3D model is saved, so graphics check whether they're out of date. */
+export const LAYERS_MODEL_EVENT = "layers-model-changed";
+
+export type LayersOpenHow = {
+  /** Draw its 3D pictures again from the project's model as it opens. */
+  update?: boolean;
+  /** Start a new graphic after this one, as its next assembly step. */
+  nextStep?: boolean;
+};
+
 export type LayersOpener = {
   /** Opens the picture whose Markdown starts at `pos` in Layers, in the page or full screen. */
-  open(view: EditorView, pos: number, mode?: "inline" | "full"): void;
+  open(view: EditorView, pos: number, mode?: "inline" | "full", how?: LayersOpenHow): void;
+  /** Whether the graphic at `url` has 3D scenes, and how many are behind the project's model (null: can't tell). */
+  status?(url: string): Promise<{ scene: boolean; stale: number } | null>;
 };
 
 export const layersOpener = Facet.define<LayersOpener, LayersOpener | null>({

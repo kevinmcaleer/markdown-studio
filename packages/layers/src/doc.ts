@@ -118,3 +118,63 @@ export function exportScales(w: number, h: number): number[] {
   const best = Math.max(1, Math.min(2, 4096 / Math.max(w, h, 1)));
   return [...new Set([best, Math.min(best, 1.5), 1])];
 }
+
+// ------------------------------------------------------------ 3D scenes in a document
+
+type SceneRecord = Record<string, unknown> & { scene?: { model?: { stamp?: number }; parts?: Record<string, unknown>[] } };
+function* sceneRecords(objects: Record<string, unknown>[]): Generator<SceneRecord> {
+  for (const o of objects) {
+    if (String(o.type).toLowerCase() === "scenelayer" && o.scene && typeof o.scene === "object") yield o as SceneRecord;
+    if (Array.isArray(o.objects)) yield* sceneRecords(o.objects as Record<string, unknown>[]);
+  }
+}
+
+/** How many of the graphic's 3D scenes were drawn from a version of the project's model older than `stamp`. */
+export function staleScenes(doc: LayersDoc | null, stamp: number): number {
+  if (!doc) return 0;
+  let n = 0;
+  for (const o of sceneRecords(doc.objects)) {
+    const at = o.scene?.model?.stamp;
+    if (typeof at === "number" && at < stamp) n++;
+  }
+  return n;
+}
+
+/** Whether the graphic has a 3D scene. */
+export function hasScene(doc: LayersDoc | null): boolean {
+  return !!doc && !sceneRecords(doc.objects).next().done;
+}
+
+/**
+ * The next assembly step after `doc`: its 3D scenes' shown parts become
+ * ghosts (fitted already) with nothing highlighted, and its step numbers go
+ * up by one. Its pictures need drawing again (mount with updateScenes).
+ */
+export function nextStepDoc(doc: LayersDoc): LayersDoc {
+  const out = structuredClone(doc);
+  for (const o of sceneRecords(out.objects)) {
+    for (const p of o.scene?.parts || []) {
+      delete p.highlight;
+      if (!p.hidden) p.ghost = true;
+    }
+  }
+  const bump = (objects: Record<string, unknown>[]) => {
+    for (const o of objects) {
+      if (typeof o.badge === "number" && o.badge > 0 && Array.isArray(o.objects)) {
+        const n = Math.min(999, o.badge + 1);
+        o.badge = n;
+        if (typeof o.name === "string" && /^Step \d+$/.test(o.name)) o.name = `Step ${n}`;
+        for (const c of o.objects as Record<string, unknown>[]) {
+          if (typeof c.text === "string" && /^\d+$/.test(c.text)) {
+            c.text = String(n);
+            c.fontSize = n > 99 ? 30 : n > 9 ? 36 : 44;
+          }
+        }
+      } else if (Array.isArray(o.objects)) bump(o.objects as Record<string, unknown>[]);
+    }
+  };
+  bump(out.objects);
+  // A title that ends in a number counts on too: "Step 3" → "Step 4".
+  if (out.title) out.title = out.title.replace(/(\d+)(\D*)$/, (_, d: string, rest: string) => `${Number(d) + 1}${rest}`);
+  return out;
+}
