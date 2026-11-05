@@ -102,4 +102,20 @@ describe("screws", () => {
       expect(m.normal).toEqual([0, 0, -1]);
     });
   }
+  it("makes a heat-set insert, sized from its hole, pressed in flush", () => {
+    expect(fitDiameter(2, "insert")).toBe(3); // a 4 mm insert hole
+    expect(fitDiameter(2.8, "insert")).toBe(4);
+    expect(fitLength(3, { depth: 3, through: true }, "insert")).toBe(5.7);
+    expect(fitLength(3, { depth: 4.2, through: false }, "insert")).toBe(4);
+    expect(screwName({ d: 3, length: 5.7, head: "insert" })).toBe("M3 × 5.7 heat-set insert");
+    const m = screwMesh({ d: 3, length: 5.7, head: "insert" });
+    expect(volume(m.positions)).toBeGreaterThan(0);
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 2; i < m.positions.length; i += 3) {
+      lo = Math.min(lo, m.positions[i]);
+      hi = Math.max(hi, m.positions[i]);
+    }
+    expect(hi - lo).toBeCloseTo(5.7, 3);
+    expect(m.contact[2]).toBeCloseTo(hi, 5);
+  });
 });

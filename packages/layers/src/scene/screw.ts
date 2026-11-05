@@ -11,7 +11,8 @@
 
 import type { Topology, Snap, V3 } from "./snaps";
 
-export type ScrewHead = "socket" | "button" | "countersunk" | "pan";
+/** A screw's head, or "insert": a brass heat-set insert that a screw goes into. */
+export type ScrewHead = "socket" | "button" | "countersunk" | "pan" | "insert";
 
 export interface ScrewSpec {
   /** Thread size in mm: 3 for M3. */
@@ -30,16 +31,19 @@ interface Size {
   countersunk: [number, number, number];
   /** A Phillips pan head: diameter, height and the cross's width. */
   pan: [number, number, number];
+  /** A heat-set insert: outside diameter, length, and the hole it's pressed into. */
+  insert: [number, number, number];
 }
 
-// ISO 4762 (socket cap), ISO 7380 (button), ISO 10642 (countersunk) and ISO 7045 (Phillips pan).
+// ISO 4762 (socket cap), ISO 7380 (button), ISO 10642 (countersunk) and ISO 7045 (Phillips pan);
+// heat-set inserts at the common sizes for 3D prints (CNC Kitchen's standard ones).
 export const SCREW_SIZES: Size[] = [
-  { d: 2, pitch: 0.4, socket: [3.8, 2, 1.5], button: [3.5, 1.3, 1.3], countersunk: [4.4, 1.2, 1.3], pan: [4, 1.6, 2] },
-  { d: 2.5, pitch: 0.45, socket: [4.5, 2.5, 2], button: [4.7, 1.4, 1.5], countersunk: [5.5, 1.5, 1.5], pan: [5, 1.75, 2.6] },
-  { d: 3, pitch: 0.5, socket: [5.5, 3, 2.5], button: [5.7, 1.65, 2], countersunk: [6.72, 1.86, 2], pan: [5.6, 2.4, 3] },
-  { d: 4, pitch: 0.7, socket: [7, 4, 3], button: [7.6, 2.2, 2.5], countersunk: [8.96, 2.48, 2.5], pan: [8, 3.1, 4.4] },
-  { d: 5, pitch: 0.8, socket: [8.5, 5, 4], button: [9.5, 2.75, 3], countersunk: [11.2, 3.1, 3], pan: [9.5, 3.7, 4.9] },
-  { d: 6, pitch: 1, socket: [10, 6, 5], button: [10.5, 3.3, 4], countersunk: [13.44, 3.72, 4], pan: [12, 4.6, 6.9] },
+  { d: 2, pitch: 0.4, socket: [3.8, 2, 1.5], button: [3.5, 1.3, 1.3], countersunk: [4.4, 1.2, 1.3], pan: [4, 1.6, 2], insert: [3.6, 3, 3.2] },
+  { d: 2.5, pitch: 0.45, socket: [4.5, 2.5, 2], button: [4.7, 1.4, 1.5], countersunk: [5.5, 1.5, 1.5], pan: [5, 1.75, 2.6], insert: [4, 4, 3.6] },
+  { d: 3, pitch: 0.5, socket: [5.5, 3, 2.5], button: [5.7, 1.65, 2], countersunk: [6.72, 1.86, 2], pan: [5.6, 2.4, 3], insert: [4.6, 5.7, 4] },
+  { d: 4, pitch: 0.7, socket: [7, 4, 3], button: [7.6, 2.2, 2.5], countersunk: [8.96, 2.48, 2.5], pan: [8, 3.1, 4.4], insert: [6.3, 8.1, 5.6] },
+  { d: 5, pitch: 0.8, socket: [8.5, 5, 4], button: [9.5, 2.75, 3], countersunk: [11.2, 3.1, 3], pan: [9.5, 3.7, 4.9], insert: [7.1, 9.5, 6.4] },
+  { d: 6, pitch: 1, socket: [10, 6, 5], button: [10.5, 3.3, 4], countersunk: [13.44, 3.72, 4], pan: [12, 4.6, 6.9], insert: [8.7, 12.7, 8] },
 ];
 
 export const SCREW_LENGTHS = [3, 4, 5, 6, 8, 10, 12, 14, 16, 18, 20, 25, 30, 35, 40, 45, 50];
@@ -48,6 +52,7 @@ export const SCREW_HEADS: { id: ScrewHead; label: string; detail: string }[] = [
   { id: "socket", label: "Socket cap", detail: "A round head with a hex key socket" },
   { id: "button", label: "Button", detail: "A low domed head" },
   { id: "countersunk", label: "Countersunk", detail: "Sits flush in a countersunk hole" },
+  { id: "insert", label: "Heat-set insert", detail: "A knurled brass insert pressed into a printed hole, for a screw to go into" },
   { id: "pan", label: "Pan (Phillips)", detail: "A rounded head with a cross, like the screws that come with STS3215 servos" },
 ];
 
@@ -55,12 +60,17 @@ const sizeOf = (d: number): Size => SCREW_SIZES.find(s => s.d === d) || SCREW_SI
 
 /** "M3 × 8", "M2.5 × 6 button", "M4 × 10 countersunk". */
 export function screwLabel(s: ScrewSpec): string {
-  return `M${s.d} × ${s.length}${s.head === "socket" ? "" : ` ${s.head}`}`;
+  return `M${s.d} × ${s.length}${s.head === "socket" || s.head === "insert" ? "" : ` ${s.head}`}`;
 }
 
-/** The part's name: "M3 × 8 screw". */
+/** What it is: "screw", or "insert" for a heat-set insert. */
+export function screwNoun(s: Pick<ScrewSpec, "head">): string {
+  return s.head === "insert" ? "insert" : "screw";
+}
+
+/** The part's name: "M3 × 8 screw", "M3 × 5.7 heat-set insert". */
 export function screwName(s: ScrewSpec): string {
-  return `${screwLabel(s)} screw`;
+  return s.head === "insert" ? `${screwLabel(s)} heat-set insert` : `${screwLabel(s)} screw`;
 }
 
 /** The file name its model is given (for a URDF's meshes): "M3x8-socket.stl". */
@@ -75,7 +85,7 @@ export function normalizeScrew(value: unknown): ScrewSpec | null {
   const d = Number(v.d);
   const length = Number(v.length);
   if (!SCREW_SIZES.some(s => s.d === d) || !Number.isFinite(length) || length < 1 || length > 200) return null;
-  const head: ScrewHead = v.head === "button" || v.head === "countersunk" || v.head === "pan" ? v.head : "socket";
+  const head: ScrewHead = v.head === "button" || v.head === "countersunk" || v.head === "pan" || v.head === "insert" ? v.head : "socket";
   return { d, length: Math.round(length * 10) / 10, head };
 }
 
@@ -89,6 +99,12 @@ export function normalizeScrew(value: unknown): ScrewSpec | null {
  */
 export function fitDiameter(radius: number, head: ScrewHead = "socket"): number {
   const D = radius * 2;
+  // An insert's hole is wider than its thread: the size whose hole it is.
+  if (head === "insert") {
+    let best = SCREW_SIZES[0];
+    for (const s of SCREW_SIZES) if (Math.abs(s.insert[2] - D) < Math.abs(best.insert[2] - D)) best = s;
+    return best.d;
+  }
   if (head === "countersunk") {
     const sink = SCREW_SIZES.find(s => Math.abs(s.countersunk[0] - D) / s.countersunk[0] < 0.1);
     if (sink && D > sink.d * 1.4) return sink.d;
@@ -103,7 +119,12 @@ export function fitDiameter(radius: number, head: ScrewHead = "socket"): number 
  * in it; a hole right through takes one through the part with about one
  * and a half times its size to spare (into the part behind, or a nut).
  */
-export function fitLength(d: number, hole: { depth: number; through: boolean }): number {
+export function fitLength(d: number, hole: { depth: number; through: boolean }, head: ScrewHead = "socket"): number {
+  // An insert comes in its own length, shortened only to fit a shallow blind hole.
+  if (head === "insert") {
+    const own = sizeOf(d).insert[1];
+    return !hole.through && hole.depth < own ? Math.max(2, Math.floor(hole.depth * 2) / 2) : own;
+  }
   if (hole.through) {
     const want = hole.depth + 1.5 * d;
     return SCREW_LENGTHS.find(l => l >= want - 0.2) ?? SCREW_LENGTHS[SCREW_LENGTHS.length - 1];
@@ -248,6 +269,7 @@ interface Built {
  * coarser than it is on the smallest screws, so it still reads.
  */
 export function screwMesh(spec: ScrewSpec): Built {
+  if (spec.head === "insert") return insertMesh(spec);
   const size = sizeOf(spec.d);
   const [dk, k, s] = size[spec.head];
   const R = spec.d / 2;
@@ -342,4 +364,59 @@ export function screwMesh(spec: ScrewSpec): Built {
 /** How far a screw is drawn out of its hole in an exploded view: clear of it, with room to see the hole. */
 export function screwLift(spec: ScrewSpec): number {
   return Math.round(spec.length + Math.max(spec.length * 0.6, 8));
+}
+
+/**
+ * A heat-set insert: a tube with two knurled bands that twist opposite
+ * ways, a plain groove between them and a plain lip at the top, its bore
+ * the screw's size. Its axis is Z, top up; it meets the part at its top
+ * (pressed in flush), facing down into the hole.
+ */
+function insertMesh(spec: ScrewSpec): Built {
+  const od = sizeOf(spec.d).insert[0];
+  const L = spec.length;
+  const R = od / 2;
+  const bore = spec.d / 2 - 0.05;
+  const N = 72;
+  const ridges = 12;
+  const deep = Math.min(0.25, R * 0.08);
+  // A knurled ring: ridges round the tube (sharp tops and floors, so each
+  // draws one line), turned by `twist` radians, so a band's ridges slant.
+  type Ring = { r: number | ((j: number) => number); z: number; twist?: number };
+  const ridge = (j: number) => {
+    const u = ((j * ridges) / N) % 1;
+    return R - deep * Math.abs(1 - 2 * u);
+  };
+  const rings: Ring[] = [];
+  const lip = Math.min(0.6, L * 0.12);
+  const groove = Math.min(0.6, L * 0.1);
+  const band = (L - lip - groove - 0.3) / 2;
+  const turn = (0.45 * band) / R;
+  const bottom = -L / 2, top = L / 2;
+  const b1 = bottom + 0.3, b2 = b1 + band, b3 = b2 + groove, b4 = top - lip;
+  // From the bottom's outer edge (a small chamfer), up the outside, in over the top, down the bore and out across the bottom.
+  rings.push({ r: R - 0.25, z: bottom });
+  // Each band in short steps, so its slanting faces stay flat and fold only along the ridges.
+  const knurled = (z0: number, z1: number, t0: number, t1: number) => {
+    const n = 8;
+    for (let i = 0; i <= n; i++) rings.push({ r: ridge, z: z0 + ((z1 - z0) * i) / n, twist: t0 + ((t1 - t0) * i) / n });
+  };
+  knurled(b1, b2, 0, turn);
+  rings.push({ r: R - deep * 1.4, z: b2 + 0.05 }, { r: R - deep * 1.4, z: b3 - 0.05 });
+  knurled(b3, b4, turn, 0);
+  rings.push({ r: R - deep, z: b4 + 0.05 }, { r: R - deep, z: top });
+  rings.push({ r: bore + 0.2, z: top }, { r: bore, z: top - 0.2 }, { r: bore, z: bottom }, { r: R - 0.25, z: bottom });
+  const pts: number[] = [];
+  const at = (ring: Ring, j: number): V3 => {
+    const th = (j % N) * ((2 * Math.PI) / N) + (ring.twist || 0);
+    const r = typeof ring.r === "function" ? ring.r(j % N) : ring.r;
+    return [r * Math.cos(th), r * Math.sin(th), ring.z];
+  };
+  for (let i = 0; i + 1 < rings.length; i++) {
+    for (let j = 0; j < N; j++) {
+      const a = at(rings[i], j), b = at(rings[i], j + 1), c = at(rings[i + 1], j + 1), d = at(rings[i + 1], j);
+      pts.push(...a, ...b, ...c, ...a, ...c, ...d);
+    }
+  }
+  return { positions: Float32Array.from(pts), contact: [0, 0, top], normal: [0, 0, -1] };
 }
