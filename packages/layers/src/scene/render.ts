@@ -28,7 +28,8 @@ import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import type { SceneCamera, SceneData, ScenePart, SceneStyle, SectionPlane, Vec3 } from "./model";
 import { explodeOf, highlightedParts, sectionKeeps, sectionOrigin, shownAs } from "./model";
-import { wireTriangles } from "./wire";
+import { wireMesh } from "./wire";
+import { coresOf } from "./wireSpec";
 import { readStep, isStepFile, mergeBodies, type StepBody } from "./step";
 import { bounds, fromBase64, parseStl, stlFaces } from "./stl";
 import { isPacked, unpackMesh } from "./mesh";
@@ -99,7 +100,9 @@ export function emptyModel(): Model {
 /** A wire's tube in the world, for parts placed by `world`. */
 function wireGeometry(part: ScenePart, world: Map<string, Matrix4>): BufferGeometry {
   const g = new BufferGeometry();
-  g.setAttribute("position", new BufferAttribute(wireTriangles(part, world), 3));
+  const m = wireMesh(part, world);
+  g.setAttribute("position", new BufferAttribute(m.positions, 3));
+  g.setAttribute("color", new BufferAttribute(m.colors, 3));
   g.computeBoundingBox();
   g.computeBoundingSphere();
   return g;
@@ -407,7 +410,9 @@ export class LineArt {
       group.visible = idGroup.visible = !part.hidden;
       this.scene.add(group);
       this.idScene.add(idGroup);
-      this.objects.push({ part: own, model, group, fill, lines, idGroup, tube });
+      const o: PartObjects = { part: own, model, group, fill, lines, idGroup, tube };
+      this.objects.push(o);
+      if (own.wire) this.paint(o, lit);
     });
     this.makeCaps();
     this.drawDraft(world, explode);
@@ -651,6 +656,36 @@ export class LineArt {
     return part.ghost ? style.fill : lit.has(part.id) ? style.highlight : style.fill;
   }
 
+  /**
+   * Fills a part: a wire (or a cable's wires) each in its own colour, by
+   * corner, made stronger when it's picked; anything else, and a ghosted
+   * wire, in one colour.
+   */
+  private paint(o: PartObjects, lit: Set<string>): void {
+    const mat = o.fill.material as MeshBasicMaterial;
+    const wire = o.part.wire;
+    const colours = o.fill.geometry.getAttribute("color") as BufferAttribute | undefined;
+    const each = !!wire && !!colours && !shownAs(o.part, this.look).ghost;
+    if (mat.vertexColors !== each) {
+      mat.vertexColors = each;
+      mat.needsUpdate = true;
+    }
+    if (!each) {
+      mat.color.set(this.fillOf(o.part, lit));
+      return;
+    }
+    mat.color.set("#ffffff");
+    const cores = coresOf(wire!);
+    const per = Math.floor(colours!.count / cores.length);
+    const c = new Color();
+    const picked = o.part.id === this.selected;
+    cores.forEach((core, i) => {
+      c.set(picked ? selectedFill(core.color) : core.color);
+      for (let v = i * per; v < (i + 1) * per; v++) colours!.setXYZ(v, c.r, c.g, c.b);
+    });
+    colours!.needsUpdate = true;
+  }
+
   /** Marks the part picked in the workspace ("" for none), refilling the parts without rebuilding them. */
   setSelected(id: string): void {
     if (id === this.selected) return;
@@ -659,7 +694,7 @@ export class LineArt {
     const lit = highlightedParts(this.objects.map(o => o.part));
     for (const o of this.objects) {
       const c = this.fillOf(o.part, lit);
-      (o.fill.material as MeshBasicMaterial).color.set(c);
+      this.paint(o, lit);
       const cap = o.caps?.main.material as ShaderMaterial | undefined;
       if (cap) (cap.uniforms.fill.value as Color).set(c);
     }
@@ -669,6 +704,7 @@ export class LineArt {
   move(parts: ScenePart[], explode = 0): void {
     const world = worldMatrices(parts, explode);
     const byId = new Map(parts.map(p => [p.id, p]));
+    let lit: Set<string> | undefined;
     for (const o of this.objects) {
       const m = world.get(o.part.id);
       if (!m) continue;
@@ -676,7 +712,10 @@ export class LineArt {
       o.part = byId.get(o.part.id) || o.part;
       place(o.group, m);
       place(o.idGroup, m);
-      if (o.part.wire) this.setTube(o, wireGeometry(o.part, world));
+      if (o.part.wire) {
+        this.setTube(o, wireGeometry(o.part, world));
+        this.paint(o, (lit ||= highlightedParts(parts)));
+      }
     }
     this.placeCaps();
     this.drawDraft(world, explode);
@@ -858,8 +897,7 @@ export class LineArt {
     if (!o || !part.wire) return;
     o.part = part;
     this.setTube(o, wireGeometry(part, worldMatrices(parts, explode)));
-    const lit = highlightedParts(this.objects.map(x => x.part));
-    (o.fill.material as MeshBasicMaterial).color.set(this.fillOf(part, lit));
+    this.paint(o, highlightedParts(this.objects.map(x => x.part)));
   }
 
   /** A part's place in the world as drawn now. */

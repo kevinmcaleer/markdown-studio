@@ -1,0 +1,22 @@
+{
+  "title": "A lead on the left leg mirrored onto the right leg",
+  "why": "The legs sit 40 mm either side of the body, the right one turned round (yaw 180). A plug on the left leg's outer face (x -35 in the world, facing -x) must land on the right leg's outer face (x 35, facing +x), and a waypoint on the body's top stays on the body, mirrored across x 0.",
+  "input": {
+    "parts": [
+      { "id": "body", "position": [0, 0, 0] },
+      { "id": "left", "position": [-40, 0, -30], "parent": "body" },
+      { "id": "right", "position": [40, 0, -30], "parent": "body", "rotation": [0, 0, 180] }
+    ],
+    "points": [
+      { "part": "left", "point": [-5, 3, 10], "normal": [-1, 0, 0] },
+      { "part": "body", "point": [-12, 4, 15], "normal": [0, 0, 1] }
+    ]
+  },
+  "expect": {
+    "plane": 0,
+    "points": [
+      { "part": "right", "at": [45, 3, -20], "normal": [1, 0, 0] },
+      { "part": "body", "at": [12, 4, 15], "normal": [0, 0, 1] }
+    ]
+  }
+}

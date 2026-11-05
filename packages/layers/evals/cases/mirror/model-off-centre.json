@@ -1,0 +1,16 @@
+{
+  "title": "Mirror across the model's middle when it isn't at the origin",
+  "why": "The CAD put the robot 100 mm along X: the mirror is through the middle of its parts (x 100), not x 0, or every wire would land 200 mm away.",
+  "input": {
+    "parts": [
+      { "id": "body", "position": [100, 0, 0] },
+      { "id": "armL", "position": [-30, 10, 5], "parent": "body" },
+      { "id": "armR", "position": [30, 10, 5], "parent": "body" }
+    ],
+    "points": [{ "part": "armL", "point": [2, 0, 1], "normal": [0, -1, 0] }]
+  },
+  "expect": {
+    "plane": 100,
+    "points": [{ "part": "armR", "at": [128, 10, 6], "normal": [0, -1, 0] }]
+  }
+}

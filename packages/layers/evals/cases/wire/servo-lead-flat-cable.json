@@ -1,0 +1,25 @@
+{
+  "title": "Servo lead as a flat 3-wire cable between two servos",
+  "why": "An STS3215 lead is three wires side by side. At each Molex 5264 plug the wires must sit at its 2.5 mm pin spacing along the plug's row, then run side by side and touching (1.2 mm wires, 1.2 mm apart), never through each other, leaving each plug straight out.",
+  "input": {
+    "parts": [
+      { "id": "a", "position": [0, 0, 0] },
+      { "id": "b", "position": [60, 0, 0] }
+    ],
+    "wire": {
+      "from": { "part": "a", "point": [0, 0, 5], "normal": [0, 0, 1], "row": [1, 0, 0], "pitch": 2.5 },
+      "to": { "part": "b", "point": [0, 0, 5], "normal": [0, 0, 1], "row": [1, 0, 0], "pitch": 2.5 },
+      "waypoints": [],
+      "color": "#f2c400",
+      "cores": [{ "color": "#f2c400" }, { "color": "#d33a2c" }, { "color": "#222222" }],
+      "lay": "flat",
+      "diameter": 1.2,
+      "slack": 12
+    }
+  },
+  "expect": {
+    "leaves": true,
+    "extra": [12, 1.5],
+    "cable": { "pins": true, "gathered": "flat" }
+  }
+}

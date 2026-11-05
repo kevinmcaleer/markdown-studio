@@ -9,3 +9,4 @@ export { CHUNK_KEYWORD, readText, writeText } from "./png";
 export { snap } from "./snap";
 
 export const VERSION = __LAYERS_VERSION__;
+export type { CatalogSockets, WiringConnection, WiringHost, WiringInfo, WiringPart, WiringPort } from "./scene/wiring2d";
