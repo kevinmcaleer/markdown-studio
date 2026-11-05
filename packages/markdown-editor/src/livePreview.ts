@@ -17,6 +17,7 @@ import { videosField, videosTheme } from "./videosWidget";
 import { tableCursor, tableField } from "./tableWidget";
 import { sizePicture } from "./steadyScroll";
 import { isLayersUrl, LAYERS_MODEL_EVENT, LAYERS_UPDATE_EVENT, layersOpener, type LayersUpdateProgress } from "./layersFacet";
+import { historyButton } from "./layersHistory";
 import { imagePopover, imagePopoverAt, openImagePopover } from "./imagePopover";
 import { imageCaption } from "./imageCaption";
 
@@ -295,6 +296,13 @@ class ImageWidget extends WidgetType {
       tools.className = "cm-md-image-layers-bar";
       tools.append(edit);
       wrap.append(tools);
+      // Its earlier versions the host keeps (published ones), behind a History button.
+      if (layers.history) {
+        void layers.history(this.src).then((entries) => {
+          if (!entries.length || tools.querySelector("[data-history]")) return;
+          tools.append(historyButton(wrap, entries));
+        }, () => {});
+      }
       // A graphic with a 3D scene: "Next step" from it, and a mark when the
       // project's model has changed since its pictures were drawn.
       if (layers.status) {
@@ -436,7 +444,7 @@ class ImageWidget extends WidgetType {
   }
   ignoreEvent(event: Event) {
     if (!(event.target instanceof Element)) return false;
-    return !!event.target.closest(".cm-md-image-sizes, .cm-md-image-layers, .cm-md-image-stale-bar") || (!this.readOnly && event.target.classList.contains("cm-md-image"));
+    return !!event.target.closest(".cm-md-image-sizes, .cm-md-image-layers, .cm-md-image-stale-bar, .cm-md-image-history") || (!this.readOnly && event.target.classList.contains("cm-md-image"));
   }
 }
 

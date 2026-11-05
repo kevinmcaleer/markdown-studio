@@ -32,6 +32,9 @@ export type LayersOpenHow = {
   duplicate?: boolean;
 };
 
+/** One of a graphic's earlier versions: its picture, and what it was (e.g. "Version 2 · live"). */
+export type LayersHistoryEntry = { url: string; label: string; detail?: string };
+
 export type LayersOpener = {
   /** Opens the picture whose Markdown starts at `pos` in Layers, in the page or full screen. */
   open(view: EditorView, pos: number, mode?: "inline" | "full", how?: LayersOpenHow): void;
@@ -49,6 +52,8 @@ export type LayersOpener = {
   updateAll?(view: EditorView): Promise<number>;
   /** "Update all"'s progress in `view` (null: not running). */
   progress?(view: EditorView): LayersUpdateProgress;
+  /** The graphic at `url`'s earlier versions, newest first (the History button). */
+  history?(url: string): Promise<LayersHistoryEntry[]>;
 };
 
 export const layersOpener = Facet.define<LayersOpener, LayersOpener | null>({
