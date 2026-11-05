@@ -169,6 +169,23 @@ const editor = mount(el, {
   the parts, click it to take it out, Shift-click a part to add one. Wires
   are filled in their colour with the normal outline; **Wiring view**
   ghosts every other part, and **Hide wiring** leaves them out of a picture.
+- **Cables**: a wire with more than one core (Wires in the wire bar, or
+  + in a wire's settings) is a cable along one route: its wires leave each
+  plug side by side at the pins' spacing, then lie flat side by side (a
+  servo lead) or round in a bundle, twisting round each other, each in its
+  own colour (`coreLines` in `src/scene/wire.ts`). **Mirror to the other
+  side** makes a picked wire again across the model's YZ plane (left leg to
+  right leg), each end in the partner part's mirrored socket
+  (`src/scene/wireMirror.ts`).
+- **The 2D wiring diagram**: with the host's `wiring` hook (`load`, and
+  optionally `addConnections`, `open`, `saveSockets`; see
+  `src/scene/wiring2d.ts`), a part links to a part of the diagram and its
+  sockets to its ports (an STS3215's "Bus port 1"). A wire between two such
+  sockets becomes the diagram's cable there (its wires, pin order and
+  colours), or can be added to it; **Add missing wires** routes each of the
+  diagram's cables that has sockets at both ends; **Open in wiring
+  diagram** goes to it; and a part's sockets can be saved to its catalog
+  part, so every project using it gets them (matched by the model's size).
 - **URDF** in the top bar downloads the parts as a robot: `robot.urdf` and
   `meshes/*.stl` in a .zip, in Snakie's conventions (metres, meshes scaled
   0.001, each joined part's link frame at its joint point, joints at their

@@ -23,6 +23,7 @@ import { icon } from "./icons";
 import { behindModel, blankScene, followModel, normalizeModel, normalizeScene, packModel, type ProjectModel, type SceneData } from "./scene/model";
 import type { ModelStore } from "./scene/render";
 import type { SceneModel } from "./scene/workspace";
+import type { WiringHost } from "./scene/wiring2d";
 import { type DetailInfo, isDetail, isScene, placeholderPicture, SceneLayer } from "./sceneLayer";
 import { snap, type Box, type Guide } from "./snap";
 import { inventoryOf, isFastener, partsInStep, screwInventoryOf, TURNED_DEGREES, turnedFromDefault } from "./stepFrame";
@@ -85,6 +86,8 @@ export interface LayersOptions {
    */
   loadModel?(): Promise<ProjectModel | null>;
   saveModel?(model: ProjectModel): Promise<void>;
+  /** The project's 2D wiring diagram, which 3D scenes' wires link to (see scene/wiring2d.ts). */
+  wiring?: WiringHost;
   /** Draw every 3D scene's picture again once the graphic opens (a new step, or "Update picture" from the host). */
   updateScenes?: boolean;
   /**
@@ -1096,6 +1099,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
         background,
         store: t.store,
         listModels: opts.listModels,
+        wiring: opts.wiring,
         ...(opts.loadModel && opts.saveModel
           ? {
               model,

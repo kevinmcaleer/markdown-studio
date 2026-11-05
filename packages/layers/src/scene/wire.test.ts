@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { Matrix4, Vector3 } from "three";
+import { Matrix3, Matrix4, Vector3 } from "three";
 import { allConnectors, connectorMesh, connectorOf, DEFAULT_CONNECTOR } from "./connectors";
 import { normalizeScene, shownAs, type ScenePart } from "./model";
 import { worldMatrices } from "./render";
-import { leadLength, tubeTriangles, wireRoute } from "./wire";
-import { nextWireColour, normalizeWire, type WireSpec } from "./wireSpec";
+import { cableRadius, coreLines, leadLength, ringRadius, tubeTriangles, wireMesh, wireRoute } from "./wire";
+import { mirrorPartner, mirrorPlane, mirrorPoint } from "./wireMirror";
+import { cableColours, connectionsOf, coresOf, nextWireColour, normalizeWire, type WireSpec } from "./wireSpec";
 
 const part = (id: string, position: [number, number, number] = [0, 0, 0], extra: Partial<ScenePart> = {}): ScenePart => ({ id, name: id, position, rotation: [0, 0, 0], ...extra });
 const spec = (over: Partial<WireSpec> = {}): WireSpec => ({
@@ -128,5 +129,104 @@ describe("wires saved", () => {
   it("gives a new wire the next colour not used", () => {
     expect(nextWireColour([])).toBe("#d33a2c");
     expect(nextWireColour(["#D33A2C"])).toBe("#222222");
+  });
+});
+
+describe("cables", () => {
+  const mats = worldMatrices([part("a", [0, 0, 0]), part("b", [80, 0, 0])]);
+  const ends = {
+    from: { part: "a", point: [0, 0, 5] as [number, number, number], normal: [0, 0, 1] as [number, number, number], row: [1, 0, 0] as [number, number, number], pitch: 2.5 },
+    to: { part: "b", point: [0, 0, 5] as [number, number, number], normal: [0, 0, 1] as [number, number, number], row: [1, 0, 0] as [number, number, number], pitch: 2.5 },
+  };
+  const cable = (over: Partial<WireSpec> = {}) => spec({ ...ends, diameter: 1.2, slack: 10, cores: cableColours(3).map(color => ({ color })), ...over });
+
+  it("keeps a cable's wires, the first one's colour its own", () => {
+    const w = normalizeWire({ ...cable({ lay: "flat", twist: 99999 }), connection: "c1", cores: [{ color: "#f2c400", connection: "c1" }, { color: "bad" }, { color: "#222222" }] })!;
+    expect(w.cores!.map(c => c.color)).toEqual(["#f2c400", "#222222", "#222222"]);
+    expect(w.color).toBe("#f2c400");
+    expect(w.connection).toBeUndefined();
+    expect(w.lay).toBe("flat");
+    expect(w.twist).toBe(3600);
+    expect(w.from.pitch).toBe(2.5);
+    expect(connectionsOf(w)).toEqual(["c1"]);
+    // One core is a wire.
+    const one = normalizeWire({ ...spec(), cores: [{ color: "#2f6fd6", connection: "c9" }] })!;
+    expect(one.cores).toBeUndefined();
+    expect(one.color).toBe("#2f6fd6");
+    expect(connectionsOf(one)).toEqual(["c9"]);
+  });
+
+  it("sits a bundle's wires touching round the middle", () => {
+    expect(ringRadius(1, 1)).toBe(0);
+    expect(ringRadius(2, 1)).toBe(1);
+    expect(ringRadius(3, 1)).toBeCloseTo(2 / Math.sqrt(3), 6);
+    expect(cableRadius(cable())).toBeCloseTo(0.6 + ringRadius(3, 0.6), 6);
+    expect(cableRadius(cable({ lay: "flat" }))).toBeCloseTo(0.6, 6);
+  });
+
+  it("leaves each plug side by side at its pins, and bundles in the middle", () => {
+    const w = cable();
+    const r = wireRoute(w, mats)!;
+    const lines = coreLines(w, r);
+    expect(lines).toHaveLength(3);
+    // At the plug: one pin's spacing apart, along the row.
+    expect(lines[1][0].distanceTo(r.centre[0])).toBeLessThan(1e-6);
+    expect(lines[2][0].clone().sub(lines[0][0]).x).toBeCloseTo(5, 2);
+    // In the middle: round it, touching.
+    const mid = Math.floor(r.centre.length / 2);
+    for (const l of lines) expect(l[mid].distanceTo(r.centre[mid])).toBeCloseTo(ringRadius(3, 0.6), 3);
+  });
+
+  it("lays a flat cable side by side, its wires touching", () => {
+    const w = cable({ lay: "flat" });
+    const r = wireRoute(w, mats)!;
+    const lines = coreLines(w, r);
+    const mid = Math.floor(r.centre.length / 2);
+    expect(lines[0][mid].distanceTo(lines[1][mid])).toBeCloseTo(1.2, 3);
+    expect(lines[1][mid].distanceTo(r.centre[mid])).toBeLessThan(1e-6);
+    const last = r.centre.length - 1;
+    expect(Math.abs(lines[2][last].clone().sub(lines[0][last]).x)).toBeCloseTo(5, 2);
+  });
+
+  it("colours each wire of a cable", () => {
+    const m = wireMesh(part("w", [0, 0, 0], { wire: cable() }), mats);
+    expect(m.colors.length).toBe(m.positions.length);
+    const per = m.colors.length / 3;
+    // Black's last: the third wire's corners are dark.
+    expect(m.colors[per * 2 + 3]).toBeLessThan(0.05);
+    // Yellow's first: red and green, little blue.
+    expect(m.colors[0]).toBeGreaterThan(0.8);
+    expect(coresOf(cable()).length).toBe(3);
+  });
+});
+
+describe("mirroring a wire", () => {
+  // A body in the middle, a leg either side; the right leg turned round.
+  const parts = [
+    part("body", [0, 0, 0]),
+    part("left", [-40, 0, -20], { parent: "body" }),
+    part("right", [40, 0, -20], { parent: "body", rotation: [0, 0, 180] }),
+  ];
+  const world = worldMatrices(parts, 0, false);
+
+  it("finds the mirror across the middle, and each part's partner", () => {
+    const plane = mirrorPlane(parts, world);
+    expect(plane).toBeCloseTo(0, 6);
+    expect(mirrorPartner(parts, world, "left", plane, 5)).toBe("right");
+    expect(mirrorPartner(parts, world, "right", plane, 5)).toBe("left");
+    expect(mirrorPartner(parts, world, "body", plane, 5)).toBe("body");
+    expect(mirrorPartner([parts[0], parts[1]], world, "left", plane, 5)).toBeNull();
+  });
+
+  it("puts a point on the partner where the mirror does, in its frame", () => {
+    const m = mirrorPoint([5, 2, 3], [1, 0, 0], world.get("left")!, world.get("right")!, 0);
+    const at = new Vector3(...m.point).applyMatrix4(world.get("right")!);
+    // The left leg's point at x -35 is the right leg's at x 35.
+    expect(at.x).toBeCloseTo(35, 3);
+    expect(at.y).toBeCloseTo(2, 3);
+    expect(at.z).toBeCloseTo(-17, 3);
+    // Its outward way, mirrored: +x on the left is -x on the right, in the world.
+    const n = new Vector3(...m.normal!).applyMatrix3(new Matrix3().setFromMatrix4(world.get("right")!));
+    expect(n.x).toBeCloseTo(-1, 4);
   });
 });

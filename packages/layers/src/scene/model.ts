@@ -72,6 +72,8 @@ export interface ScenePart {
   sockets?: PartSocket[];
   /** A connector housing sitting in one of its parent's sockets (its model carried in `data`). */
   plug?: PlugSpec;
+  /** The part of the 2D wiring diagram this is ("servo1"), so its sockets' wires can be the diagram's (see wiring2d.ts). */
+  wiringPart?: string;
 }
 
 export interface PartArrow {
@@ -301,6 +303,8 @@ export function normalizeScene(value: unknown): SceneData {
         if (sockets.length) part.sockets = sockets;
         const plug = normalizePlug(p.plug);
         if (plug) part.plug = plug;
+        const linked = text(p.wiringPart, 40);
+        if (linked && !part.wire && !part.plug) part.wiringPart = linked;
         if (p.arrow && typeof p.arrow === "object") {
           const a = p.arrow as { from?: unknown; to?: unknown; off?: unknown };
           const arrow: PartArrow = {};

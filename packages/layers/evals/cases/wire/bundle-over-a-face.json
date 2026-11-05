@@ -1,0 +1,24 @@
+{
+  "title": "Six-wire bundle routed over a plate",
+  "why": "A round bundle of six 1 mm wires is about 3 mm across, so where it's routed over the plate its middle must be the bundle's radius (0.5 + 1 mm) off the face, not one wire's. Its wires sit touching round the middle and leave each Dupont plug at 2.54 mm.",
+  "input": {
+    "parts": [
+      { "id": "plate", "position": [0, 0, 0] },
+      { "id": "board", "position": [50, 0, 10], "parent": "plate" }
+    ],
+    "wire": {
+      "from": { "part": "board", "point": [0, 0, 5], "normal": [0, 0, 1], "row": [1, 0, 0], "pitch": 2.54 },
+      "to": { "part": "plate", "point": [-50, 0, 2], "normal": [0, 0, 1], "row": [0, 1, 0], "pitch": 2.54 },
+      "waypoints": [{ "part": "plate", "point": [0, -20, 2], "normal": [0, 0, 1] }],
+      "color": "#d33a2c",
+      "cores": [{ "color": "#d33a2c" }, { "color": "#222222" }, { "color": "#f2c400" }, { "color": "#2f6fd6" }, { "color": "#2e9e4f" }, { "color": "#f08a1c" }],
+      "diameter": 1,
+      "slack": 0
+    }
+  },
+  "expect": {
+    "leaves": true,
+    "through": [{ "at": [0, -20, 2], "normal": [0, 0, 1] }],
+    "cable": { "pins": true, "gathered": "round" }
+  }
+}

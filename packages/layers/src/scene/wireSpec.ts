@@ -19,6 +19,13 @@ export interface WireEnd {
   point: Vec3;
   /** The way the wire leaves, in the part's frame. */
   normal: Vec3;
+  /**
+   * For a cable's cores: the way along the plug's row of pins, in the
+   * part's frame, and the pins' spacing (mm). The cores leave the plug side
+   * by side there and gather into the cable over the first few mm.
+   */
+  row?: Vec3;
+  pitch?: number;
 }
 
 /**
@@ -34,6 +41,12 @@ export interface WireWaypoint {
   lift?: number;
 }
 
+/** One of a cable's wires: its colour, and the 2D wiring connection it is (when it is one). */
+export interface WireCore {
+  color: string;
+  connection?: string;
+}
+
 export interface WireSpec {
   from: WireEnd;
   to: WireEnd;
@@ -46,6 +59,15 @@ export interface WireSpec {
   slack: number;
   /** The 2D wiring connection this is, when there is one (it then shares its colour and pins). */
   connection?: string;
+  /**
+   * A cable: several wires along the one route, each `diameter` across,
+   * pin 1's first. Without, it's one wire in `color`.
+   */
+  cores?: WireCore[];
+  /** How a cable's wires lie: side by side as a servo lead's do, or round in a bundle (the default). */
+  lay?: "flat";
+  /** Degrees a cable's wires turn round each other every 100 mm. */
+  twist?: number;
 }
 
 /** A place on a part a plug goes in. */
@@ -60,6 +82,8 @@ export interface PartSocket {
   /** Degrees the plug is turned about the normal. */
   spin?: number;
   name?: string;
+  /** The port of the part's 2D wiring this is (a header group's id, "bus-1" say), its pins in the plug's order. */
+  port?: string;
 }
 
 /** A plug: a connector part sitting in a socket of the part it's joined to. */
@@ -84,7 +108,9 @@ export const WIRE_COLOURS: { id: string; label: string }[] = [
 ];
 
 export const WIRE_DEFAULTS = { diameter: 2, slack: 8 } as const;
-export const WIRE_LIMITS = { diameter: [0.3, 20], slack: [0, 500], lift: [-500, 500] } as const;
+export const WIRE_LIMITS = { diameter: [0.3, 20], slack: [0, 500], lift: [-500, 500], cores: 16, twist: [-3600, 3600], pitch: [0.3, 20] } as const;
+/** How far round a bundle's wires turn every 100 mm, unless set: enough that the colours interleave. */
+export const BUNDLE_TWIST = 120;
 
 const LIMIT = 100_000;
 const num = (v: unknown, f: number, lo = -LIMIT, hi = LIMIT) => {
@@ -107,7 +133,21 @@ function end(v: unknown): WireEnd | null {
   const part = id(e.part);
   const point = v3(e.point);
   const normal = unit(e.normal);
-  return part && point && normal ? { part, point, normal } : null;
+  if (!part || !point || !normal) return null;
+  const out: WireEnd = { part, point, normal };
+  const row = unit(e.row);
+  if (row) out.row = row;
+  if (typeof e.pitch === "number" && Number.isFinite(e.pitch) && e.pitch > 0) out.pitch = num(e.pitch, 1, ...WIRE_LIMITS.pitch);
+  return out;
+}
+
+function core(v: unknown, fallback: string): WireCore | null {
+  if (!v || typeof v !== "object") return null;
+  const c = v as Partial<WireCore>;
+  const out: WireCore = { color: colour(c.color, fallback) };
+  const conn = id(c.connection);
+  if (conn) out.connection = conn;
+  return out;
 }
 
 function waypoint(v: unknown): WireWaypoint | null {
@@ -142,7 +182,34 @@ export function normalizeWire(value: unknown): WireSpec | null {
   };
   const c = id(v.connection);
   if (c) out.connection = c;
+  if (Array.isArray(v.cores)) {
+    const cores = v.cores.slice(0, WIRE_LIMITS.cores).map((x, i) => core(x, WIRE_COLOURS[i % WIRE_COLOURS.length].id)).filter((x): x is WireCore => !!x);
+    // One core is just a wire.
+    if (cores.length > 1) {
+      out.cores = cores;
+      out.color = cores[0].color;
+      delete out.connection;
+    } else if (cores.length === 1) {
+      out.color = cores[0].color;
+      if (cores[0].connection) out.connection = cores[0].connection;
+    }
+  }
+  if (out.cores) {
+    if (v.lay === "flat") out.lay = "flat";
+    if (typeof v.twist === "number" && Number.isFinite(v.twist)) out.twist = num(v.twist, 0, ...WIRE_LIMITS.twist);
+  }
   return out;
+}
+
+/** A wire's wires: its cores, or itself as one. */
+export function coresOf(w: Pick<WireSpec, "cores" | "color" | "connection">): WireCore[] {
+  if (w.cores && w.cores.length > 1) return w.cores;
+  return [w.connection ? { color: w.color, connection: w.connection } : { color: w.color }];
+}
+
+/** The 2D wiring connections a wire is. */
+export function connectionsOf(w: Pick<WireSpec, "cores" | "color" | "connection">): string[] {
+  return coresOf(w).flatMap(c => (c.connection ? [c.connection] : []));
 }
 
 /** `value` as a part's sockets (at most 64), anything broken left out. */
@@ -162,6 +229,8 @@ export function normalizeSockets(value: unknown): PartSocket[] {
     const sock: PartSocket = { id: sid, point, normal, connector };
     if (typeof s.spin === "number" && Number.isFinite(s.spin) && s.spin % 360) sock.spin = ((((s.spin + 180) % 360) + 360) % 360) - 180;
     if (typeof s.name === "string" && s.name.trim()) sock.name = s.name.slice(0, 60);
+    const port = id(s.port);
+    if (port) sock.port = port;
     out.push(sock);
   }
   return out;
@@ -193,4 +262,15 @@ export function nextWireColour(used: string[]): string {
 /** "Red", or the colour itself when it isn't one of ours. */
 export function wireColourName(c: string): string {
   return WIRE_COLOURS.find(x => x.id.toLowerCase() === c.toLowerCase())?.label || c;
+}
+
+/**
+ * A new cable's wires' colours, pin 1's first: a servo lead's for three
+ * (yellow signal, red power, black ground: an STS3215's D V G), red and
+ * black for two, else the usual order.
+ */
+export function cableColours(n: number): string[] {
+  if (n === 3) return ["#f2c400", "#d33a2c", "#222222"];
+  if (n === 2) return ["#d33a2c", "#222222"];
+  return Array.from({ length: n }, (_, i) => WIRE_COLOURS[i % WIRE_COLOURS.length].id);
 }

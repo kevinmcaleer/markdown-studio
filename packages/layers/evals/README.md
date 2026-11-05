@@ -18,7 +18,9 @@ They cover the parts of 3D scenes that rely on guesses:
 | `cases/fit/` | Fit fills the picture with the parts and cuts none off |
 | `cases/arrow/` | An assembly arrow's head is always in sight, and the arrow is no shorter than it needs to be |
 | `cases/track/` | Make track's pieces join up all the way round, and none cuts into a wheel |
-| `cases/wire/` | A wire leaves each plug straight out, lies on the faces it's routed over (not in them), takes up its slack, sags or bows the right way, and its ends stay on their parts when exploded |
+| `cases/wire/` | A wire leaves each plug straight out, lies on the faces it's routed over (not in them), takes up its slack, sags or bows the right way, and its ends stay on their parts when exploded; a cable's wires meet each plug at its pins, lie touching (flat or round) and never run through each other |
+| `cases/mirror/` | Mirror a wire finds each part's partner across the middle of the model (not x 0), and puts each point where the mirror does, its face turned the mirror's way |
+| `cases/diagram/` | Add missing wires makes a 3D cable for each of the 2D diagram's with sockets at both ends, its wires in the plug's pin order and the diagram's colours |
 | `cases/pictures/` | Whole scenes drawn with the real renderer, compared with approved pictures |
 
 ## Running them

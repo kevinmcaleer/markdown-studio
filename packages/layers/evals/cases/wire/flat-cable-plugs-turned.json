@@ -1,0 +1,24 @@
+{
+  "title": "Flat cable between plugs turned a quarter turn to each other",
+  "why": "The far plug's pins run across the near one's, so the flat cable has to turn a quarter turn along its length: its wires still meet each plug at the pin spacing along that plug's own row, and never pass through each other on the way.",
+  "input": {
+    "parts": [
+      { "id": "a", "position": [0, 0, 0] },
+      { "id": "b", "position": [0, 70, 0] }
+    ],
+    "wire": {
+      "from": { "part": "a", "point": [0, 0, 5], "normal": [0, 0, 1], "row": [1, 0, 0], "pitch": 2.5 },
+      "to": { "part": "b", "point": [0, 0, 5], "normal": [0, 0, 1], "row": [0, 1, 0], "pitch": 2.5 },
+      "waypoints": [],
+      "color": "#f2c400",
+      "cores": [{ "color": "#f2c400" }, { "color": "#d33a2c" }, { "color": "#222222" }],
+      "lay": "flat",
+      "diameter": 1.2,
+      "slack": 10
+    }
+  },
+  "expect": {
+    "leaves": true,
+    "cable": { "pins": true, "gathered": "flat" }
+  }
+}

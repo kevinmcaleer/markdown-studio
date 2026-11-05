@@ -34,6 +34,13 @@ export type LayersApi = {
 
 /** The project's 3D model, as Layers keeps it: `stamp` goes up with each change. */
 export type LayersProjectModel = { version: 1; stamp: number; parts: unknown[] };
+/** The 2D wiring diagram as 3D scenes use it (Layers' WiringHost). */
+export type LayersWiringHost = {
+  load: () => Promise<unknown | null>;
+  addConnections?: (connections: unknown[]) => Promise<unknown[]>;
+  open?: (connection?: string) => void;
+  saveSockets?: (slug: string, sockets: unknown) => Promise<void>;
+};
 export type LayersEditor = {
   setMode(mode: "inline" | "full"): void;
   mode(): "inline" | "full";
@@ -66,6 +73,14 @@ export type LayersOptions = {
    */
   loadModel?: () => Promise<LayersProjectModel | null>;
   saveModel?: (model: LayersProjectModel) => Promise<void>;
+  /**
+   * The project's 2D wiring diagram, for 3D scenes' wires: { load(),
+   * addConnections?(list), open?(connectionId), saveSockets?(slug, sockets) }
+   * (see Layers' scene/wiring2d.ts). With it, a 3D wire takes its colours
+   * from the diagram's connection, and "Add missing wires" routes the
+   * diagram's cables between sockets.
+   */
+  wiring?: LayersWiringHost;
   /** Where "/Graphic" opens a new one: in the page (the default) or full screen. */
   mode?: "inline" | "full";
   /** After a graphic is saved: its old picture's link (to tidy up, say) and the new one. */
@@ -320,6 +335,7 @@ async function redraw(view: EditorView, host: LayersHost, url: string, stepOnly 
       fetchImage,
       listImages: host.listImages,
       listModels: host.listModels,
+      wiring: host.wiring,
       fetchModel: host.fetchModel ?? (async (u: string) => (await defaultFetch(u)).arrayBuffer()),
       ...(host.loadModel && host.saveModel ? { loadModel: () => projectModel(host), saveModel: host.saveModel } : {}),
       updateScenes: redrawScenes,
@@ -472,6 +488,7 @@ export function openLayers(view: EditorView, host: LayersHost, pos: number, mode
         fetchImage,
         listImages: host.listImages,
         listModels: host.listModels,
+        wiring: host.wiring,
         fetchModel: host.fetchModel ?? (async (url: string) => (await defaultFetch(url)).arrayBuffer()),
         ...(host.loadModel && host.saveModel
           ? {
@@ -594,6 +611,7 @@ export async function makeAssemblyGuide(view: EditorView, host: LayersHost): Pro
       fetchImage: host.fetchImage ?? defaultFetch,
       listImages: host.listImages,
       listModels: host.listModels,
+      wiring: host.wiring,
       fetchModel: host.fetchModel ?? (async (url: string) => (await defaultFetch(url)).arrayBuffer()),
       loadModel: () => projectModel(host),
       saveModel: async (model: LayersProjectModel) => {
@@ -706,6 +724,7 @@ export async function makeScrewInventory(view: EditorView, host: LayersHost): Pr
       fetchImage: host.fetchImage ?? defaultFetch,
       listImages: host.listImages,
       listModels: host.listModels,
+      wiring: host.wiring,
       fetchModel: host.fetchModel ?? (async (url: string) => (await defaultFetch(url)).arrayBuffer()),
       loadModel: () => projectModel(host),
       saveModel: async (model: LayersProjectModel) => {

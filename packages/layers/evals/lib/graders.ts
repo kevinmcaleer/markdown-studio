@@ -9,8 +9,10 @@ import { arrowEnd, cameraFor, frameTight, localMatrix, worldMatrices, type Place
 import { fitDiameter, fitLength, holeDepth, isHoleSnap, type ScrewHead } from "../../src/scene/screw";
 import { Topology, type Face, type Snap } from "../../src/scene/snaps";
 import { layTrack, type TrackSpec } from "../../src/scene/track";
-import { leadLength, wireRoute } from "../../src/scene/wire";
-import { normalizeWire } from "../../src/scene/wireSpec";
+import { cableRadius, coreLines, leadLength, ringRadius, wireRoute } from "../../src/scene/wire";
+import { mirrorPartner, mirrorPlane, mirrorPoint } from "../../src/scene/wireMirror";
+import { coresOf, normalizeWire } from "../../src/scene/wireSpec";
+import { missingWires, type WiringInfo } from "../../src/scene/wiring2d";
 import { atLeast, type Check, near, nearPoint, same, show, yes } from "./score";
 import { centred, type ReadFile, shapeTriangles, type ShapeSpec } from "./shapes";
 
@@ -335,7 +337,11 @@ export const GRADERS: Record<string, Grader> = {
    */
   wire(
     input: { parts: (Pick<ScenePart, "id" | "position"> & Partial<ScenePart>)[]; wire: unknown; explode?: number },
-    expect: { leaves?: boolean; extra?: [number, number]; bow?: Vec3; through?: { at: Vec3; normal: Vec3 }[]; ends?: [Vec3, Vec3]; tol?: number },
+    expect: {
+      leaves?: boolean; extra?: [number, number]; bow?: Vec3; through?: { at: Vec3; normal: Vec3 }[]; ends?: [Vec3, Vec3]; tol?: number;
+      /** A cable: its wires at the plugs' pin spacing at each end, and gathered in the middle ("round": touching round it; "flat": side by side). */
+      cable?: { pins?: boolean; gathered?: "round" | "flat" };
+    },
   ) {
     const parts: ScenePart[] = input.parts.map(p => ({ name: p.id, rotation: [0, 0, 0], ...p }) as ScenePart);
     const spec = normalizeWire(input.wire);
@@ -375,7 +381,7 @@ export const GRADERS: Record<string, Grader> = {
       let best = Infinity;
       let side = 0;
       for (const p of c) {
-        const d = p.distanceTo(at.clone().addScaledVector(n, spec.diameter / 2));
+        const d = p.distanceTo(at.clone().addScaledVector(n, cableRadius(spec)));
         if (d < best) {
           best = d;
           side = p.clone().sub(at).dot(n);
@@ -383,9 +389,89 @@ export const GRADERS: Record<string, Grader> = {
       }
       checks.push(near(`passes waypoint ${i + 1} (mm)`, best, 0, tol, 2));
       // Its middle a radius off the face: lying on it, not sunk into it.
-      checks.push(atLeast(`lies on the face at waypoint ${i + 1}, not in it (mm off)`, side, spec.diameter / 2 - 0.05, spec.diameter / 2));
+      checks.push(atLeast(`lies on the face at waypoint ${i + 1}, not in it (mm off)`, side, cableRadius(spec) - 0.05, cableRadius(spec)));
+    }
+    if (expect.cable) {
+      const lines = coreLines(spec, route);
+      const n = coresOf(spec).length;
+      checks.push(same("wires in the cable", lines.length, n));
+      if (expect.cable.pins) {
+        [spec.from, spec.to].forEach((e, k) => {
+          const at = k === 0 ? 0 : c.length - 1;
+          const want = Math.max(spec.diameter, e.pitch || spec.diameter);
+          let worst = 0;
+          for (let i = 1; i < n; i++) worst = Math.max(worst, Math.abs(lines[i][at].distanceTo(lines[i - 1][at]) - want));
+          checks.push(near(`wires at plug ${k + 1}'s pin spacing (mm off)`, worst, 0, 0.05, 2));
+        });
+      }
+      if (expect.cable.gathered) {
+        const mid = Math.floor(c.length / 2);
+        let worst = 0;
+        if (expect.cable.gathered === "round") {
+          const ring = ringRadius(n, spec.diameter / 2);
+          for (const l of lines) worst = Math.max(worst, Math.abs(l[mid].distanceTo(c[mid]) - ring));
+        } else {
+          for (let i = 1; i < n; i++) worst = Math.max(worst, Math.abs(lines[i][mid].distanceTo(lines[i - 1][mid]) - spec.diameter));
+        }
+        checks.push(near(`wires touching in the middle, ${expect.cable.gathered} (mm off)`, worst, 0, 0.05, 2));
+        // No two wires through each other anywhere.
+        let overlap = 0;
+        for (let j = 0; j < c.length; j++) {
+          for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) overlap = Math.max(overlap, spec.diameter - lines[a][j].distanceTo(lines[b][j]));
+        }
+        checks.push(near("no wire runs through another (mm into it)", Math.max(0, overlap), 0, 0.05, 2));
+      }
     }
     void leadLength;
+    return checks;
+  },
+  /**
+   * Mirror a wire: each part it touches finds its partner on the other
+   * side of the model, and each end and waypoint lands where the mirror
+   * puts it, on that partner.
+   */
+  mirror(
+    input: { parts: (Pick<ScenePart, "id" | "position"> & Partial<ScenePart>)[]; points: { part: string; point: Vec3; normal?: Vec3 }[]; tolerance?: number },
+    expect: { plane?: number; points: { part: string; at: Vec3; normal?: Vec3 }[] },
+  ) {
+    const parts: ScenePart[] = input.parts.map(p => ({ name: p.id, rotation: [0, 0, 0], ...p }) as ScenePart);
+    const world = worldMatrices(parts, 0, false);
+    const plane = mirrorPlane(parts, world);
+    const checks: Check[] = [];
+    if (expect.plane !== undefined) checks.push(near("mirror across the middle (x mm)", plane, expect.plane, 0.01));
+    input.points.forEach((q, i) => {
+      const want = expect.points[i];
+      const to = mirrorPartner(parts, world, q.part, plane, input.tolerance ?? 5);
+      checks.push(yes(`point ${i + 1} goes to ${want.part}`, to === want.part, `went to ${to}`));
+      if (!to) return;
+      const m = mirrorPoint(q.point, q.normal, world.get(q.part)!, world.get(to)!, plane);
+      const at = new Vector3(...m.point).applyMatrix4(world.get(to)!);
+      checks.push(nearPoint(`point ${i + 1} where the mirror puts it (mm)`, at.toArray(), want.at, 0.01, 2));
+      if (want.normal && m.normal) {
+        const n = new Vector3(...m.normal).transformDirection(world.get(to)!);
+        checks.push(atLeast(`point ${i + 1}'s face turned the mirror's way (cos)`, n.dot(new Vector3(...want.normal).normalize()), 0.999, 0.9));
+      }
+    });
+    return checks;
+  },
+  /**
+   * The 2D wiring diagram's cables "Add missing wires" makes in 3D: which
+   * ones (by their connections, in each cable's pin order), and how many it
+   * can't for want of a socket.
+   */
+  diagram(input: { info: WiringInfo; parts: (Pick<ScenePart, "id" | "position"> & Partial<ScenePart>)[] }, expect: { wires: string[][]; skipped: number; colours?: string[][] }) {
+    const parts: ScenePart[] = input.parts.map(p => ({ name: p.id, rotation: [0, 0, 0], ...p }) as ScenePart);
+    const got = missingWires(input.info, parts);
+    const checks: Check[] = [
+      same("cables it adds", got.wires.length, expect.wires.length),
+      same("cables it can't (no socket)", got.skipped, expect.skipped),
+    ];
+    expect.wires.forEach((ids, i) => {
+      const w = got.wires[i];
+      checks.push(yes(`cable ${i + 1}'s wires in pin order`, !!w && w.cores.map(c => c.connection).join(",") === ids.join(","), w ? w.cores.map(c => c.connection).join(",") : "missing"));
+      const want = expect.colours?.[i];
+      if (want) checks.push(yes(`cable ${i + 1} coloured as the diagram`, !!w && w.cores.map(c => c.color).join(",") === want.join(","), w ? w.cores.map(c => c.color).join(",") : "missing"));
+    });
     return checks;
   },
 };

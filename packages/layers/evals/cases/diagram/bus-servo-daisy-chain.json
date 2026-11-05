@@ -1,0 +1,33 @@
+{
+  "title": "Add missing wires: a bus servo daisy chain from the wiring diagram",
+  "why": "The diagram chains servo 1's bus port 2 to servo 2's bus port 1 (a 3-wire cable, drawn G first and the wrong way round), servo 2 on to servo 3, and the Pico's GP0 to servo 1. Only the first has sockets for its ports at both ends, so one cable is added, its wires in the plug's pin order (D V G) and the diagram's colours; the other two wait for sockets.",
+  "input": {
+    "info": {
+      "parts": [
+        { "id": "s1", "name": "Servo 1", "ports": [{ "id": "bus-1", "name": "Bus port 1", "pins": [{ "name": "D1", "label": "D" }, { "name": "V1", "label": "V" }, { "name": "G1", "label": "G" }] }, { "id": "bus-2", "name": "Bus port 2", "pins": [{ "name": "D2", "label": "D" }, { "name": "V2", "label": "V" }, { "name": "G2", "label": "G" }] }] },
+        { "id": "s2", "name": "Servo 2", "ports": [{ "id": "bus-1", "name": "Bus port 1", "pins": [{ "name": "D1", "label": "D" }, { "name": "V1", "label": "V" }, { "name": "G1", "label": "G" }] }, { "id": "bus-2", "name": "Bus port 2", "pins": [{ "name": "D2", "label": "D" }, { "name": "V2", "label": "V" }, { "name": "G2", "label": "G" }] }] },
+        { "id": "s3", "name": "Servo 3", "ports": [{ "id": "bus-1", "name": "Bus port 1", "pins": [{ "name": "D1", "label": "D" }, { "name": "V1", "label": "V" }, { "name": "G1", "label": "G" }] }] },
+        { "id": "pico", "name": "Pico", "ports": [] }
+      ],
+      "connections": [
+        { "id": "c1", "from": "s2.G1", "to": "s1.G2", "net": "gnd", "cable": "lead1" },
+        { "id": "c2", "from": "s1.D2", "to": "s2.D1", "color": "#f2c400", "cable": "lead1" },
+        { "id": "c3", "from": "s1.V2", "to": "s2.V1", "net": "vcc", "cable": "lead1" },
+        { "id": "c4", "from": "s2.D2", "to": "s3.D1", "cable": "lead2" },
+        { "id": "c5", "from": "s2.V2", "to": "s3.V1", "cable": "lead2" },
+        { "id": "c6", "from": "s2.G2", "to": "s3.G1", "cable": "lead2" },
+        { "id": "c7", "from": "pico.GP0", "to": "s1.D1", "color": "#2f6fd6" }
+      ]
+    },
+    "parts": [
+      { "id": "a", "position": [0, 0, 0], "wiringPart": "s1", "sockets": [{ "id": "x", "point": [0, 0, 1], "normal": [0, 0, 1], "connector": "molex-5264-3", "port": "bus-2" }] },
+      { "id": "b", "position": [50, 0, 0], "wiringPart": "s2", "sockets": [{ "id": "y", "point": [0, 0, 1], "normal": [0, 0, 1], "connector": "molex-5264-3", "port": "bus-1" }, { "id": "z", "point": [0, 5, 1], "normal": [0, 0, 1], "connector": "molex-5264-3", "port": "bus-2" }] },
+      { "id": "c", "position": [100, 0, 0], "wiringPart": "s3" }
+    ]
+  },
+  "expect": {
+    "wires": [["c2", "c3", "c1"]],
+    "colours": [["#f2c400", "#d33a2c", "#222222"]],
+    "skipped": 2
+  }
+}

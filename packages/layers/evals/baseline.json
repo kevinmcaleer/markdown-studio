@@ -3,6 +3,7 @@
   "arrow/from-below-hidden-tip": 1,
   "arrow/side-into-block": 1,
   "arrow/tail-behind-post": 0.25,
+  "diagram/bus-servo-daisy-chain": 1,
   "fit/cube-iso": 1,
   "fit/exploded-pair": 1,
   "fit/l-shape-turned": 1,
@@ -12,6 +13,8 @@
   "joint/block-on-side": 1,
   "joint/peg-on-hole": 1,
   "joint/spin-and-gap": 1,
+  "mirror/left-leg-to-right-leg": 1,
+  "mirror/model-off-centre": 1,
   "placement/cad-spot-kept": 1,
   "placement/far-away-brought-close": 1,
   "placement/fits-between-two": 1,
@@ -33,7 +36,10 @@
   "track/tight-small-wheel": 1,
   "track/two-wheels": 1,
   "wire/across-exploded-joint": 1,
+  "wire/bundle-over-a-face": 1,
   "wire/facing-ends-sag": 1,
+  "wire/flat-cable-plugs-turned": 1,
   "wire/routed-over-faces": 1,
-  "wire/servo-lead-default-route": 1
+  "wire/servo-lead-default-route": 1,
+  "wire/servo-lead-flat-cable": 1
 }
