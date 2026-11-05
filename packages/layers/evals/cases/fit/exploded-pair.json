@@ -1,0 +1,53 @@
+{
+  "title": "Two parts, fully exploded",
+  "why": "The exploded part counts: both should be in the picture, filling it.",
+  "input": {
+    "parts": [
+      {
+        "id": "base",
+        "shape": {
+          "plate": [
+            60,
+            40,
+            5
+          ]
+        }
+      },
+      {
+        "id": "lid",
+        "shape": {
+          "box": [
+            30,
+            20,
+            10
+          ]
+        },
+        "position": [
+          0,
+          0,
+          10
+        ],
+        "parent": "base",
+        "joint": {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "distance": 60
+        }
+      }
+    ],
+    "camera": {
+      "direction": [
+        1,
+        -1,
+        1
+      ]
+    },
+    "explode": 1
+  },
+  "expect": {
+    "fill": 0.9
+  }
+}

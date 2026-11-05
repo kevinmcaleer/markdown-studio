@@ -55,6 +55,32 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  evals:
+    name: 3D scene evals
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Browser for the picture checks
+        working-directory: packages/layers
+        run: npx playwright install --with-deps chromium
+      - name: Scores (snaps, screws, joints, placement, Fit, arrows, tracks)
+        run: npm run eval -w packages/layers
+      - name: Pictures against the approved ones
+        if: always()
+        run: npm run eval:pictures -w packages/layers
+      - name: Keep the report and pictures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scene-evals
+          path: packages/layers/evals/out/
+          if-no-files-found: ignore
+
   docker:
     name: Docker image
     runs-on: ubuntu-latest

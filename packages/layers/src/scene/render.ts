@@ -731,16 +731,7 @@ export class LineArt {
       // (a part fitted from below, say), the arrow stops where its line goes
       // out of sight, with the head pulled back clear of the edge.
       const at = (f: number) => from.clone().addScaledVector(axis, gap * f);
-      if (!this.visibleAt(at(f1), camera) && this.visibleAt(at(f0), camera)) {
-        let lo = f0;
-        let hi = f1;
-        for (let i = 0; i < 8; i++) {
-          const mid = (lo + hi) / 2;
-          if (this.visibleAt(at(mid), camera)) lo = mid;
-          else hi = mid;
-        }
-        f1 = Math.max(f0 + (headLen * 0.5) / gap, lo - (headLen * 0.4) / gap);
-      }
+      f1 = arrowEnd(f0, f1, gap, headLen, f => this.visibleAt(at(f), camera));
       const len = gap * (f1 - f0);
       if (len < 1e-3) continue;
       // Flat on to the camera: across the axis and the line of sight.
@@ -1079,6 +1070,26 @@ export function frame(cam: SceneCamera, box: Box3, aspect: number, margin = 1.12
   mid.addScaledVector(dir, centre.clone().sub(mid).dot(dir));
   const halfH = Math.max((hi.y - lo.y) / 2, (hi.x - lo.x) / 2 / aspect) * margin;
   return { direction: [...cam.direction] as Vec3, target: [mid.x, mid.y, mid.z], size: Math.max(1, halfH) };
+}
+
+/**
+ * Where an assembly arrow's tip stops, as a fraction of its gap (`f0` to
+ * `f1` along it, `gap` mm long): `f1` when the tip is in sight. Where the
+ * tip would be hidden behind a part (one fitted from below, say) but the
+ * tail is in sight, the arrow stops where its line goes out of sight, with
+ * the head (`headLen` mm) pulled back clear of the edge, so a head is never
+ * hidden. `visible(f)` says whether the point at `f` can be seen.
+ */
+export function arrowEnd(f0: number, f1: number, gap: number, headLen: number, visible: (f: number) => boolean): number {
+  if (visible(f1) || !visible(f0)) return f1;
+  let lo = f0;
+  let hi = f1;
+  for (let i = 0; i < 8; i++) {
+    const mid = (lo + hi) / 2;
+    if (visible(mid)) lo = mid;
+    else hi = mid;
+  }
+  return Math.max(f0 + (headLen * 0.5) / gap, lo - (headLen * 0.4) / gap);
 }
 
 /** A mesh where it's drawn in the world. */

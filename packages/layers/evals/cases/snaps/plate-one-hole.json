@@ -1,0 +1,115 @@
+{
+  "title": "Plate with a screw hole",
+  "why": "As the block, plus the hole's centre (radius 1.6, an M3 clearance hole).",
+  "input": {
+    "shape": {
+      "plate": [
+        40,
+        20,
+        4
+      ],
+      "holes": [
+        {
+          "at": [
+            8,
+            2
+          ],
+          "r": 1.6
+        }
+      ]
+    },
+    "click": {
+      "at": [
+        -10,
+        -5,
+        4
+      ]
+    }
+  },
+  "expect": {
+    "curved": false,
+    "snaps": [
+      {
+        "role": "centre",
+        "p": [
+          0,
+          0,
+          4
+        ]
+      },
+      {
+        "role": "corner",
+        "p": [
+          -20,
+          -10,
+          4
+        ]
+      },
+      {
+        "role": "corner",
+        "p": [
+          -20,
+          10,
+          4
+        ]
+      },
+      {
+        "role": "corner",
+        "p": [
+          20,
+          -10,
+          4
+        ]
+      },
+      {
+        "role": "corner",
+        "p": [
+          20,
+          10,
+          4
+        ]
+      },
+      {
+        "role": "edge",
+        "p": [
+          20,
+          0,
+          4
+        ]
+      },
+      {
+        "role": "edge",
+        "p": [
+          -20,
+          0,
+          4
+        ]
+      },
+      {
+        "role": "edge",
+        "p": [
+          0,
+          10,
+          4
+        ]
+      },
+      {
+        "role": "edge",
+        "p": [
+          0,
+          -10,
+          4
+        ]
+      },
+      {
+        "role": "hole",
+        "p": [
+          8,
+          2,
+          4
+        ],
+        "radius": 1.6
+      }
+    ]
+  }
+}

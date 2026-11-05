@@ -1,0 +1,34 @@
+{
+  "title": "M3 hole through a 3 mm plate",
+  "why": "A 3.2 mm hole takes M3. Through 3 mm with 1.5 \u00d7 3 mm to spare is 7.5 mm, so the next length sold is 8.",
+  "input": {
+    "shape": {
+      "plate": [
+        40,
+        20,
+        3
+      ],
+      "holes": [
+        {
+          "at": [
+            0,
+            0
+          ],
+          "r": 1.6
+        }
+      ]
+    },
+    "click": {
+      "at": [
+        0,
+        -2.1,
+        3
+      ]
+    }
+  },
+  "expect": {
+    "d": 3,
+    "length": 8,
+    "through": true
+  }
+}

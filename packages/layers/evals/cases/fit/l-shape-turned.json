@@ -1,0 +1,46 @@
+{
+  "title": "An L of two blocks, seen turned",
+  "why": "A box round the parts leaves wide empty corners on a turned view; the parts' own outlines should fill the picture instead.",
+  "input": {
+    "parts": [
+      {
+        "shape": {
+          "box": [
+            100,
+            20,
+            20
+          ]
+        },
+        "position": [
+          40,
+          0,
+          10
+        ]
+      },
+      {
+        "shape": {
+          "box": [
+            20,
+            100,
+            20
+          ]
+        },
+        "position": [
+          0,
+          40,
+          10
+        ]
+      }
+    ],
+    "camera": {
+      "direction": [
+        0.3,
+        -1,
+        0.6
+      ]
+    }
+  },
+  "expect": {
+    "fill": 0.9
+  }
+}

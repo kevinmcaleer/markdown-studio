@@ -1,0 +1,59 @@
+{
+  "title": "Block on a plate, spun 90\u00b0 with a 2 mm gap",
+  "why": "As the block on the plate, then turned a quarter about the plate's normal (yaw 90) and lifted 2 mm off it.",
+  "input": {
+    "parent": {
+      "shape": {
+        "plate": [
+          40,
+          40,
+          4
+        ]
+      }
+    },
+    "child": {
+      "shape": {
+        "box": [
+          10,
+          20,
+          10
+        ]
+      }
+    },
+    "parentClick": {
+      "at": [
+        1,
+        1,
+        2
+      ]
+    },
+    "childClick": {
+      "at": [
+        1,
+        1,
+        -5
+      ],
+      "looking": [
+        0,
+        0,
+        1
+      ]
+    },
+    "parentSnap": "centre",
+    "childSnap": "centre",
+    "spin": 90,
+    "gap": 2
+  },
+  "expect": {
+    "position": [
+      0,
+      0,
+      9
+    ],
+    "rotation": [
+      0,
+      0,
+      90
+    ]
+  }
+}

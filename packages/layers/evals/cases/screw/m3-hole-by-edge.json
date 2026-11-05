@@ -1,0 +1,34 @@
+{
+  "title": "M3 hole close to the plate's edge",
+  "why": "Only 0.4 mm of plastic between the hole and the edge: the depth must still be measured from the plate, not the air beside it.",
+  "input": {
+    "shape": {
+      "plate": [
+        20,
+        10,
+        3
+      ],
+      "holes": [
+        {
+          "at": [
+            8,
+            0
+          ],
+          "r": 1.6
+        }
+      ]
+    },
+    "click": {
+      "at": [
+        8,
+        -2.1,
+        3
+      ]
+    }
+  },
+  "expect": {
+    "d": 3,
+    "length": 8,
+    "through": true
+  }
+}

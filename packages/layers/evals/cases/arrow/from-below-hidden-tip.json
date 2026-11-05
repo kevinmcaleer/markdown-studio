@@ -1,0 +1,42 @@
+{
+  "title": "Part fitted from under a plate, seen from above",
+  "why": "The tip would be behind the plate: the arrow stops where its line goes out of sight, with the whole head showing.",
+  "input": {
+    "parts": [
+      {
+        "shape": {
+          "box": [
+            60,
+            60,
+            4
+          ]
+        },
+        "position": [
+          0,
+          0,
+          2
+        ]
+      }
+    ],
+    "camera": {
+      "direction": [
+        1,
+        -1,
+        1
+      ]
+    },
+    "from": [
+      0,
+      0,
+      -40
+    ],
+    "to": [
+      0,
+      0,
+      0
+    ]
+  },
+  "expect": {
+    "shortened": true
+  }
+}

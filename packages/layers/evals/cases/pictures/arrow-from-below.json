@@ -1,0 +1,51 @@
+{
+  "title": "Part fitted from under a plate",
+  "why": "The arrow's tip would be behind the plate, so it stops short with its whole head in sight.",
+  "scene": {
+    "parts": [
+      {
+        "id": "plate",
+        "shape": {
+          "box": [
+            60,
+            60,
+            4
+          ]
+        }
+      },
+      {
+        "id": "peg",
+        "shape": {
+          "cylinder": [
+            4,
+            12
+          ]
+        },
+        "position": [
+          0,
+          0,
+          -8
+        ],
+        "parent": "plate",
+        "joint": {
+          "normal": [
+            0,
+            0,
+            -1
+          ],
+          "distance": 40
+        }
+      }
+    ],
+    "camera": {
+      "direction": [
+        1,
+        -1,
+        0.82
+      ],
+      "fit": true
+    },
+    "explode": 1,
+    "arrows": true
+  }
+}

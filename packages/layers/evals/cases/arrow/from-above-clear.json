@@ -1,0 +1,42 @@
+{
+  "title": "Part lowered onto a plate, seen from above",
+  "why": "Nothing hides the arrow: it keeps its full length, and the head is in sight.",
+  "input": {
+    "parts": [
+      {
+        "shape": {
+          "box": [
+            60,
+            60,
+            4
+          ]
+        },
+        "position": [
+          0,
+          0,
+          2
+        ]
+      }
+    ],
+    "camera": {
+      "direction": [
+        1,
+        -1,
+        1
+      ]
+    },
+    "from": [
+      0,
+      0,
+      40
+    ],
+    "to": [
+      0,
+      0,
+      4
+    ]
+  },
+  "expect": {
+    "shortened": false
+  }
+}

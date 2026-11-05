@@ -1,0 +1,42 @@
+{
+  "title": "Part pushed into the far side of a block",
+  "why": "Seen from the front and above, the block hides the far side where the part fits: the head must stop before it goes behind the block.",
+  "input": {
+    "parts": [
+      {
+        "shape": {
+          "box": [
+            40,
+            20,
+            30
+          ]
+        },
+        "position": [
+          0,
+          0,
+          15
+        ]
+      }
+    ],
+    "camera": {
+      "direction": [
+        0.4,
+        -1,
+        1
+      ]
+    },
+    "from": [
+      0,
+      60,
+      15
+    ],
+    "to": [
+      0,
+      10,
+      15
+    ]
+  },
+  "expect": {
+    "shortened": true
+  }
+}

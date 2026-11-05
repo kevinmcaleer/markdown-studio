@@ -1,0 +1,71 @@
+{
+  "title": "Plate with four screw holes and a block, line art",
+  "why": "The plain look: white fill, fine fold lines, a bold outline round each part, holes drawn as clean circles.",
+  "scene": {
+    "parts": [
+      {
+        "id": "base",
+        "shape": {
+          "plate": [
+            80,
+            50,
+            5
+          ],
+          "holes": [
+            {
+              "at": [
+                -30,
+                -17
+              ],
+              "r": 1.6
+            },
+            {
+              "at": [
+                30,
+                -17
+              ],
+              "r": 1.6
+            },
+            {
+              "at": [
+                -30,
+                17
+              ],
+              "r": 1.6
+            },
+            {
+              "at": [
+                30,
+                17
+              ],
+              "r": 1.6
+            }
+          ]
+        }
+      },
+      {
+        "id": "block",
+        "shape": {
+          "box": [
+            30,
+            20,
+            20
+          ]
+        },
+        "position": [
+          0,
+          0,
+          12.5
+        ]
+      }
+    ],
+    "camera": {
+      "direction": [
+        1,
+        -1,
+        0.82
+      ],
+      "fit": true
+    }
+  }
+}

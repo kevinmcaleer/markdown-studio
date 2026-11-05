@@ -1,0 +1,97 @@
+{
+  "title": "Top of a block",
+  "why": "A flat rectangle: a person expects its middle, its four corners and the middle of each edge.",
+  "input": {
+    "shape": {
+      "box": [
+        30,
+        20,
+        10
+      ]
+    },
+    "click": {
+      "at": [
+        5,
+        5,
+        10
+      ]
+    }
+  },
+  "expect": {
+    "curved": false,
+    "snaps": [
+      {
+        "role": "centre",
+        "p": [
+          0,
+          0,
+          10
+        ]
+      },
+      {
+        "role": "corner",
+        "p": [
+          -15,
+          -10,
+          10
+        ]
+      },
+      {
+        "role": "corner",
+        "p": [
+          -15,
+          10,
+          10
+        ]
+      },
+      {
+        "role": "corner",
+        "p": [
+          15,
+          -10,
+          10
+        ]
+      },
+      {
+        "role": "corner",
+        "p": [
+          15,
+          10,
+          10
+        ]
+      },
+      {
+        "role": "edge",
+        "p": [
+          15,
+          0,
+          10
+        ]
+      },
+      {
+        "role": "edge",
+        "p": [
+          -15,
+          0,
+          10
+        ]
+      },
+      {
+        "role": "edge",
+        "p": [
+          0,
+          10,
+          10
+        ]
+      },
+      {
+        "role": "edge",
+        "p": [
+          0,
+          -10,
+          10
+        ]
+      }
+    ]
+  }
+}

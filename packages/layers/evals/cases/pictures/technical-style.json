@@ -1,0 +1,72 @@
+{
+  "title": "Technical style, front view",
+  "why": "The Technical preset: fine lines only, the outline as thin as the fold lines.",
+  "scene": {
+    "parts": [
+      {
+        "id": "base",
+        "shape": {
+          "plate": [
+            80,
+            50,
+            5
+          ],
+          "holes": [
+            {
+              "at": [
+                -30,
+                -17
+              ],
+              "r": 1.6
+            },
+            {
+              "at": [
+                30,
+                -17
+              ],
+              "r": 1.6
+            },
+            {
+              "at": [
+                -30,
+                17
+              ],
+              "r": 1.6
+            },
+            {
+              "at": [
+                30,
+                17
+              ],
+              "r": 1.6
+            }
+          ]
+        }
+      },
+      {
+        "id": "block",
+        "shape": {
+          "box": [
+            30,
+            20,
+            20
+          ]
+        },
+        "position": [
+          0,
+          0,
+          12.5
+        ]
+      }
+    ],
+    "camera": {
+      "direction": [
+        0,
+        -1,
+        0.0001
+      ],
+      "fit": true
+    },
+    "style": "technical"
+  }
+}

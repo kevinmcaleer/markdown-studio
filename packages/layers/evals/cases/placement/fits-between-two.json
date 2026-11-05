@@ -1,0 +1,45 @@
+{
+  "title": "New part that fits between two others",
+  "why": "The gap between the two blocks is exactly where it belongs in the assembly, and it overlaps neither.",
+  "input": {
+    "existing": [
+      {
+        "min": [
+          -50,
+          -10,
+          0
+        ],
+        "max": [
+          -30,
+          10,
+          10
+        ]
+      },
+      {
+        "min": [
+          30,
+          -10,
+          0
+        ],
+        "max": [
+          50,
+          10,
+          10
+        ]
+      }
+    ],
+    "at": [
+      0,
+      0,
+      10
+    ],
+    "size": [
+      20,
+      20,
+      20
+    ]
+  },
+  "expect": {
+    "keepsOwnSpot": true
+  }
+}

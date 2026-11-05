@@ -1,0 +1,82 @@
+{
+  "title": "Lid exploded off a base, with arrows and draft lines",
+  "why": "An assembly step: the lid lifted along its joint, a solid arrow down to where it fits, and dashed draft lines that never show through a part.",
+  "scene": {
+    "parts": [
+      {
+        "id": "base",
+        "shape": {
+          "plate": [
+            80,
+            50,
+            5
+          ],
+          "holes": [
+            {
+              "at": [
+                -30,
+                -17
+              ],
+              "r": 1.6
+            },
+            {
+              "at": [
+                30,
+                -17
+              ],
+              "r": 1.6
+            },
+            {
+              "at": [
+                -30,
+                17
+              ],
+              "r": 1.6
+            },
+            {
+              "at": [
+                30,
+                17
+              ],
+              "r": 1.6
+            }
+          ]
+        }
+      },
+      {
+        "id": "lid",
+        "shape": {
+          "box": [
+            60,
+            36,
+            8
+          ]
+        },
+        "position": [
+          0,
+          0,
+          6.5
+        ],
+        "parent": "base",
+        "joint": {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "distance": 50
+        }
+      }
+    ],
+    "camera": {
+      "direction": [
+        1,
+        -1,
+        0.82
+      ],
+      "fit": true
+    },
+    "explode": 1,
+    "arrows": true
+  }
+}

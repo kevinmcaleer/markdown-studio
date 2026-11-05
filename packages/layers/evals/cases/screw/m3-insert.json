@@ -1,0 +1,36 @@
+{
+  "title": "Heat-set insert hole for M3",
+  "why": "A 4 mm blind hole is the M3 insert's hole. It is 6 mm deep, deeper than the 5.7 mm insert, so the insert keeps its own length.",
+  "input": {
+    "shape": {
+      "plate": [
+        20,
+        20,
+        10
+      ],
+      "holes": [
+        {
+          "at": [
+            0,
+            0
+          ],
+          "r": 2,
+          "depth": 6
+        }
+      ]
+    },
+    "click": {
+      "at": [
+        0,
+        -2.5,
+        10
+      ]
+    },
+    "head": "insert"
+  },
+  "expect": {
+    "d": 3,
+    "length": 5.7,
+    "through": false
+  }
+}

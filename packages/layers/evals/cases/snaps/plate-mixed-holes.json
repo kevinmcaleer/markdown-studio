@@ -1,0 +1,75 @@
+{
+  "title": "Plate with two through holes and a blind one",
+  "why": "Every hole on the face is a snap, blind or not, each at its own radius.",
+  "input": {
+    "shape": {
+      "plate": [
+        60,
+        20,
+        5
+      ],
+      "holes": [
+        {
+          "at": [
+            -20,
+            0
+          ],
+          "r": 1.6
+        },
+        {
+          "at": [
+            20,
+            0
+          ],
+          "r": 1.6
+        },
+        {
+          "at": [
+            0,
+            0
+          ],
+          "r": 2,
+          "depth": 3
+        }
+      ]
+    },
+    "click": {
+      "at": [
+        -10,
+        6,
+        5
+      ]
+    }
+  },
+  "expect": {
+    "snaps": [
+      {
+        "role": "hole",
+        "p": [
+          -20,
+          0,
+          5
+        ],
+        "radius": 1.6
+      },
+      {
+        "role": "hole",
+        "p": [
+          20,
+          0,
+          5
+        ],
+        "radius": 1.6
+      },
+      {
+        "role": "hole",
+        "p": [
+          0,
+          0,
+          5
+        ],
+        "radius": 2
+      }
+    ]
+  }
+}
