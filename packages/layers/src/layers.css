@@ -826,3 +826,13 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 /* How many joints explode on their own, beside the main Explode slider. */
 .lyr-btn.lyr-scene-explode-follow { gap: 3px; padding: 0 6px; height: 28px; color: #1f6fe0; font-size: 12px; font-weight: 600; }
 .lyr-scene-explode-follow[hidden] { display: none; }
+
+/* Make track: the wheels picked, and how the count fits. */
+.lyr-track-piece { display: flex; align-items: center; gap: 6px; margin: 0; }
+.lyr-track-wheels { list-style: none; margin: 0 0 6px; padding: 0; }
+.lyr-track-wheels li { display: flex; align-items: center; gap: 6px; padding: 2px 0; }
+.lyr-track-wheels li span { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lyr-track-wheels li em { color: var(--lyr-muted, #6b7280); font-style: normal; font-size: 12px; }
+.lyr-track-fit { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.lyr-track-fit .lyr-note { flex: 1; margin: 0; }
+.lyr-track-fit .lyr-btn { flex: none; }

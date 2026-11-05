@@ -9,6 +9,7 @@
 
 import { meshTable, restoreParts, type Meshes } from "./meshTable";
 import { normalizeScrew, type ScrewSpec } from "./screw";
+import { normalizeTrack, type TrackSpec } from "./trackSpec";
 
 export type Vec3 = [number, number, number];
 
@@ -53,6 +54,8 @@ export interface ScenePart {
   ghost?: boolean;
   /** A screw made by the screw tool (its model is made from this, and carried in `data`). */
   screw?: ScrewSpec;
+  /** A track made by Make track: one piece repeated round wheels (its model is made from this, and carried in `data`). */
+  track?: TrackSpec;
   /**
    * This part's assembly arrow (drawn when the scene's `arrows` is on): how
    * far along the gap from the part's leading end (0) to where it fits (1)
@@ -268,6 +271,8 @@ export function normalizeScene(value: unknown): SceneData {
         if (p.ghost) part.ghost = true;
         const screw = normalizeScrew(p.screw);
         if (screw) part.screw = screw;
+        const track = normalizeTrack(p.track);
+        if (track) part.track = track;
         if (p.arrow && typeof p.arrow === "object") {
           const a = p.arrow as { from?: unknown; to?: unknown; off?: unknown };
           const arrow: PartArrow = {};
