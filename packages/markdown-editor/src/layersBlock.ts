@@ -1,7 +1,8 @@
 import { StateEffect, StateField, type EditorState, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { imageAt, imageMarkdown } from "./imagePopover";
-import { isLayersUrl, LAYERS_MODEL_EVENT, LAYERS_UPDATE_EVENT, layersOpener, layersUrl, type LayersOpenHow, type LayersUpdateProgress } from "./layersFacet";
+import { isLayersUrl, LAYERS_MODEL_EVENT, LAYERS_UPDATE_EVENT, layersOpener, layersUrl, type LayersHistoryEntry, type LayersOpenHow, type LayersUpdateProgress } from "./layersFacet";
+import { historyTheme } from "./layersHistory";
 import type { SlashCommand } from "./slashMenu";
 
 // Layers graphics in the text (the `layers` option). A graphic is an ordinary
@@ -69,10 +70,16 @@ export type LayersOptions = {
   mode?: "inline" | "full";
   /** After a graphic is saved: its old picture's link (to tidy up, say) and the new one. */
   onReplace?: (oldUrl: string, newUrl: string) => void;
+  /**
+   * A graphic's earlier versions the host keeps (published ones, say),
+   * newest first. With any, the graphic shows a History button that lists them.
+   */
+  history?: (url: string) => Promise<LayersHistoryEntry[]>;
 };
 
 export type LayersHost = LayersOptions & {
-  uploadImage: (file: File) => Promise<string>;
+  /** `replaces`: the graphic's old picture, when this is a new render of it (so the host can keep only the ones it needs). */
+  uploadImage: (file: File, options?: { replaces?: string }) => Promise<string>;
   listImages?: () => Promise<{ url: string; title?: string }[]>;
 };
 
@@ -329,7 +336,7 @@ async function redraw(view: EditorView, host: LayersHost, url: string, stepOnly 
     }
     const result = await editor.exportResult();
     const file = new File([result.png], graphicFileName(result.title), { type: "image/png" });
-    const newUrl = layersUrl(await host.uploadImage(file));
+    const newUrl = layersUrl(await host.uploadImage(file, { replaces: url }));
     const current = graphicAt(view, url);
     if (!current) return;
     const insert = imageMarkdown({ alt: result.title || current.alt || "Graphic", url: newUrl, title: current.title });
@@ -482,7 +489,8 @@ export function openLayers(view: EditorView, host: LayersHost, pos: number, mode
         doneLabel: "Save",
         onDone: async (result: LayersResult) => {
           const file = new File([result.png], graphicFileName(result.title), { type: "image/png" });
-          const url = layersUrl(await host.uploadImage(file));
+          // A new render of the graphic it was opened from (not of a photo drawn on).
+          const url = layersUrl(await host.uploadImage(file, isLayersUrl(oldUrl) ? { replaces: oldUrl } : undefined));
           if (session.closed) return;
           const open = view.state.field(field, false);
           const at = open && open.id === id ? open.pos : pos;
@@ -804,6 +812,7 @@ export function layersBlocks(host: LayersHost): Extension {
     field,
     decorations,
     theme,
+    historyTheme,
     layersOpener.of({
       open: (view, pos, mode, how) => openLayers(view, host, pos, mode ?? "inline", how),
       status: (url: string, text?: string) => graphicStatus(host, url, text),
@@ -811,6 +820,7 @@ export function layersBlocks(host: LayersHost): Extension {
       pending: async (text) => (await pendingGraphics(host, text)).length,
       updateAll: (view) => updateAllGraphics(view, host),
       progress: (view) => allRuns.get(view) ?? null,
+      ...(host.history ? { history: host.history } : {}),
     }),
     ViewPlugin.define((view) => ({
       // Graphics moved, added or saved: each checks its step number again.
