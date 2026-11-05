@@ -1071,6 +1071,37 @@ export class Thumbnailer {
     return out.toDataURL("image/png");
   }
 
+  /**
+   * The model drawn at a set scale, `pxPerMm` pixels to the millimetre
+   * (times `sharp` in the picture itself), in a square just big enough for
+   * it, so several parts drawn this way can be compared side by side.
+   */
+  drawAt(model: Model, style: SceneStyle, direction: Vec3, pxPerMm: number, sharp = 2): { url: string; px: number } {
+    const part: ScenePart = { id: "t", name: "", position: [0, 0, 0], rotation: [0, 0, 0] };
+    this.art.setParts([{ part, model }], { ...style, outline: Math.min(style.outline, 2), lineWidth: Math.min(style.lineWidth, 1) }, 0);
+    const box = this.art.bounds();
+    const cam = frame({ direction, target: [0, 0, 0], size: 1 }, box, 1, 1.08);
+    const px = Math.max(8, Math.round(2 * cam.size * pxPerMm));
+    const camera = cameraFor(cam, 1, radiusOf(box) + Math.hypot(...cam.target));
+    const n = Math.min(2048, Math.round(px * sharp));
+    this.art.draw(camera, n, n, 2);
+    const out = document.createElement("canvas");
+    out.width = n;
+    out.height = n;
+    const ctx = out.getContext("2d")!;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(this.art.renderer.domElement, 0, 0, n, n);
+    return { url: out.toDataURL("image/png"), px };
+  }
+
+  /** How many mm across the square `drawAt` draws the model in (from `direction`). */
+  spanOf(model: Model, style: SceneStyle, direction: Vec3): number {
+    const part: ScenePart = { id: "t", name: "", position: [0, 0, 0], rotation: [0, 0, 0] };
+    this.art.setParts([{ part, model }], style, 0);
+    return 2 * frame({ direction, target: [0, 0, 0], size: 1 }, this.art.bounds(), 1, 1.08).size;
+  }
+
   dispose(): void {
     this.art.dispose();
   }

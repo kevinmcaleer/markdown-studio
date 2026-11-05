@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isLayersUrl, layersUrl } from "./layersFacet";
-import { graphicFileName, graphicsIn, guideSection, newGraphicInsert } from "./layersBlock";
+import { graphicFileName, graphicsIn, guideSection, inventorySpot, newGraphicInsert } from "./layersBlock";
 
 describe("layers links", () => {
   it("marks and recognises a graphic's link", () => {
@@ -52,5 +52,19 @@ describe("guideSection", () => {
     const text = "## Assembly guide\n\n![Old](/o.png#layers)";
     const s = guideSection(text);
     expect(text.slice(s.from, s.to)).toBe("\n![Old](/o.png#layers)");
+  });
+});
+
+describe("inventorySpot", () => {
+  const text = "# Robot\n\nIntro\n\n# Assembly instructions\n\n## Step 1\n\n![a](a.png#layers)\n\n## Step 2\n\nText\n\n```\n# not a heading\n```\n\n# Wiring\n\nWires\n";
+  it("goes to the end of the heading-one section the cursor is in, past its sub-headings", () => {
+    const pos = text.indexOf("Step 1");
+    const at = inventorySpot(text, pos);
+    expect(text.slice(0, at).endsWith("```")).toBe(true);
+    expect(text.slice(at).trimStart().startsWith("# Wiring")).toBe(true);
+  });
+  it("goes to the end of the text in the last section, or with no headings", () => {
+    expect(inventorySpot(text, text.indexOf("Wires"))).toBe(text.length - 1);
+    expect(inventorySpot("Just text\n", 2)).toBe(9);
   });
 });

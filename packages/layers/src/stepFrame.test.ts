@@ -46,3 +46,28 @@ describe("fixings and the inventory", () => {
     expect(list.map(g => [g.part.url, g.count])).toEqual([["plate.stl", 2], ["screw.stl", 2]]);
   });
 });
+
+describe("the screw inventory", () => {
+  it("counts the screw tool's screws and inserts by kind, inserts last", async () => {
+    const { screwInventoryOf } = await import("./stepFrame");
+    const screw = (id: string, d: number, length: number, head: string, extra = {}) => ({ id, name: id, position: [0, 0, 0] as [number, number, number], rotation: [0, 0, 0] as [number, number, number], data: "x", screw: { d, length, head }, ...extra });
+    const list = screwInventoryOf([
+      screw("a", 3, 5.7, "insert"),
+      screw("b", 3, 8, "countersunk"),
+      screw("c", 3, 8, "countersunk"),
+      part("plate", "plate.stl"),
+      screw("d", 2, 6, "pan"),
+      screw("e", 3, 5.7, "insert"),
+      screw("f", 3, 10, "socket"),
+      screw("g", 3, 12, "socket", { hidden: true }),
+      screw("h", 2.5, 8, "countersunk"),
+    ] as never);
+    expect(list.map(g => [g.key, g.count])).toEqual([
+      ["socket:3:10", 1],
+      ["countersunk:2.5:8", 1],
+      ["countersunk:3:8", 2],
+      ["pan:2:6", 1],
+      ["insert:3:5.7", 2],
+    ]);
+  });
+});

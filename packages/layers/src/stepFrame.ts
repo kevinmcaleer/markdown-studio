@@ -5,6 +5,7 @@
 
 import type { ProjectModel, SceneData, ScenePart } from "./scene/model";
 import { highlightedParts } from "./scene/model";
+import { normalizeScrew, type ScrewHead, type ScrewSpec } from "./scene/screw";
 
 export interface PartCount {
   /** What makes two parts the same part: their file (and solid), or their carried data. */
@@ -74,4 +75,35 @@ export function inventoryOf(parts: ScenePart[]): PartCount[] {
     else groups.set(key, { key, part: p, count: 1 });
   }
   return [...groups.values()];
+}
+
+/** One kind of screw (or heat-set insert) in the project, with how many it uses. */
+export interface ScrewCount {
+  /** "insert:3:5.7", "countersunk:3:8": what makes two screws the same screw. */
+  key: string;
+  screw: ScrewSpec;
+  /** One of them, to draw. */
+  part: ScenePart;
+  count: number;
+}
+
+const HEAD_ORDER: ScrewHead[] = ["socket", "button", "countersunk", "pan", "insert"];
+
+/**
+ * The screw inventory: every screw and heat-set insert the screw tool put
+ * in, counted by kind (head, size and length), hidden parts left out.
+ * Screws come by head, then size, then length; inserts last.
+ */
+export function screwInventoryOf(parts: ScenePart[]): ScrewCount[] {
+  const groups = new Map<string, ScrewCount>();
+  for (const p of parts) {
+    if (p.hidden) continue;
+    const screw = normalizeScrew(p.screw);
+    if (!screw) continue;
+    const key = `${screw.head}:${screw.d}:${screw.length}`;
+    const g = groups.get(key);
+    if (g) g.count++;
+    else groups.set(key, { key, screw, part: p, count: 1 });
+  }
+  return [...groups.values()].sort((a, b) => HEAD_ORDER.indexOf(a.screw.head) - HEAD_ORDER.indexOf(b.screw.head) || a.screw.d - b.screw.d || a.screw.length - b.screw.length);
 }

@@ -268,7 +268,7 @@ export interface Template {
   /** Where a 3D scene goes, as fractions of the page; it opens to add parts. */
   scene?: { left: number; top: number; width: number; height: number };
   /** The project's parts list: every part drawn at one scale with its count (the editor builds it from the model). */
-  inventory?: boolean;
+  inventory?: boolean | "screws";
 }
 
 const tb = (text: string, o: Record<string, unknown>) => named(new Textbox(text, { fontFamily: FONTS[0][1], fill: INK, ...o }), text);
@@ -301,6 +301,14 @@ export const TEMPLATES: Template[] = [
     detail: "Every part in the project at one scale, with counts; fixings in a box",
     background: "#ffffff",
     inventory: true,
+    build: () => [],
+  },
+  {
+    id: "screw-inventory",
+    label: "Screw inventory",
+    detail: "Every kind of screw and heat-set insert in the project, at one scale, with counts",
+    background: "#ffffff",
+    inventory: "screws",
     build: () => [],
   },
   {

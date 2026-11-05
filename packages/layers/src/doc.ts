@@ -174,7 +174,24 @@ export function staleScenes(doc: LayersDoc | null, stamp: number): number {
     const at = o.scene?.model?.stamp;
     if (typeof at === "number" && at < stamp) n++;
   }
+  // The screw inventory counts once, however many layers it has.
+  const inv = inventoryStamp(doc);
+  if (typeof inv === "number" && inv < stamp) n++;
   return n;
+}
+
+/** The model's stamp the graphic's screw inventory was drawn from (undefined: none, or not from a model). */
+function inventoryStamp(doc: LayersDoc): number | undefined {
+  for (const o of doc.objects) {
+    const inv = o.inventory as { kind?: string; stamp?: unknown } | undefined;
+    if (inv && inv.kind === "screws" && typeof inv.stamp === "number") return inv.stamp;
+  }
+  return undefined;
+}
+
+/** Whether the graphic has a screw inventory (it follows the project's model, as 3D scenes do). */
+export function hasInventory(doc: LayersDoc | null): boolean {
+  return !!doc && doc.objects.some(o => (o.inventory as { kind?: string } | undefined)?.kind === "screws");
 }
 
 /** Whether the graphic has a 3D scene. */
