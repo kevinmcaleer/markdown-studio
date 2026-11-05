@@ -779,6 +779,22 @@ export class LineArt {
     return this.objects.filter(o => o.group.visible).map(o => o.fill);
   }
 
+  /**
+   * The visible parts' meshes where they're drawn now, plus the ends of
+   * their draft lines (where the arrows run), for framing them by their
+   * real outlines rather than a box round them.
+   */
+  placed(): { meshes: Placed[]; points: Vector3[] } {
+    const meshes: Placed[] = [];
+    this.objects.forEach(o => {
+      if (!o.group.visible) return;
+      o.group.updateMatrixWorld(true);
+      meshes.push({ geometry: o.fill.geometry, matrix: o.fill.matrixWorld });
+    });
+    const points = this.axes.filter(a => !a.part.hidden).flatMap(a => [a.from, a.to]);
+    return { meshes, points };
+  }
+
   /** The box round the visible parts, in mm. */
   bounds(): Box3 {
     const box = new Box3();
@@ -1010,6 +1026,43 @@ export function frame(cam: SceneCamera, box: Box3, aspect: number, margin = 1.12
   return { direction: [...cam.direction] as Vec3, target: [mid.x, mid.y, mid.z], size: Math.max(1, halfH) };
 }
 
+/** A mesh where it's drawn in the world. */
+export interface Placed { geometry: BufferGeometry; matrix: Matrix4 }
+
+/**
+ * The camera that fills the picture with these meshes, from `cam`'s
+ * direction: framed by every point of their real outlines as seen from
+ * there (not the corners of a box round them, which leaves wide empty
+ * margins on a turned view), with `margin` round them for the outlines and
+ * arrow heads. `points` are extra points to keep in (draft lines, arrows);
+ * `keep` leaves out what a section cuts away.
+ */
+export function frameTight(cam: SceneCamera, meshes: Placed[], aspect: number, margin = 1.05, points: Vector3[] = [], keep?: (p: Vector3) => boolean): SceneCamera {
+  const c = cameraFor({ ...cam, target: [0, 0, 0], size: 1 }, 1, 1);
+  c.updateMatrixWorld();
+  const inv = c.matrixWorldInverse;
+  const lo = new Vector3(Infinity, Infinity, Infinity);
+  const hi = new Vector3(-Infinity, -Infinity, -Infinity);
+  const v = new Vector3();
+  const take = (p: Vector3) => {
+    if (keep && !keep(p)) return;
+    p.applyMatrix4(inv);
+    lo.min(p);
+    hi.max(p);
+  };
+  for (const { geometry, matrix } of meshes) {
+    const pos = geometry.getAttribute("position");
+    if (!pos) continue;
+    for (let i = 0; i < pos.count; i++) take(v.fromBufferAttribute(pos, i).applyMatrix4(matrix));
+  }
+  points.forEach(p => take(v.copy(p)));
+  if (!isFinite(lo.x)) return cam;
+  // The middle of what's seen, at the middle of its depth: the target sits among the parts.
+  const mid = new Vector3((lo.x + hi.x) / 2, (lo.y + hi.y) / 2, (lo.z + hi.z) / 2).applyMatrix4(c.matrixWorld);
+  const halfH = Math.max((hi.y - lo.y) / 2, (hi.x - lo.x) / 2 / aspect) * margin;
+  return { direction: [...cam.direction] as Vec3, target: [mid.x, mid.y, mid.z], size: Math.max(1, halfH) };
+}
+
 /**
  * The finished picture: the scene drawn at `w`×`h` (times `scale`) with a
  * see-through background, drawn bigger and shrunk so its lines are smooth.
@@ -1148,24 +1201,23 @@ export async function partBounds(scene: SceneData, partId: string, store: ModelS
  * (apart along their joints), from `cam`'s direction: one view for a whole
  * assembly guide, so the model doesn't jump between steps.
  */
-export async function frameAll(cam: SceneCamera, scenes: SceneData[], store: ModelStore, aspect: number, margin = 1.2): Promise<SceneCamera> {
-  const box = new Box3();
+export async function frameAll(cam: SceneCamera, scenes: SceneData[], store: ModelStore, aspect: number, margin = 1.06): Promise<SceneCamera> {
+  const meshes: Placed[] = [];
   for (const scene of scenes) {
     const mats = worldMatrices(scene.parts, scene.explode);
     for (const part of scene.parts) {
       if (part.hidden) continue;
       const m = mats.get(part.id);
-      let bb: Box3 | null | undefined;
+      let geometry: BufferGeometry;
       try {
-        bb = (await store.get(part)).geometry.boundingBox;
+        geometry = (await store.get(part)).geometry;
       } catch {
         continue;
       }
-      if (!m || !bb) continue;
-      for (let k = 0; k < 8; k++) box.expandByPoint(new Vector3(k & 1 ? bb.max.x : bb.min.x, k & 2 ? bb.max.y : bb.min.y, k & 4 ? bb.max.z : bb.min.z).applyMatrix4(m));
+      if (m) meshes.push({ geometry, matrix: m });
     }
   }
-  return frame(cam, box, aspect, margin);
+  return frameTight(cam, meshes, aspect, margin);
 }
 
 /**
