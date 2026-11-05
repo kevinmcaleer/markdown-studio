@@ -27,7 +27,8 @@ import {
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import type { SceneCamera, SceneData, ScenePart, SceneStyle, SectionPlane, Vec3 } from "./model";
-import { explodeOf, highlightedParts, sectionKeeps, sectionOrigin } from "./model";
+import { explodeOf, highlightedParts, sectionKeeps, sectionOrigin, shownAs } from "./model";
+import { wireTriangles } from "./wire";
 import { readStep, isStepFile, mergeBodies, type StepBody } from "./step";
 import { bounds, fromBase64, parseStl, stlFaces } from "./stl";
 import { isPacked, unpackMesh } from "./mesh";
@@ -86,7 +87,23 @@ function edgesOf(model: Model, crease: number): LineSegmentsGeometry | null {
   return g;
 }
 
-type PartSource = Pick<ScenePart, "url" | "data" | "id" | "body">;
+type PartSource = Pick<ScenePart, "url" | "data" | "id" | "body"> & Pick<Partial<ScenePart>, "wire">;
+
+/** A model with nothing in it: a wire's, whose tube is made from its parts' places as it's drawn. */
+export function emptyModel(): Model {
+  const geometry = new BufferGeometry();
+  geometry.setAttribute("position", new BufferAttribute(new Float32Array(0), 3));
+  return { geometry, centre: [0, 0, 0], size: [0, 0, 0], triangles: 0, edges: new Map() };
+}
+
+/** A wire's tube in the world, for parts placed by `world`. */
+function wireGeometry(part: ScenePart, world: Map<string, Matrix4>): BufferGeometry {
+  const g = new BufferGeometry();
+  g.setAttribute("position", new BufferAttribute(wireTriangles(part, world), 3));
+  g.computeBoundingBox();
+  g.computeBoundingSphere();
+  return g;
+}
 
 /** Models already read, by where they came from, so each is read once. */
 export class ModelStore {
@@ -96,6 +113,7 @@ export class ModelStore {
   constructor(private fetchModel: FetchModel) {}
 
   static key(part: PartSource): string {
+    if (part.wire) return `wire:${part.id}`;
     return part.url ? `url:${part.url}${part.body !== undefined ? `#${part.body}` : ""}` : `data:${part.id}:${part.data?.length || 0}:${part.data?.slice(0, 64) || ""}`;
   }
 
@@ -115,6 +133,7 @@ export class ModelStore {
     let m = this.models.get(key);
     if (!m) {
       m = (async () => {
+        if (part.wire) return emptyModel();
         if (part.data && isPacked(part.data)) {
           const { positions, faces } = await unpackMesh(part.data);
           return modelFromPositions(positions, faces);
@@ -208,6 +227,8 @@ interface PartObjects {
   fill: Mesh;
   lines: LineSegments2 | null;
   idGroup: Group;
+  /** A wire's tube, made from where its parts are (and made again when they move). */
+  tube?: BufferGeometry;
   /** With a section: the part's cap on the plane, in the picture and in the ID pass. */
   caps?: { main: Mesh; id: Mesh };
 }
@@ -331,6 +352,8 @@ export class LineArt {
   private cutScene = new Scene();
   /** The section view's plane, when there is one: every part is cut by it. */
   private section: SectionPlane | null = null;
+  /** The scene's wiring settings: the wiring view (other parts ghosted), or wiring hidden. Set before setParts. */
+  look: Pick<SceneData, "wiring" | "hideWiring"> = {};
   private clip: Plane[] = [];
   /** The quad each cap is drawn on (sized to the parts), and the stencil counters' materials (picture, ID pass). */
   private capGeometry: PlaneGeometry | null = null;
@@ -357,13 +380,18 @@ export class LineArt {
     this.style = style;
     const world = worldMatrices(list.map(x => x.part), explode);
     const lit = highlightedParts(list.map(x => x.part));
-    list.forEach(({ part, model }, i) => {
+    list.forEach(({ part: own, model }, i) => {
+      // As the wiring settings show it (ghosted in the wiring view, say); kept as it is.
+      const part = shownAs(own, this.look);
       const fillColour = this.fillOf(part, lit);
-      const fill = new Mesh(model.geometry, new MeshBasicMaterial({ color: fillColour, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1, clippingPlanes: this.clip, side: this.section ? DoubleSide : FrontSide }));
+      const tube = own.wire ? wireGeometry(own, world) : undefined;
+      const geometry = tube || model.geometry;
+      const fill = new Mesh(geometry, new MeshBasicMaterial({ color: fillColour, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1, clippingPlanes: this.clip, side: this.section ? DoubleSide : FrontSide }));
       fill.userData.partId = part.id;
       const group = new Group();
       group.add(fill);
-      const edges = edgesOf(model, style.crease);
+      // A wire is round: its outline only, no fold lines.
+      const edges = own.wire ? null : edgesOf(model, style.crease);
       let lines: LineSegments2 | null = null;
       if (edges && style.lineWidth > 0) {
         lines = new LineSegments2(edges, this.lineMaterial(part.ghost ? style.ghost : style.line));
@@ -373,13 +401,13 @@ export class LineArt {
       const idGroup = new Group();
       // Each part's ID colour; 0 (black) is the empty background.
       // Written as is (no blending), so a ghost part's alpha marks it for the outline pass.
-      idGroup.add(new Mesh(model.geometry, new MeshBasicMaterial({ color: new Color().setHex(idColour(i + 1)), transparent: true, opacity: part.ghost ? 0.5 : 1, blending: NoBlending, clippingPlanes: this.clip })));
+      idGroup.add(new Mesh(geometry, new MeshBasicMaterial({ color: new Color().setHex(idColour(i + 1)), transparent: true, opacity: part.ghost ? 0.5 : 1, blending: NoBlending, clippingPlanes: this.clip })));
       place(group, world.get(part.id)!);
       place(idGroup, world.get(part.id)!);
       group.visible = idGroup.visible = !part.hidden;
       this.scene.add(group);
       this.idScene.add(idGroup);
-      this.objects.push({ part, model, group, fill, lines, idGroup });
+      this.objects.push({ part: own, model, group, fill, lines, idGroup, tube });
     });
     this.makeCaps();
     this.drawDraft(world, explode);
@@ -611,8 +639,14 @@ export class LineArt {
   }
 
   /** A part's fill: the selected part's stronger shade, the highlight, or the plain fill. */
-  private fillOf(part: ScenePart, lit: Set<string>): string {
+  private fillOf(own: ScenePart, lit: Set<string>): string {
     const style = this.style!;
+    const part = shownAs(own, this.look);
+    // A wire is filled in its own colour (red to V, black to G); a ghost one, plain, as an earlier step's.
+    if (part.wire) {
+      if (part.id === this.selected) return selectedFill(part.wire.color);
+      return part.ghost ? style.fill : part.wire.color;
+    }
     if (part.id === this.selected) return selectedFill(style.highlight);
     return part.ghost ? style.fill : lit.has(part.id) ? style.highlight : style.fill;
   }
@@ -642,6 +676,7 @@ export class LineArt {
       o.part = byId.get(o.part.id) || o.part;
       place(o.group, m);
       place(o.idGroup, m);
+      if (o.part.wire) this.setTube(o, wireGeometry(o.part, world));
     }
     this.placeCaps();
     this.drawDraft(world, explode);
@@ -807,6 +842,24 @@ export class LineArt {
       }
     }
     return best;
+  }
+
+  /** Gives a wire its tube anew (after its parts moved, or its route changed). */
+  private setTube(o: PartObjects, g: BufferGeometry): void {
+    o.tube?.dispose();
+    o.tube = g;
+    o.fill.geometry = g;
+    (o.idGroup.children[0] as Mesh).geometry = g;
+  }
+
+  /** Lays a wire again, as it is now, where its parts are (after changing its route or look). */
+  rewire(part: ScenePart, parts: ScenePart[], explode = 0): void {
+    const o = this.objects.find(x => x.part.id === part.id);
+    if (!o || !part.wire) return;
+    o.part = part;
+    this.setTube(o, wireGeometry(part, worldMatrices(parts, explode)));
+    const lit = highlightedParts(this.objects.map(x => x.part));
+    (o.fill.material as MeshBasicMaterial).color.set(this.fillOf(part, lit));
   }
 
   /** A part's place in the world as drawn now. */
@@ -994,6 +1047,7 @@ export class LineArt {
   clear(): void {
     this.clearCaps();
     for (const o of this.objects) {
+      o.tube?.dispose();
       (o.fill.material as MeshBasicMaterial).dispose();
       ((o.idGroup.children[0] as Mesh).material as MeshBasicMaterial).dispose();
       this.scene.remove(o.group);
@@ -1144,6 +1198,7 @@ export async function renderPicture(data: SceneData, store: ModelStore, w: numbe
     const max = Math.min(art.renderer.capabilities.maxTextureSize || 4096, 8192);
     const ss = Math.max(1, Math.min(2, max / Math.max(ow, oh)));
     art.setSection(data.section);
+    art.look = { wiring: data.wiring, hideWiring: data.hideWiring };
     art.setParts(list, data.style, data.explode);
     art.arrows = !!data.arrows;
     art.cuts = cuts;

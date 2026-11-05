@@ -26,7 +26,8 @@ export function partKey(p: ScenePart): string {
  */
 export function partsInStep(scene: SceneData): PartCount[] {
   const lit = highlightedParts(scene.parts);
-  const shown = scene.parts.filter(p => !p.hidden && !p.ghost);
+  // A wire isn't a part to fetch: it's laid between them (wiring steps come later).
+  const shown = scene.parts.filter(p => !p.hidden && !p.ghost && !p.wire);
   const list = shown.some(p => lit.has(p.id)) ? shown.filter(p => lit.has(p.id)) : shown;
   const groups = new Map<string, PartCount>();
   for (const p of list) {
@@ -69,6 +70,7 @@ export function isFastener(size: [number, number, number]): boolean {
 export function inventoryOf(parts: ScenePart[]): PartCount[] {
   const groups = new Map<string, PartCount>();
   for (const p of parts) {
+    if (p.wire) continue;
     const key = partKey(p);
     const g = groups.get(key);
     if (g) g.count++;

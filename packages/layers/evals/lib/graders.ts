@@ -9,6 +9,8 @@ import { arrowEnd, cameraFor, frameTight, localMatrix, worldMatrices, type Place
 import { fitDiameter, fitLength, holeDepth, isHoleSnap, type ScrewHead } from "../../src/scene/screw";
 import { Topology, type Face, type Snap } from "../../src/scene/snaps";
 import { layTrack, type TrackSpec } from "../../src/scene/track";
+import { leadLength, wireRoute } from "../../src/scene/wire";
+import { normalizeWire } from "../../src/scene/wireSpec";
 import { atLeast, type Check, near, nearPoint, same, show, yes } from "./score";
 import { centred, type ReadFile, shapeTriangles, type ShapeSpec } from "./shapes";
 
@@ -322,6 +324,68 @@ export const GRADERS: Record<string, Grader> = {
       const close = ends[ends.length - 1].distanceTo(starts[0]);
       checks.push({ name: "loop closes", score: expect.closes ? Math.max(0, 1 - close / (input.pitch * 0.25)) : close > input.pitch * 0.25 ? 1 : 0, detail: `last piece ends ${show(close)} mm from the first` });
     }
+    return checks;
+  },
+  /**
+   * Wires: lay a wire through its parts (placed, joined and exploded as
+   * the case says), and check it does what a person drawing it would:
+   * leaves each end straight out, passes over its waypoints without going
+   * into the face, takes up its slack, bows the right way, and its ends
+   * stay on their parts when the scene explodes.
+   */
+  wire(
+    input: { parts: (Pick<ScenePart, "id" | "position"> & Partial<ScenePart>)[]; wire: unknown; explode?: number },
+    expect: { leaves?: boolean; extra?: [number, number]; bow?: Vec3; through?: { at: Vec3; normal: Vec3 }[]; ends?: [Vec3, Vec3]; tol?: number },
+  ) {
+    const parts: ScenePart[] = input.parts.map(p => ({ name: p.id, rotation: [0, 0, 0], ...p }) as ScenePart);
+    const spec = normalizeWire(input.wire);
+    if (!spec) return [yes("the wire reads", false)];
+    const route = wireRoute(spec, worldMatrices(parts, input.explode || 0));
+    if (!route) return [yes("the wire can be laid", false)];
+    const c = route.centre;
+    const tol = expect.tol ?? 0.25;
+    const checks: Check[] = [];
+    const ends = [
+      { p: c[0], next: c[Math.min(c.length - 1, 3)] },
+      { p: c[c.length - 1], next: c[Math.max(0, c.length - 4)] },
+    ];
+    if (expect.leaves) {
+      const mats = worldMatrices(parts, input.explode || 0);
+      [spec.from, spec.to].forEach((e, i) => {
+        const n = new Vector3(...e.normal).transformDirection(mats.get(e.part)!);
+        const d = ends[i].next.clone().sub(ends[i].p).normalize();
+        checks.push(atLeast(`leaves end ${i + 1} along its normal (cos)`, d.dot(n), 0.97, 0.3));
+      });
+    }
+    if (expect.ends) expect.ends.forEach((want, i) => checks.push(nearPoint(`end ${i + 1} on its part (mm)`, ends[i].p.toArray(), want, 0.01, 2)));
+    if (expect.extra) {
+      // The extra over the same wire pulled tight.
+      const tight = wireRoute({ ...spec, slack: 0 }, worldMatrices(parts, input.explode || 0))!;
+      checks.push(near("slack taken up (extra mm)", route.length - tight.length, expect.extra[0], expect.extra[1]));
+    }
+    if (expect.bow) {
+      // The middle of the wire, against the middle of its ends: which way it bows.
+      const mid = c[Math.floor(c.length / 2)].clone().sub(c[0].clone().lerp(c[c.length - 1], 0.5));
+      const want = new Vector3(...expect.bow).normalize();
+      checks.push(atLeast("bows the right way (cos)", mid.lengthSq() > 1e-6 ? mid.normalize().dot(want) : 0, 0.9, 0.5));
+    }
+    for (const [i, t] of (expect.through || []).entries()) {
+      const at = new Vector3(...t.at);
+      const n = new Vector3(...t.normal).normalize();
+      let best = Infinity;
+      let side = 0;
+      for (const p of c) {
+        const d = p.distanceTo(at.clone().addScaledVector(n, spec.diameter / 2));
+        if (d < best) {
+          best = d;
+          side = p.clone().sub(at).dot(n);
+        }
+      }
+      checks.push(near(`passes waypoint ${i + 1} (mm)`, best, 0, tol, 2));
+      // Its middle a radius off the face: lying on it, not sunk into it.
+      checks.push(atLeast(`lies on the face at waypoint ${i + 1}, not in it (mm off)`, side, spec.diameter / 2 - 0.05, spec.diameter / 2));
+    }
+    void leadLength;
     return checks;
   },
 };

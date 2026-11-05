@@ -31,5 +31,9 @@
   "track/big-and-small": 1,
   "track/tank-three-wheels": 1,
   "track/tight-small-wheel": 1,
-  "track/two-wheels": 1
+  "track/two-wheels": 1,
+  "wire/across-exploded-joint": 1,
+  "wire/facing-ends-sag": 1,
+  "wire/routed-over-faces": 1,
+  "wire/servo-lead-default-route": 1
 }

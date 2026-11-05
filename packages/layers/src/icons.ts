@@ -73,6 +73,8 @@ const P: Record<string, string> = {
   arrow: "M4 12h16M14 6l6 6-6 6",
   screw: "M7 3h10v4H7zM10 7v11l2 3 2-3V7M10 11l4-1.5M10 14.5l4-1.5",
   camera: "M3 8a2 2 0 0 1 2-2h2l2-2h6l2 2h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
+  wire: "M3 18c4.5 0 4.5-6 9-6s4.5-6 9-6M3 16v4M21 4v4",
+  plug: "M9 3v4M15 3v4M6 7h12v4a6 6 0 0 1-12 0zM12 17v4",
   track: "M7 8h10a4 4 0 0 1 0 8H7a4 4 0 0 1 0-8zM7 12h.01M17 12h.01M10 8v-2M14 8v-2M10 16v2M14 16v2",
 };
 

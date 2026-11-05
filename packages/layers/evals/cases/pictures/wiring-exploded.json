@@ -1,0 +1,227 @@
+{
+  "title": "Leads following their plugs out when exploded",
+  "why": "The plugs come up out of their sockets and the servos apart from the plate; each lead stays on its plugs, stretching between them.",
+  "scene": {
+    "parts": [
+      {
+        "id": "plate",
+        "shape": {
+          "box": [
+            140,
+            50,
+            4
+          ]
+        }
+      },
+      {
+        "id": "servo-a",
+        "shape": {
+          "box": [
+            24,
+            45,
+            36
+          ]
+        },
+        "position": [
+          -35,
+          0,
+          20
+        ],
+        "parent": "plate"
+      },
+      {
+        "id": "servo-b",
+        "shape": {
+          "box": [
+            24,
+            45,
+            36
+          ]
+        },
+        "position": [
+          35,
+          0,
+          20
+        ],
+        "parent": "plate"
+      },
+      {
+        "id": "plug-a1",
+        "parent": "servo-a",
+        "plug": {
+          "connector": "molex-5264-3",
+          "socket": "s1"
+        },
+        "joint": {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "distance": 12,
+          "point": [
+            0,
+            10,
+            18
+          ]
+        }
+      },
+      {
+        "id": "plug-b1",
+        "parent": "servo-b",
+        "plug": {
+          "connector": "molex-5264-3",
+          "socket": "s1"
+        },
+        "joint": {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "distance": 12,
+          "point": [
+            0,
+            10,
+            18
+          ]
+        }
+      },
+      {
+        "id": "plug-b2",
+        "parent": "servo-b",
+        "plug": {
+          "connector": "molex-5264-3",
+          "socket": "s1"
+        },
+        "joint": {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "distance": 12,
+          "point": [
+            0,
+            -10,
+            18
+          ]
+        }
+      },
+      {
+        "id": "plug-board",
+        "parent": "plate",
+        "plug": {
+          "connector": "molex-5264-3",
+          "socket": "s1"
+        },
+        "joint": {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "distance": 12,
+          "point": [
+            60,
+            -12,
+            2
+          ]
+        }
+      },
+      {
+        "id": "lead-1",
+        "wire": {
+          "from": {
+            "part": "plug-a1",
+            "point": [
+              0,
+              -0.68,
+              5
+            ],
+            "normal": [
+              0,
+              0,
+              1
+            ]
+          },
+          "to": {
+            "part": "plug-b1",
+            "point": [
+              0,
+              -0.68,
+              5
+            ],
+            "normal": [
+              0,
+              0,
+              1
+            ]
+          },
+          "waypoints": [],
+          "color": "#d33a2c",
+          "diameter": 2,
+          "slack": 10
+        }
+      },
+      {
+        "id": "lead-2",
+        "wire": {
+          "from": {
+            "part": "plug-b2",
+            "point": [
+              0,
+              -0.68,
+              5
+            ],
+            "normal": [
+              0,
+              0,
+              1
+            ]
+          },
+          "to": {
+            "part": "plug-board",
+            "point": [
+              0,
+              -0.68,
+              5
+            ],
+            "normal": [
+              0,
+              0,
+              1
+            ]
+          },
+          "waypoints": [
+            {
+              "part": "servo-b",
+              "point": [
+                12,
+                -10,
+                0
+              ],
+              "normal": [
+                1,
+                0,
+                0
+              ]
+            }
+          ],
+          "color": "#2f6fd6",
+          "diameter": 2,
+          "slack": 6
+        }
+      }
+    ],
+    "camera": {
+      "direction": [
+        1,
+        -1,
+        0.82
+      ],
+      "fit": true
+    },
+    "explode": 1
+  }
+}

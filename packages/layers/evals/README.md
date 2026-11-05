@@ -18,6 +18,7 @@ They cover the parts of 3D scenes that rely on guesses:
 | `cases/fit/` | Fit fills the picture with the parts and cuts none off |
 | `cases/arrow/` | An assembly arrow's head is always in sight, and the arrow is no shorter than it needs to be |
 | `cases/track/` | Make track's pieces join up all the way round, and none cuts into a wheel |
+| `cases/wire/` | A wire leaves each plug straight out, lies on the faces it's routed over (not in them), takes up its slack, sags or bows the right way, and its ends stay on their parts when exploded |
 | `cases/pictures/` | Whole scenes drawn with the real renderer, compared with approved pictures |
 
 ## Running them

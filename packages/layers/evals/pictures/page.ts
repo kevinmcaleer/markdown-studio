@@ -5,30 +5,47 @@ import type { BufferGeometry } from "three";
 import { applyPreset, blankScene, type SceneData, type ScenePart, type Vec3 } from "../../src/scene/model";
 import { frameTight, ModelStore, modelFromPositions, renderPicture, worldMatrices, type Placed } from "../../src/scene/render";
 import { shapeTriangles, type ShapeSpec } from "../lib/shapes";
+import { connectorMesh } from "../../src/scene/connectors";
+import { applyJoint } from "../../src/scene/joint";
+import { wireTriangles } from "../../src/scene/wire";
+import { BufferAttribute, BufferGeometry as Geometry, Matrix4 } from "three";
 
 interface PictureCase {
   scene: {
-    parts: (Omit<Partial<ScenePart>, "id"> & { id: string; shape: ShapeSpec })[];
+    /** A wire has no shape (it's laid from its parts); a plug's is its connector's (its joint's faces filled in from it). */
+    parts: (Omit<Partial<ScenePart>, "id"> & { id: string; shape?: ShapeSpec })[];
     /** Where the camera looks from; `fit` frames the parts as the Fit button does. */
     camera: { direction: Vec3; target?: Vec3; size?: number; fit?: boolean };
     style?: string;
     explode?: number;
     arrows?: boolean;
+    wiring?: boolean;
+    hideWiring?: boolean;
   };
   size?: [number, number];
 }
 
 async function render(c: PictureCase): Promise<string> {
   const files = new Map<string, ArrayBuffer>();
-  for (const p of c.scene.parts) if ("stl" in p.shape && !files.has(p.shape.stl)) files.set(p.shape.stl, await (await fetch(`../${p.shape.stl}`)).arrayBuffer());
+  for (const p of c.scene.parts) if (p.shape && "stl" in p.shape && !files.has(p.shape.stl)) files.set(p.shape.stl, await (await fetch(`../${p.shape.stl}`)).arrayBuffer());
   const store = new ModelStore(async () => new ArrayBuffer(0));
   const [w, h] = c.size || [640, 480];
-  const scene: SceneData = { ...blankScene(), explode: c.scene.explode || 0, arrows: !!c.scene.arrows };
+  const scene: SceneData = { ...blankScene(), explode: c.scene.explode || 0, arrows: !!c.scene.arrows, wiring: c.scene.wiring, hideWiring: c.scene.hideWiring };
   if (c.scene.style) scene.style = applyPreset(scene.style, c.scene.style);
   const meshes: { part: ScenePart; geometry: BufferGeometry }[] = [];
   scene.parts = c.scene.parts.map(({ shape, ...rest }) => {
     const part: ScenePart = { name: rest.id, position: [0, 0, 0], rotation: [0, 0, 0], ...rest };
-    const model = modelFromPositions(shapeTriangles(shape, path => files.get(path)!));
+    if (part.wire) return part;
+    let tris: Float32Array;
+    if (part.plug) {
+      const m = connectorMesh(part.plug.connector);
+      tris = m.positions;
+      if (part.joint) {
+        part.joint = { spin: 0, gap: 0, ...part.joint, childPoint: m.contact, childNormal: m.normal };
+        applyJoint(part);
+      }
+    } else tris = shapeTriangles(shape!, path => files.get(path)!);
+    const model = modelFromPositions(tris);
     store.put(part, model);
     meshes.push({ part, geometry: model.geometry });
     return part;
@@ -37,6 +54,12 @@ async function render(c: PictureCase): Promise<string> {
   if (c.scene.camera.fit) {
     const m = worldMatrices(scene.parts, scene.explode);
     const placed: Placed[] = meshes.filter(x => !x.part.hidden).map(x => ({ geometry: x.geometry, matrix: m.get(x.part.id)! }));
+    // Wires are framed too, as the Fit button frames them: laid where their parts are.
+    for (const w of scene.parts.filter(p => p.wire && !p.hidden && !scene.hideWiring)) {
+      const g = new Geometry();
+      g.setAttribute("position", new BufferAttribute(wireTriangles(w, m), 3));
+      placed.push({ geometry: g, matrix: new Matrix4() });
+    }
     scene.camera = frameTight(cam, placed, w / h);
   } else scene.camera = cam;
   const canvas = await renderPicture(scene, store, w, h, 1);
