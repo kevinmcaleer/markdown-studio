@@ -1,0 +1,19 @@
+{
+  "title": "An ordinary servo lead isn't flagged for its corners",
+  "why": "A 2 mm lead between two servos 60 mm apart turns a right angle out of each plug, as real leads do. That's well within what a wire takes, so no bend warning (a warning on every wire would be noise).",
+  "input": {
+    "parts": [
+      { "id": "servo-a", "position": [0, 0, 0] },
+      { "id": "servo-b", "position": [60, 0, 0] }
+    ],
+    "wire": {
+      "from": { "part": "servo-a", "point": [0, 0, 18], "normal": [0, 0, 1] },
+      "to": { "part": "servo-b", "point": [0, 0, 18], "normal": [0, 0, 1] },
+      "waypoints": [],
+      "color": "#d33a2c",
+      "diameter": 2,
+      "slack": 10
+    }
+  },
+  "expect": { "tight": false }
+}

@@ -18,12 +18,12 @@ import {
   type JointType, type NamedView, type PartJoint, type ProjectModel,
   type Box3 as PlainBox, type SceneCamera, type SceneData, type ScenePart, type SceneStyle, type Vec3,
   explodeOf,
-  highlightedParts, ARROW_FROM, ARROW_TO, isWiring } from "./model";
+  highlightedParts, ARROW_FROM, ARROW_TO, isWiring, lookOf, wiresInOrder } from "./model";
 import { connectorFile, connectorMesh, connectorOf, CONNECTOR_FAMILIES, DEFAULT_CONNECTOR, plugLift } from "./connectors";
-import { wireLength, wireTriangles } from "./wire";
+import { cableRadius, MIN_BEND, tightestBend, wireLength, wireRoute, wireTriangles } from "./wire";
 import { mirrorPartner, mirrorPlane, mirrorPoint } from "./wireMirror";
 import { cableBetween, catalogSocketsFor, coloursFromDiagram, connectionsFor, diagramLabels, freePort, linkByName, missingWires, routedCount, type DiagramEnd, type WiringHost, type WiringInfo } from "./wiring2d";
-import { BUNDLE_TWIST, cableColours, coresOf, newSocketId, nextWireColour, WIRE_COLOURS, WIRE_DEFAULTS, WIRE_LIMITS, wireColourName, type PartSocket, type WireCore, type WireEnd, type WireSpec, type WireWaypoint } from "./wireSpec";
+import { BUNDLE_TWIST, cableColours, coresOf, loomsOf, newSocketId, nextWireColour, WIRE_COLOURS, WIRE_DEFAULTS, WIRE_LIMITS, wireColourName, type PartSocket, type WireCore, type WireEnd, type WireSpec, type WireWaypoint } from "./wireSpec";
 import { applyJoint } from "./joint";
 import { emptyModel, frame, frameTight, LineArt, modelFromPositions, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
 import { MAX_EMBED, parseStl, stlFaces, toBinaryStl, tooBigToCarry } from "./stl";
@@ -172,6 +172,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
             </div>
             <div class="lyr-screw-bar" role="toolbar" aria-label="Screw" hidden></div>
             <div class="lyr-screw-bar lyr-wire-bar" role="toolbar" aria-label="Wire" hidden></div>
+            <div class="lyr-screw-bar lyr-play-bar" role="toolbar" aria-label="Assemble the wires" hidden></div>
             <div class="lyr-scene-frame"><canvas class="lyr-scene-canvas"></canvas></div>
             <div class="lyr-scene-help">Drag to look around, right-drag to pan, scroll to zoom. Hold Shift on a handle for 5 mm or 15° steps.</div>
             <div class="lyr-drop" hidden>Drop STL or STEP files to add them</div>
@@ -379,7 +380,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     /** Puts the parts in the view again (after adding, removing or restyling). */
     function rebuild(): void {
       art.setSection(scene.section);
-      art.look = { wiring: scene.wiring, hideWiring: scene.hideWiring };
+      art.look = lookOf(scene);
       syncSectionButton();
       art.setParts(loaded(), scene.style, scene.explode);
       attachGizmo();
@@ -569,7 +570,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       // Wires ending on it go with it; a plug's socket stays on its part for the next one.
       const gone = new Set([id, ...scene.parts.filter(w => w.wire && (w.wire.from.part === id || w.wire.to.part === id)).map(w => w.id)]);
       scene.parts = scene.parts.filter(x => !gone.has(x.id));
-      for (const w of scene.parts) if (w.wire?.waypoints.some(x => x.part === id)) w.wire = { ...w.wire, waypoints: w.wire.waypoints.filter(x => x.part !== id) };
+      const off = (x: WireWaypoint) => x.part === id || (!!x.along && gone.has(x.along.wire));
+      for (const w of scene.parts) if (w.wire?.waypoints.some(off)) w.wire = { ...w.wire, waypoints: w.wire.waypoints.filter(x => !off(x)) };
       gone.forEach(g => models.delete(g));
       if (selectedId === id) selectedId = "";
       rebuild();
@@ -1373,6 +1375,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         case "wireDiameter": return p?.wire?.diameter ?? 0;
         case "wireSlack": return p?.wire?.slack ?? 0;
         case "wireTwist": return p?.wire ? p.wire.twist ?? (p.wire.lay === "flat" ? 0 : BUNDLE_TWIST) : 0;
+        case "alongFrom": return Math.round((p?.wire?.waypoints.find(w => w.along)?.along?.from ?? 0) * 100);
+        case "alongTo": return Math.round((p?.wire?.waypoints.find(w => w.along)?.along?.to ?? 1) * 100);
       }
       return 0;
     }
@@ -1388,6 +1392,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       if ((key === "wireDiameter" || key === "wireSlack") && p?.wire) {
         const v = key === "wireDiameter" ? Math.max(WIRE_LIMITS.diameter[0], Math.min(WIRE_LIMITS.diameter[1], round(value, 2))) : Math.max(0, Math.min(WIRE_LIMITS.slack[1], round(value, 1)));
         setWire(w => (key === "wireDiameter" ? { ...w, diameter: v } : { ...w, slack: v }));
+        return;
+      }
+      if ((key === "alongFrom" || key === "alongTo") && p?.wire) {
+        const v = Math.max(0, Math.min(1, Math.round(value) / 100));
+        setWire(w => ({ ...w, waypoints: w.waypoints.map(x => (x.along ? { along: { ...x.along, [key === "alongFrom" ? "from" : "to"]: v } } : x)) }));
         return;
       }
       if (key === "wireTwist" && p?.wire) {
@@ -2779,7 +2788,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       if (!to) return draw();
       const spec = newWireSpec(endAt(d.from), to, ways);
       const color = spec.color;
-      const tris = wireTriangles({ id: "", name: "", position: [0, 0, 0], rotation: [0, 0, 0], wire: spec }, world);
+      const tris = wireTriangles({ id: "", name: "", position: [0, 0, 0], rotation: [0, 0, 0], wire: spec }, world, loomsOf(scene.parts));
       preview.geometry.dispose();
       preview.geometry = new BufferGeometry();
       preview.geometry.setAttribute("position", new BufferAttribute(tris, 3));
@@ -2865,7 +2874,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       for (let i = 0; i <= p.wire.waypoints.length; i++) {
         const ways = [...p.wire.waypoints];
         ways.splice(i, 0, w);
-        const len = wireLength({ ...p, wire: { ...p.wire, waypoints: ways, slack: 0 } }, world);
+        const len = wireLength({ ...p, wire: { ...p.wire, waypoints: ways, slack: 0 } }, world, loomsOf(scene.parts));
         if (len && len < bestLen) {
           bestLen = len;
           best = i;
@@ -3018,7 +3027,14 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const cable = cores.length > 1;
       const colour = cores[coreAt].color;
       const world = worldMatrices(scene.parts, scene.explode);
-      const len = wireLength(p, worldMatrices(scene.parts, 0, false));
+      const assembled = worldMatrices(scene.parts, 0, false);
+      const looms = loomsOf(scene.parts);
+      const len = wireLength(p, assembled, looms);
+      // Too tight a bend kinks a wire or cracks its strands: under MIN_BEND times across.
+      const outer = cableRadius(w) * 2;
+      const route = wireRoute(w, assembled, looms);
+      const bend = route ? tightestBend(route, outer) : null;
+      const tight = bend && bend.radius < MIN_BEND * outer ? bend.radius : 0;
       const endName = (e: WireEnd) => {
         const q = partById(e.part);
         const host = q?.parent ? partById(q.parent) : undefined;
@@ -3043,9 +3059,25 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           ${field("wireSlack", "Slack", "mm", w.slack, 1, "Mm of extra length: it bows out between the points it passes")}
           ${cable ? field("wireTwist", "Twist", "°", fieldValue("wireTwist", p), 10, "Degrees the wires turn round each other every 100 mm") : ""}
         </div>
+        ${(() => {
+          // Into a loom: beside another wire for a stretch of it.
+          const along = w.waypoints.find(x => x.along)?.along;
+          const others = wiresInOrder(scene.parts).filter(o => o !== p && !o.wire!.waypoints.some(x => x.along?.wire === p.id));
+          if (!others.length && !along) return "";
+          return `<label class="lyr-scene-namebox" title="Run it beside another wire for part of the way, as wires tied into a loom">Runs with <select data-wire-along><option value="">No other wire</option>${others.map(o => `<option value="${esc(o.id)}"${along?.wire === o.id ? " selected" : ""}>${esc(o.name)}</option>`).join("")}</select></label>
+          ${along ? `<div class="lyr-scene-fields">${field("alongFrom", "From", "%", fieldValue("alongFrom", p), 1, "Where along the other wire it joins it")}${field("alongTo", "To", "%", fieldValue("alongTo", p), 1, "Where along the other wire it leaves it")}</div>` : ""}`;
+        })()}
         <p class="lyr-note">${esc(endName(w.from))} → ${esc(endName(w.to))}. About ${Math.round(len)} mm long, assembled.</p>
+        ${tight ? `<p class="lyr-note lyr-note-warn" role="note">Bends too tightly: ${tight < 1 ? "under 1" : Math.round(tight * 10) / 10} mm round at its tightest, and wire this thick wants at least ${Math.round(MIN_BEND * outer * 10) / 10} mm. Give it more slack, or move a waypoint.</p>` : ""}
         <p class="lyr-note">${w.waypoints.length ? `${w.waypoints.length} waypoint${w.waypoints.length === 1 ? "" : "s"}: drag one over the parts to move it, click it to take it out.` : "No waypoints: it takes the shortest smooth run."} Shift-click a part to add one.</p>
         ${w.waypoints.length ? `<button type="button" class="lyr-wide-btn" data-act="wire-clear">${icon("close", 14)} Take out every waypoint</button>` : ""}
+        ${(() => {
+          const wires = wiresInOrder(scene.parts);
+          const i = wires.indexOf(p);
+          return wires.length > 1 ? `<div class="lyr-scene-quick"><span class="lyr-label" title="The order the wires go in: wiring steps and Assemble the wires follow it">Goes in ${i + 1} of ${wires.length}</span>
+            <button type="button" class="lyr-btn lyr-icon-btn" data-act="wire-earlier" title="Put it in earlier" aria-label="Earlier"${i === 0 ? " disabled" : ""}>${icon("chevronUp", 16)}</button>
+            <button type="button" class="lyr-btn lyr-icon-btn" data-act="wire-later" title="Put it in later" aria-label="Later"${i === wires.length - 1 ? " disabled" : ""}>${icon("chevronDown", 16)}</button></div>` : "";
+        })()}
         <button type="button" class="lyr-wide-btn" data-act="wire-mirror" title="Make this wire again on the other side of the model (left leg to right leg), across its middle">${icon("flipH", 14)} Mirror to the other side</button>`;
     }
 
@@ -3096,6 +3128,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const b = endFor(w.to);
       const ways: WireWaypoint[] = [];
       for (const x of w.waypoints) {
+        // Beside a wire on this side: not on the other (run it along one there by hand).
+        if (x.along) continue;
         if (!x.part || !x.point) {
           ways.push({ ...x });
           continue;
@@ -3388,6 +3422,120 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         ${byName ? `<button type="button" class="lyr-wide-btn" data-act="diagram-names" title="Link parts whose names match the diagram's">${icon("link", 14)} Link parts by name (${byName})</button>` : ""}
         ${!p?.wire && wiringHost?.open ? `<button type="button" class="lyr-wide-btn" data-act="diagram-open">${icon("wire", 14)} Open the wiring diagram</button>` : ""}
       </section>`;
+    }
+
+    // ------------------------------------------------------------ the wires going in
+
+    // "Assemble n wires": each wire (in the model's order) appears with its
+    // plugs and grows along its route from its first plug, one after another,
+    // as they'd be put in. A play bar sets the speed, skips a wire or stops.
+    const playBar = $(".lyr-play-bar");
+    let playing: { order: ScenePart[]; at: number; grown: number; speed: number; rest: number; frame: number; last: number } | null = null;
+    const PLAY_SPEEDS = [1, 2, 4];
+    function renderPlayBar(): void {
+      if (!playing) return;
+      const p = playing.order[Math.min(playing.at, playing.order.length - 1)];
+      playBar.innerHTML = `
+        <span class="lyr-screw-bar-title">${icon("wire", 16)}<span>Wire ${Math.min(playing.at + 1, playing.order.length)} of ${playing.order.length}</span></span>
+        <span class="lyr-play-name">${esc(p?.name || "")}</span>
+        <label title="How fast the wires go in"><span>Speed</span><select data-play="speed">${PLAY_SPEEDS.map(v => `<option value="${v}"${v === playing!.speed ? " selected" : ""}>${v}×</option>`).join("")}</select></label>
+        <button type="button" class="lyr-btn" data-act="play-skip" title="Put this wire straight in and go to the next">${icon("chevronRight", 16)}<span>Skip</span></button>
+        <button type="button" class="lyr-btn lyr-icon-btn" data-act="play-stop" title="Stop (Esc)" aria-label="Stop">${icon("close", 16)}</button>`;
+    }
+    /** The plugs a wire ends on. */
+    const plugsOf = (w: ScenePart) => [w.wire!.from.part, w.wire!.to.part].filter(id => partById(id)?.plug);
+    function startPlayback(): void {
+      const order = wiresInOrder(scene.parts).filter(w => !w.hidden && !scene.hideWiring);
+      if (!order.length) return status("No wires to put in.", true);
+      stopWires();
+      stopScrews();
+      select("");
+      // Every wire, and every plug on one, out until its turn.
+      const onWire = new Set(order.flatMap(plugsOf));
+      for (const p of scene.parts) if (p.wire || onWire.has(p.id)) art.setShown(p.id, false);
+      playing = { order, at: 0, grown: 0, speed: playing?.speed || 1, rest: 0, frame: 0, last: performance.now() };
+      renderPlayBar();
+      playBar.hidden = false;
+      layout();
+      status(`Putting in ${order.length} wire${order.length === 1 ? "" : "s"}, in the model's order (set it in a wire's settings).`, false, true);
+      playing.frame = requestAnimationFrame(playTick);
+    }
+    function playTick(now: number): void {
+      if (!playing || closed) return;
+      const pl = playing;
+      const dt = Math.min(0.1, (now - pl.last) / 1000) * pl.speed;
+      pl.last = now;
+      if (pl.at >= pl.order.length) {
+        // A moment on the whole wiring, then back as it was.
+        pl.rest += dt;
+        if (pl.rest > 1.2) return stopPlayback(`${pl.order.length} wire${pl.order.length === 1 ? "" : "s"} put in.`);
+      } else if (pl.rest > 0) {
+        pl.rest -= dt;
+      } else {
+        const w = pl.order[pl.at];
+        if (pl.grown === 0) {
+          plugsOf(w).forEach(id => art.setShown(id, true));
+          art.setShown(w.id, true);
+          renderPlayBar();
+        }
+        // About 120 mm a second, each wire a second or two.
+        const len = wireLength(w, worldMatrices(scene.parts, scene.explode), loomsOf(scene.parts)) || 60;
+        pl.grown = Math.min(1, pl.grown + dt / Math.max(0.6, Math.min(2.5, len / 120)));
+        art.growWire(w, scene.parts, scene.explode, pl.grown);
+        if (pl.grown >= 1) {
+          pl.at++;
+          pl.grown = 0;
+          pl.rest = 0.35;
+        }
+      }
+      draw();
+      pl.frame = requestAnimationFrame(playTick);
+    }
+    function skipWire(): void {
+      if (!playing || playing.at >= playing.order.length) return;
+      const w = playing.order[playing.at];
+      plugsOf(w).forEach(id => art.setShown(id, true));
+      art.setShown(w.id, true);
+      art.growWire(w, scene.parts, scene.explode, 1);
+      playing.at++;
+      playing.grown = 0;
+      playing.rest = 0;
+      renderPlayBar();
+      draw();
+    }
+    function stopPlayback(message = ""): void {
+      if (!playing) return;
+      cancelAnimationFrame(playing.frame);
+      playing = null;
+      playBar.hidden = true;
+      rebuild();
+      layout();
+      status(message);
+    }
+    playBar.addEventListener("click", e => {
+      const b = (e.target as HTMLElement).closest("button");
+      if (b?.dataset.act === "play-skip") skipWire();
+      else if (b?.dataset.act === "play-stop") stopPlayback();
+    });
+    playBar.addEventListener("change", e => {
+      const el = e.target as HTMLSelectElement;
+      if (el.dataset.play === "speed" && playing) playing.speed = PLAY_SPEEDS.includes(Number(el.value)) ? Number(el.value) : 1;
+    });
+
+    /** Moves a wire earlier or later in the order the wires go in (the model's order of wires). */
+    function moveWire(p: ScenePart, by: -1 | 1): void {
+      const wires = wiresInOrder(scene.parts);
+      const i = wires.indexOf(p);
+      const other = wires[i + by];
+      if (!other) return;
+      const a = scene.parts.indexOf(p);
+      const b = scene.parts.indexOf(other);
+      scene.parts[a] = other;
+      scene.parts[b] = p;
+      rebuild();
+      commit();
+      renderList();
+      renderProps();
     }
 
     /** A plug's settings, in the side panel. */
@@ -4401,6 +4549,9 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           ${scene.parts.some(isWiring) || scene.wiring || scene.hideWiring ? `
           <label class="lyr-scene-check" title="Ghost every part but the wires and plugs, so the wiring reads"><input type="checkbox" data-wiring${scene.wiring ? " checked" : ""}${scene.hideWiring ? " disabled" : ""}> Wiring view</label>
           <label class="lyr-scene-check" title="Leave the wires and plugs out of this picture (they stay in the model)"><input type="checkbox" data-hide-wiring${scene.hideWiring ? " checked" : ""}> Hide wiring</label>` : ""}
+          ${wiresInOrder(scene.parts).length ? `
+          <label class="lyr-scene-namebox" title="A wiring step: this wire is put in, the ones before it ghosted, the ones after it left out">Wiring step <select data-wire-step><option value="">None</option>${wiresInOrder(scene.parts).map((w, i) => `<option value="${esc(w.id)}"${w.id === scene.wireStep ? " selected" : ""}>${i + 1}. ${esc(w.name)}</option>`).join("")}</select></label>
+          <button type="button" class="lyr-wide-btn" data-act="wires-play" title="Watch the wires go in, one after another, in their order">${icon("play", 14)} Assemble ${wiresInOrder(scene.parts).length} wire${wiresInOrder(scene.parts).length === 1 ? "" : "s"}</button>` : ""}
           <p class="lyr-note">The background is the page's colour: change it in Layers.</p>
         </section>`;
       syncPresets();
@@ -4473,6 +4624,14 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         if (p?.plug) void setPlugConnector(p, t.value);
         return;
       }
+      if (t.dataset.wireStep !== undefined) {
+        if (t.value && wireById(t.value)) scene.wireStep = t.value;
+        else delete scene.wireStep;
+        rebuild();
+        commit();
+        renderProps();
+        return;
+      }
       if (t.dataset.wiringPart !== undefined) {
         const p = partById(selectedId);
         if (p && !isWiring(p)) setWiringPart(p, t.value);
@@ -4494,6 +4653,47 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         }
         commit();
         renderProps();
+        return;
+      }
+      if (t.dataset.wireAlong !== undefined) {
+        const p = wireById(selectedId);
+        if (!p?.wire) return;
+        const ways = p.wire.waypoints.filter(x => !x.along);
+        const loom = t.value ? wireById(t.value) : undefined;
+        if (!loom?.wire) {
+          p.wire = { ...p.wire, waypoints: ways };
+          relay(p);
+          commit();
+          renderProps();
+          status("It runs on its own again.");
+          return;
+        }
+        // Where it joins and leaves: the other wire's points nearest this one's ends.
+        const world = worldMatrices(scene.parts, scene.explode);
+        const looms = loomsOf(scene.parts);
+        const route = wireRoute({ ...loom.wire, waypoints: loom.wire.waypoints.filter(x => !x.along) }, world, looms);
+        const own = wireRoute({ ...p.wire, waypoints: ways }, world, looms);
+        let from = 0.2;
+        let to = 0.8;
+        if (route && own) {
+          const nearest = (q: Vector3) => {
+            let best = 0;
+            route.centre.forEach((c, i) => {
+              if (c.distanceTo(q) < route.centre[best].distanceTo(q)) best = i;
+            });
+            return best / (route.centre.length - 1);
+          };
+          from = nearest(own.centre[0]);
+          to = nearest(own.centre[own.centre.length - 1]);
+          // Joining it a little in from its ends, not at its plugs.
+          const inside = (t: number) => Math.max(0.15, Math.min(0.85, t));
+          from = inside(from);
+          to = inside(to);
+          if (Math.abs(to - from) < 0.05) [from, to] = [0.2, 0.8];
+        }
+        p.wire = { ...p.wire, waypoints: ways };
+        addWaypoint(p, { along: { wire: loom.id, from: Math.round(from * 100) / 100, to: Math.round(to * 100) / 100 } });
+        status(`It runs beside ${loom.name} from ${Math.round(from * 100)}% to ${Math.round(to * 100)}% of the way along it. Set where with From and To.`);
         return;
       }
       if (t.dataset.wireLay !== undefined) {
@@ -4571,6 +4771,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       } else if (b.dataset.act === "sockets-to-catalog") {
         const p = partById(selectedId);
         if (p) void saveSocketsToCatalog(p);
+      } else if (b.dataset.act === "wires-play") {
+        startPlayback();
+      } else if (b.dataset.act === "wire-earlier" || b.dataset.act === "wire-later") {
+        const p = wireById(selectedId);
+        if (p) moveWire(p, b.dataset.act === "wire-earlier" ? -1 : 1);
       } else if (b.dataset.act === "wire-mirror") {
         const p = wireById(selectedId);
         if (p) void mirrorWire(p);
@@ -4962,6 +5167,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         duplicatePart(selectedId);
       } else if (e.key === "Escape") {
         if (!ctx.hidden) closeCtx();
+        else if (playing) stopPlayback("Stopped putting the wires in.");
         else if (section.picking()) section.stop(scene.section ? "" : "Section stopped.");
         else if (screwing) stopScrews();
         else if (wiringOn && wireDraft) {

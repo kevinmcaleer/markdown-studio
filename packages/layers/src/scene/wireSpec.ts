@@ -39,6 +39,26 @@ export interface WireWaypoint {
   point?: Vec3;
   normal?: Vec3;
   lift?: number;
+  /**
+   * Alongside another wire (a loom): it runs beside wire `wire`, touching
+   * it, from `from` to `to` of the way along it (0 to 1; `from` past `to`
+   * runs it the other way), then leaves it.
+   */
+  along?: WireAlong;
+}
+
+export interface WireAlong {
+  wire: string;
+  from: number;
+  to: number;
+}
+
+/** The wires a wire can run alongside, by id (a scene's wires). */
+export type Looms = Map<string, WireSpec>;
+
+/** The wires among `parts`, for wires that run along them. */
+export function loomsOf(parts: { id: string; wire?: WireSpec }[]): Looms {
+  return new Map(parts.filter(p => p.wire).map(p => [p.id, p.wire!]));
 }
 
 /** One of a cable's wires: its colour, and the 2D wiring connection it is (when it is one). */
@@ -162,6 +182,13 @@ function waypoint(v: unknown): WireWaypoint | null {
     return out;
   }
   if (typeof w.lift === "number" && Number.isFinite(w.lift)) return { lift: num(w.lift, 0, ...WIRE_LIMITS.lift) };
+  const along = w.along && typeof w.along === "object" ? w.along : null;
+  const wire = along ? id(along.wire) : "";
+  if (along && wire) {
+    const from = num(along.from, 0, 0, 1);
+    const to = num(along.to, 1, 0, 1);
+    if (Math.abs(to - from) >= 0.01) return { along: { wire, from, to } };
+  }
   return null;
 }
 

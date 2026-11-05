@@ -8,6 +8,7 @@ import { shapeTriangles, type ShapeSpec } from "../lib/shapes";
 import { connectorMesh } from "../../src/scene/connectors";
 import { applyJoint } from "../../src/scene/joint";
 import { wireTriangles } from "../../src/scene/wire";
+import { loomsOf } from "../../src/scene/wireSpec";
 import { BufferAttribute, BufferGeometry as Geometry, Matrix4 } from "three";
 
 interface PictureCase {
@@ -21,6 +22,7 @@ interface PictureCase {
     arrows?: boolean;
     wiring?: boolean;
     hideWiring?: boolean;
+    wireStep?: string;
   };
   size?: [number, number];
 }
@@ -30,7 +32,7 @@ async function render(c: PictureCase): Promise<string> {
   for (const p of c.scene.parts) if (p.shape && "stl" in p.shape && !files.has(p.shape.stl)) files.set(p.shape.stl, await (await fetch(`../${p.shape.stl}`)).arrayBuffer());
   const store = new ModelStore(async () => new ArrayBuffer(0));
   const [w, h] = c.size || [640, 480];
-  const scene: SceneData = { ...blankScene(), explode: c.scene.explode || 0, arrows: !!c.scene.arrows, wiring: c.scene.wiring, hideWiring: c.scene.hideWiring };
+  const scene: SceneData = { ...blankScene(), explode: c.scene.explode || 0, arrows: !!c.scene.arrows, wiring: c.scene.wiring, hideWiring: c.scene.hideWiring, ...(c.scene.wireStep ? { wireStep: c.scene.wireStep } : {}) };
   if (c.scene.style) scene.style = applyPreset(scene.style, c.scene.style);
   const meshes: { part: ScenePart; geometry: BufferGeometry }[] = [];
   scene.parts = c.scene.parts.map(({ shape, ...rest }) => {
@@ -57,7 +59,7 @@ async function render(c: PictureCase): Promise<string> {
     // Wires are framed too, as the Fit button frames them: laid where their parts are.
     for (const w of scene.parts.filter(p => p.wire && !p.hidden && !scene.hideWiring)) {
       const g = new Geometry();
-      g.setAttribute("position", new BufferAttribute(wireTriangles(w, m), 3));
+      g.setAttribute("position", new BufferAttribute(wireTriangles(w, m, loomsOf(scene.parts)), 3));
       placed.push({ geometry: g, matrix: new Matrix4() });
     }
     scene.camera = frameTight(cam, placed, w / h);

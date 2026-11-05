@@ -131,6 +131,13 @@ export interface LayersHandle {
    * when the project has no screws yet.
    */
   screwInventory(): Promise<boolean>;
+  /**
+   * The project's wire list as a Markdown table: each wire, what it runs
+   * between, its colours, length and the length to cut it. From the
+   * project's model, or else the first 3D scene with wires ("" when there
+   * are none).
+   */
+  wireList?(): Promise<string>;
   focus(): void;
   destroy(): void;
 }
@@ -3671,6 +3678,15 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     screwInventory: async () => {
       await opened;
       return screwInventory(true);
+    },
+    wireList: async () => {
+      await opened;
+      const model = await getProjectModel();
+      const scenes = objects().filter((o): o is SceneLayer => isScene(o) && !isDetail(o) && !!o.scene?.parts.length);
+      const parts = model?.parts.some(p => p.wire) ? model.parts : scenes.map(o => normalizeScene(o.scene).parts).find(ps => ps.some(p => p.wire)) || [];
+      if (!parts.some(p => p.wire)) return "";
+      const { wireListOf, wireListMarkdown } = await import("./scene/wireList");
+      return wireListMarkdown(wireListOf(parts));
     },
     focus: () => root.focus({ preventScroll: true }),
     destroy,

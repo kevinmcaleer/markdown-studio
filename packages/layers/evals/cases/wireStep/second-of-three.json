@@ -1,0 +1,19 @@
+{
+  "title": "Step 2 of 3 wires: the second lead going in",
+  "why": "Three wires go in in order w1, w2, w3. In w2's step, w2 and both its plugs are drawn; w1 is grey with its plug p2, though p1 (on w1 and w2) is drawn as w2's; w3 and its plug p4 aren't in yet; the servos are grey.",
+  "input": {
+    "parts": [
+      { "id": "servo-a", "position": [0, 0, 0] },
+      { "id": "servo-b", "position": [60, 0, 0] },
+      { "id": "p1", "position": [0, 0, 0], "parent": "servo-a", "plug": { "connector": "molex-5264-3", "socket": "s1" } },
+      { "id": "p2", "position": [0, 0, 0], "parent": "servo-b", "plug": { "connector": "molex-5264-3", "socket": "s2" } },
+      { "id": "p3", "position": [0, 0, 0], "parent": "servo-b", "plug": { "connector": "molex-5264-3", "socket": "s3" } },
+      { "id": "p4", "position": [0, 0, 0], "parent": "servo-a", "plug": { "connector": "molex-5264-3", "socket": "s4" } },
+      { "id": "w1", "position": [0, 0, 0], "wire": { "from": { "part": "p1", "point": [0, 0, 0], "normal": [0, 0, 1] }, "to": { "part": "p2", "point": [0, 0, 0], "normal": [0, 0, 1] }, "waypoints": [], "color": "#d33a2c", "diameter": 2, "slack": 0 } },
+      { "id": "w2", "position": [0, 0, 0], "wire": { "from": { "part": "p1", "point": [0, 0, 0], "normal": [0, 0, 1] }, "to": { "part": "p3", "point": [0, 0, 0], "normal": [0, 0, 1] }, "waypoints": [], "color": "#d33a2c", "diameter": 2, "slack": 0 } },
+      { "id": "w3", "position": [0, 0, 0], "wire": { "from": { "part": "p4", "point": [0, 0, 0], "normal": [0, 0, 1] }, "to": { "part": "servo-b", "point": [0, 0, 0], "normal": [0, 0, 1] }, "waypoints": [], "color": "#d33a2c", "diameter": 2, "slack": 0 } }
+    ],
+    "wireStep": "w2"
+  },
+  "expect": { "shown": ["w2", "p1", "p3"], "ghost": ["w1", "p2", "servo-a", "servo-b"], "hidden": ["w3", "p4"] }
+}

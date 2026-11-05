@@ -1,0 +1,19 @@
+{
+  "title": "A thick lead doubled back between two plugs side by side",
+  "why": "Two plugs 6 mm apart, both facing up, joined by a 3 mm lead: it has to come up out of one and turn straight back down into the other, a hairpin far tighter than 3 × its 3 mm (9 mm). The wire panel should warn.",
+  "input": {
+    "parts": [
+      { "id": "a", "position": [0, 0, 0] },
+      { "id": "b", "position": [6, 0, 0] }
+    ],
+    "wire": {
+      "from": { "part": "a", "point": [0, 0, 5], "normal": [0, 0, 1] },
+      "to": { "part": "b", "point": [0, 0, 5], "normal": [0, 0, 1] },
+      "waypoints": [],
+      "color": "#222222",
+      "diameter": 3,
+      "slack": 0
+    }
+  },
+  "expect": { "tight": true }
+}

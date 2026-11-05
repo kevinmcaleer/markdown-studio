@@ -27,9 +27,9 @@ import {
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import type { SceneCamera, SceneData, ScenePart, SceneStyle, SectionPlane, Vec3 } from "./model";
-import { explodeOf, highlightedParts, sectionKeeps, sectionOrigin, shownAs } from "./model";
+import { explodeOf, highlightedParts, lookOf, sectionKeeps, sectionOrigin, shownAs, type SceneLook } from "./model";
 import { wireMesh } from "./wire";
-import { coresOf } from "./wireSpec";
+import { coresOf, loomsOf, type Looms } from "./wireSpec";
 import { readStep, isStepFile, mergeBodies, type StepBody } from "./step";
 import { bounds, fromBase64, parseStl, stlFaces } from "./stl";
 import { isPacked, unpackMesh } from "./mesh";
@@ -98,9 +98,9 @@ export function emptyModel(): Model {
 }
 
 /** A wire's tube in the world, for parts placed by `world`. */
-function wireGeometry(part: ScenePart, world: Map<string, Matrix4>): BufferGeometry {
+function wireGeometry(part: ScenePart, world: Map<string, Matrix4>, upto = 1, looms?: Looms): BufferGeometry {
   const g = new BufferGeometry();
-  const m = wireMesh(part, world);
+  const m = wireMesh(part, world, upto, looms);
   g.setAttribute("position", new BufferAttribute(m.positions, 3));
   g.setAttribute("color", new BufferAttribute(m.colors, 3));
   g.computeBoundingBox();
@@ -356,7 +356,7 @@ export class LineArt {
   /** The section view's plane, when there is one: every part is cut by it. */
   private section: SectionPlane | null = null;
   /** The scene's wiring settings: the wiring view (other parts ghosted), or wiring hidden. Set before setParts. */
-  look: Pick<SceneData, "wiring" | "hideWiring"> = {};
+  look: SceneLook = {};
   private clip: Plane[] = [];
   /** The quad each cap is drawn on (sized to the parts), and the stencil counters' materials (picture, ID pass). */
   private capGeometry: PlaneGeometry | null = null;
@@ -383,11 +383,12 @@ export class LineArt {
     this.style = style;
     const world = worldMatrices(list.map(x => x.part), explode);
     const lit = highlightedParts(list.map(x => x.part));
+    const looms = loomsOf(list.map(x => x.part));
     list.forEach(({ part: own, model }, i) => {
       // As the wiring settings show it (ghosted in the wiring view, say); kept as it is.
       const part = shownAs(own, this.look);
       const fillColour = this.fillOf(part, lit);
-      const tube = own.wire ? wireGeometry(own, world) : undefined;
+      const tube = own.wire ? wireGeometry(own, world, 1, looms) : undefined;
       const geometry = tube || model.geometry;
       const fill = new Mesh(geometry, new MeshBasicMaterial({ color: fillColour, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1, clippingPlanes: this.clip, side: this.section ? DoubleSide : FrontSide }));
       fill.userData.partId = part.id;
@@ -705,6 +706,7 @@ export class LineArt {
     const world = worldMatrices(parts, explode);
     const byId = new Map(parts.map(p => [p.id, p]));
     let lit: Set<string> | undefined;
+    let looms: Looms | undefined;
     for (const o of this.objects) {
       const m = world.get(o.part.id);
       if (!m) continue;
@@ -713,7 +715,7 @@ export class LineArt {
       place(o.group, m);
       place(o.idGroup, m);
       if (o.part.wire) {
-        this.setTube(o, wireGeometry(o.part, world));
+        this.setTube(o, wireGeometry(o.part, world, 1, (looms ||= loomsOf(parts))));
         this.paint(o, (lit ||= highlightedParts(parts)));
       }
     }
@@ -896,8 +898,31 @@ export class LineArt {
     const o = this.objects.find(x => x.part.id === part.id);
     if (!o || !part.wire) return;
     o.part = part;
-    this.setTube(o, wireGeometry(part, worldMatrices(parts, explode)));
+    const world = worldMatrices(parts, explode);
+    const looms = loomsOf(parts);
+    const lit = highlightedParts(this.objects.map(x => x.part));
+    this.setTube(o, wireGeometry(part, world, 1, looms));
+    this.paint(o, lit);
+    // The wires that run along it follow it.
+    for (const x of this.objects) {
+      if (x === o || !x.part.wire?.waypoints.some(w => w.along?.wire === part.id)) continue;
+      this.setTube(x, wireGeometry(x.part, world, 1, looms));
+      this.paint(x, lit);
+    }
+  }
+
+  /** Lays a wire only `upto` (0 to 1) of the way along: growing, as it's put in. */
+  growWire(part: ScenePart, parts: ScenePart[], explode: number, upto: number): void {
+    const o = this.objects.find(x => x.part.id === part.id);
+    if (!o || !part.wire) return;
+    this.setTube(o, wireGeometry(part, worldMatrices(parts, explode), upto, loomsOf(parts)));
     this.paint(o, highlightedParts(this.objects.map(x => x.part)));
+  }
+
+  /** Shows or leaves out a part as drawn now (for the wiring playback), without rebuilding. */
+  setShown(id: string, shown: boolean): void {
+    const o = this.objects.find(x => x.part.id === id);
+    if (o) o.group.visible = o.idGroup.visible = shown;
   }
 
   /** A part's place in the world as drawn now. */
@@ -1236,7 +1261,7 @@ export async function renderPicture(data: SceneData, store: ModelStore, w: numbe
     const max = Math.min(art.renderer.capabilities.maxTextureSize || 4096, 8192);
     const ss = Math.max(1, Math.min(2, max / Math.max(ow, oh)));
     art.setSection(data.section);
-    art.look = { wiring: data.wiring, hideWiring: data.hideWiring };
+    art.look = lookOf(data);
     art.setParts(list, data.style, data.explode);
     art.arrows = !!data.arrows;
     art.cuts = cuts;

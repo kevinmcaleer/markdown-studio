@@ -54,6 +54,8 @@ export type LayersEditor = {
   assemblyGuide?(guide: { title?: string; each(result: LayersResult, index: number, total: number): void | Promise<void> }): Promise<number>;
   /** Draws the screw inventory from the project's model: false when it has no screws (Layers 3D scenes). */
   screwInventory?(): Promise<boolean>;
+  /** The project's wire list as a Markdown table, "" with no wires (Layers 3D scenes). */
+  wireList?(): Promise<string>;
 };
 export type LayersResult = { png: Blob; title: string; width: number; height: number };
 
@@ -760,6 +762,70 @@ export function screwInventoryCommand(host: LayersHost): SlashCommand {
     icon: "M5 2.5h6M6 2.5v2h4v-2M7 4.5v8.5l1 1 1-1V4.5M7 7h2M7 9h2M7 11h2",
     block: true,
     run: (view) => void makeScrewInventory(view, host),
+  };
+}
+
+// ------------------------------------------------------------ the wire list
+
+const WIRES_MARK = /^\*Measuring the wires[^\n]*\*$/m;
+
+/**
+ * Measures every wire in the project's model (its route in the 3D scenes,
+ * plus a little at each end to strip and crimp) and puts the wire list, a
+ * Markdown table, at the end of the cursor's section: in a project, the
+ * bottom of its Bill of materials, say. Being text, it can be edited after.
+ */
+export async function makeWireList(view: EditorView, host: LayersHost): Promise<void> {
+  if (view.state.readOnly || !host.loadModel) return;
+  const text = view.state.doc.toString();
+  const spot = inventorySpot(text, view.state.selection.main.head);
+  const lead = spot === 0 ? "" : "\n\n";
+  view.dispatch({ changes: { from: spot, to: spot, insert: `${lead}*Measuring the wires…*` }, userEvent: "input.layers" });
+  const setMark = (replacement: string) => {
+    const m = WIRES_MARK.exec(view.state.doc.toString());
+    if (!m) return;
+    view.dispatch({ changes: { from: m.index, to: m.index + m[0].length, insert: replacement }, userEvent: "input.layers" });
+  };
+  const box = document.createElement("div");
+  box.className = "cm-layers-hidden";
+  box.style.cssText = "position:fixed;left:-40000px;top:0;width:1200px;height:800px;overflow:hidden;pointer-events:none";
+  document.body.appendChild(box);
+  let editor: LayersEditor | null = null;
+  try {
+    const api = await loadLayers(host.load);
+    editor = api.mount(box, {
+      doc: null,
+      mode: "inline",
+      allowInline: true,
+      fetchImage: host.fetchImage ?? defaultFetch,
+      loadModel: () => projectModel(host),
+      ...(host.saveModel ? { saveModel: host.saveModel } : {}),
+      onDone: () => {},
+      onCancel: () => {},
+    });
+    if (!editor.wireList) throw new Error("this version of Layers can't measure wires");
+    const table = await editor.wireList();
+    if (!table) throw new Error("the project has no wires yet. Add them with the Wire tool (W) in a 3D scene");
+    setMark(table);
+  } catch (e) {
+    const msg = e instanceof Error && e.message ? e.message : String(e);
+    setMark(`*The wire list couldn't be made: ${msg.replace(/\*/g, "")}.*`);
+  } finally {
+    editor?.destroy();
+    box.remove();
+  }
+}
+
+/** "/Wire list": every wire in the project, with its ends, colours and cut length, as a table at the end of the cursor's section. */
+export function wireListCommand(host: LayersHost): SlashCommand {
+  return {
+    id: "wire-list",
+    label: "Wire list",
+    keywords: ["wires", "wiring", "cables", "leads", "harness", "lengths", "cut list", "bom", "3d"],
+    group: "inline",
+    icon: "M2 12c3 0 3-4 6-4s3-4 6-4M2 10.5v3M14 2.5v3",
+    block: true,
+    run: (view) => void makeWireList(view, host),
   };
 }
 
