@@ -20,7 +20,7 @@ import {
   explodeOf,
   highlightedParts, ARROW_FROM, ARROW_TO } from "./model";
 import { applyJoint } from "./joint";
-import { frame, LineArt, modelFromPositions, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
+import { frame, frameTight, LineArt, modelFromPositions, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
 import { MAX_EMBED, parseStl, stlFaces, toBinaryStl, tooBigToCarry } from "./stl";
 import { isPacked, packMesh, packParts } from "./mesh";
 import { isStepFile, mergeBodies, readStep, type StepBody } from "./step";
@@ -695,12 +695,19 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     /** Frames all the parts; `smooth` glides there and saves the step for undo. */
     function fitView(smooth = false): void {
       art.scene.updateMatrixWorld(true);
-      const to = frame(scene.camera, art.bounds(), aspect);
+      const to = fitCamera(scene.camera);
       if (smooth) return glideTo(to, commit);
       stopGlide();
       scene.camera = to;
       applyCamera();
       draw();
+    }
+
+    /** The camera that fills the picture with the shown parts (and their arrows) from `cam`'s direction. */
+    function fitCamera(cam: SceneCamera): SceneCamera {
+      art.scene.updateMatrixWorld(true);
+      const { meshes, points } = art.placed();
+      return frameTight(cam, meshes, aspect, 1.05, points, scene.section ? p => art.keeps(p) : undefined);
     }
 
     /** Turns the camera to show `box` (zooming in or out), keeping the direction it looks from. */
@@ -749,7 +756,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const v = VIEWS.find(x => x.id === id);
       if (!v) return;
       art.scene.updateMatrixWorld(true);
-      glideTo(frame({ ...scene.camera, direction: [...v.direction] }, art.bounds(), aspect), commit);
+      glideTo(fitCamera({ ...scene.camera, direction: [...v.direction] }), commit);
     }
 
     // ------------------------------------------------------------ history

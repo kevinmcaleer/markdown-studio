@@ -1,6 +1,6 @@
-import { Vector3 } from "three";
+import { BufferAttribute, BufferGeometry, Matrix4, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
-import { magnifiedCamera, pagePoints, selectedFill, worldMatrices } from "./render";
+import { frame, frameTight, magnifiedCamera, pagePoints, selectedFill, worldMatrices } from "./render";
 import type { ScenePart } from "./model";
 import { HIGHLIGHT } from "./model";
 
@@ -104,5 +104,31 @@ describe("selectedFill", () => {
 
   it("goes lighter instead for an already dark highlight", () => {
     expect(light(selectedFill("#202060"))).toBeGreaterThan(light("#202060"));
+  });
+});
+
+describe("frameTight", () => {
+  // A long thin rod lying diagonally on the floor, pointing at the camera:
+  // its box is a big square, but from the iso view it is a short line.
+  const rod = new BufferGeometry().setAttribute("position", new BufferAttribute(new Float32Array([-50, 50, 0, 50, -50, 0, -49, 51, 0, 51, -49, 0]), 3));
+  const matrix = new Matrix4();
+  const cam = { direction: [1, -1, 1] as [number, number, number], target: [0, 0, 0] as [number, number, number], size: 10 };
+
+  it("frames the parts' real outline, not the box round them", () => {
+    rod.computeBoundingBox();
+    const loose = frame(cam, rod.boundingBox!, 1, 1);
+    const tight = frameTight(cam, [{ geometry: rod, matrix }], 1, 1);
+    expect(tight.size).toBeLessThan(loose.size * 0.75);
+    // The rod's ends touch the picture's top and bottom: it fills it.
+    const ends = pagePoints({ parts: [], camera: tight } as never, [[-50, 50, 0], [50, -50, 0]], 1);
+    expect(Math.min(ends[0].y, ends[1].y)).toBeCloseTo(0, 2);
+    expect(Math.max(ends[0].y, ends[1].y)).toBeCloseTo(1, 2);
+  });
+
+  it("keeps extra points (arrows) in, and leaves the camera alone with nothing to frame", () => {
+    const tight = frameTight(cam, [{ geometry: rod, matrix }], 1, 1, [new Vector3(0, 0, 200)]);
+    const [top] = pagePoints({ parts: [], camera: tight } as never, [[0, 0, 200]], 1);
+    expect(top.y).toBeGreaterThanOrEqual(-1e-6);
+    expect(frameTight(cam, [], 1)).toBe(cam);
   });
 });
