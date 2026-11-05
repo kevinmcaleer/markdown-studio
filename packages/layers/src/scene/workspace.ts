@@ -28,7 +28,7 @@ import { toUrdf, zip } from "./urdf";
 import { createViewCube } from "./viewcube";
 import { MAX_SNAP_TRIANGLES, nearestSnap, Topology, type Face, type Snap } from "./snaps";
 import { createSectionTool } from "./sectionTool";
-import { fitDiameter, fitLength, holeDepth, isHoleSnap, matchingHoles, SCREW_HEADS, SCREW_LENGTHS, SCREW_SIZES, screwFile, screwLabel, screwLift, screwMesh, screwName, type ScrewHead, type ScrewSpec } from "./screw";
+import { fitDiameter, fitLength, holeDepth, isHoleSnap, matchingHoles, SCREW_HEADS, SCREW_LENGTHS, SCREW_SIZES, screwFile, screwLabel, screwLift, screwMesh, screwName, screwNoun, type ScrewHead, type ScrewSpec } from "./screw";
 
 export interface SceneModel {
   url: string;
@@ -2155,7 +2155,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         } catch (e) {
           console.warn("Layers: the hole's depth couldn't be measured", e);
         }
-        length = fitLength(d, depth);
+        length = fitLength(d, depth, head);
       }
       const spec: ScrewSpec = { d, length, head };
       screwSpecs.set(key, spec);
@@ -2259,7 +2259,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           }
         }
         if (!added && !changed) {
-          status(holes.length > 1 ? `Those holes have ${screwLabel(last!)} screws in already.` : `That hole has an ${screwLabel(last!)} screw in already. Undo (Ctrl+Z) takes one out.`);
+          status(holes.length > 1 ? `Those holes have ${screwLabel(last!)} ${screwNoun(last!)}s in already.` : `That hole has an ${screwLabel(last!)} ${screwNoun(last!)} in already. Undo (Ctrl+Z) takes one out.`);
           return;
         }
         clearHover();
@@ -2267,7 +2267,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         syncExplode();
         commit();
         renderProps();
-        const what = added + changed === 1 ? `An ${screwLabel(last!)} screw` : `${added + changed} ${screwLabel(last!)} screws`;
+        const what = added + changed === 1 ? `An ${screwLabel(last!)} ${screwNoun(last!)}` : `${added + changed} ${screwLabel(last!)} ${screwNoun(last!)}s`;
         status(`${what} ${changed && !added ? "changed" : "put in"} “${parent.name}”. Click more holes, or Esc when done.`, false, true);
       } finally {
         screwBusy = false;
