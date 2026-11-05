@@ -26,6 +26,8 @@ export type LayersApi = {
   duplicateStepDoc?(doc: unknown): unknown;
   staleScenes?(doc: unknown, stamp: number): number;
   hasScene?(doc: unknown): boolean;
+  /** Whether a graphic has a screw inventory, which follows the project's model as 3D scenes do. */
+  hasInventory?(doc: unknown): boolean;
   stepBadge?(doc: unknown): { last: number; auto: number | null } | null;
 };
 
@@ -42,6 +44,8 @@ export type LayersEditor = {
   exportResult?(): Promise<LayersResult>;
   /** Draws an assembly guide from the project's model, a page at a time (Layers 3D scenes). */
   assemblyGuide?(guide: { title?: string; each(result: LayersResult, index: number, total: number): void | Promise<void> }): Promise<number>;
+  /** Draws the screw inventory from the project's model: false when it has no screws (Layers 3D scenes). */
+  screwInventory?(): Promise<boolean>;
 };
 export type LayersResult = { png: Blob; title: string; width: number; height: number };
 
@@ -246,7 +250,8 @@ async function graphicStatus(host: LayersHost, url: string, text = ""): Promise<
   const doc = await graphicDoc(api, url, host.fetchImage ?? defaultFetch);
   if (!doc) return null;
   const scene = !!api.hasScene?.(doc);
-  const model = scene && host.loadModel && host.saveModel ? await projectModel(host) : null;
+  const follows = scene || !!api.hasInventory?.(doc);
+  const model = follows && host.loadModel && host.saveModel ? await projectModel(host) : null;
   const stale = model && api.staleScenes ? api.staleScenes(doc, model.stamp) : 0;
   const badge = api.stepBadge?.(doc);
   const at = graphicsIn(text).find(g => g.url === url);
@@ -621,6 +626,113 @@ export function assemblyGuideCommand(host: LayersHost): SlashCommand {
     icon: "M2.5 2.5h11v11h-11zM2.5 6.5h11M6.5 6.5v7M8.5 9.5h3M8.5 11.5h3",
     block: true,
     run: (view) => void makeAssemblyGuide(view, host),
+  };
+}
+
+// ------------------------------------------------------------ the screw inventory
+
+const INVENTORY_MARK = /^\*Drawing the screw inventory[^\n]*\*$/m;
+
+/**
+ * Where the screw inventory goes for the cursor at `pos`: the end of the
+ * section it's in, the one under the nearest heading-one above it (or the
+ * nearest heading of any level, with no heading-one), up to the next
+ * heading of that level or higher. With no heading above, the end of the text.
+ */
+export function inventorySpot(text: string, pos: number): number {
+  const heads: { at: number; level: number }[] = [];
+  let fence: string | null = null;
+  let at = 0;
+  for (const line of text.split("\n")) {
+    const f = /^ {0,3}(`{3,}|~{3,})/.exec(line);
+    if (f) {
+      if (fence === null) fence = f[1][0];
+      else if (f[1][0] === fence) fence = null;
+    } else if (fence === null) {
+      const m = /^ {0,3}(#{1,6})[ \t]/.exec(line);
+      if (m) heads.push({ at, level: m[1].length });
+    }
+    at += line.length + 1;
+  }
+  const above = heads.filter(h => h.at <= pos);
+  const owner = [...above].reverse().find(h => h.level === 1) || above[above.length - 1];
+  const next = owner && heads.find(h => h.at > owner.at && h.level <= owner.level);
+  let end = next ? next.at : text.length;
+  // Before the blank lines that end the section.
+  while (end > (owner ? owner.at : 0) && /\s/.test(text[end - 1])) end--;
+  return end;
+}
+
+/**
+ * Draws the screw inventory (every screw and heat-set insert in the
+ * project's model, by kind, with counts and a picture of each) out of
+ * sight, uploads it and puts it at the end of the cursor's section: in a
+ * project, the bottom of its Assembly instructions. A line says how it's going.
+ */
+export async function makeScrewInventory(view: EditorView, host: LayersHost): Promise<void> {
+  if (view.state.readOnly || !host.loadModel || !host.saveModel) return;
+  const text = view.state.doc.toString();
+  const spot = inventorySpot(text, view.state.selection.main.head);
+  const lead = spot === 0 ? "" : "\n\n";
+  const mark = "*Drawing the screw inventory…*";
+  view.dispatch({ changes: { from: spot, to: spot, insert: `${lead}${mark}` }, userEvent: "input.layers" });
+  const setMark = (replacement: string) => {
+    const now = view.state.doc.toString();
+    const m = INVENTORY_MARK.exec(now);
+    if (!m) return false;
+    view.dispatch({ changes: { from: m.index, to: m.index + m[0].length, insert: replacement }, userEvent: "input.layers" });
+    return true;
+  };
+  const box = document.createElement("div");
+  box.className = "cm-layers-hidden";
+  box.style.cssText = "position:fixed;left:-40000px;top:0;width:1200px;height:800px;overflow:hidden;pointer-events:none";
+  document.body.appendChild(box);
+  let editor: LayersEditor | null = null;
+  try {
+    const api = await loadLayers(host.load);
+    editor = api.mount(box, {
+      doc: null,
+      mode: "inline",
+      allowInline: true,
+      title: "Screw inventory",
+      fetchImage: host.fetchImage ?? defaultFetch,
+      listImages: host.listImages,
+      listModels: host.listModels,
+      fetchModel: host.fetchModel ?? (async (url: string) => (await defaultFetch(url)).arrayBuffer()),
+      loadModel: () => projectModel(host),
+      saveModel: async (model: LayersProjectModel) => {
+        await host.saveModel!(model);
+        modelCache.set(host, { at: Date.now(), model: Promise.resolve(model) });
+      },
+      onDone: () => {},
+      onCancel: () => {},
+    });
+    if (!editor.screwInventory || !editor.exportResult) throw new Error("this version of Layers can't draw one");
+    if (!(await editor.screwInventory())) throw new Error("the project has no screws yet. Put them in with the Screw tool (S) in a 3D scene");
+    const result = await editor.exportResult();
+    const title = result.title && result.title !== "Untitled" ? result.title : "Screw inventory";
+    const file = new File([result.png], graphicFileName(title), { type: "image/png" });
+    const url = layersUrl(await host.uploadImage(file));
+    setMark(imageMarkdown({ alt: title, url }));
+  } catch (e) {
+    const msg = e instanceof Error && e.message ? e.message : String(e);
+    setMark(`*The screw inventory couldn't be drawn: ${msg.replace(/\*/g, "")}.*`);
+  } finally {
+    editor?.destroy();
+    box.remove();
+  }
+}
+
+/** "/Screw inventory": every screw and insert in the project, with counts, at the end of the cursor's section. */
+export function screwInventoryCommand(host: LayersHost): SlashCommand {
+  return {
+    id: "screw-inventory",
+    label: "Screw inventory",
+    keywords: ["screws", "fixings", "fasteners", "hardware", "inserts", "heat-set", "bolts", "inventory", "ikea", "3d"],
+    group: "inline",
+    icon: "M5 2.5h6M6 2.5v2h4v-2M7 4.5v8.5l1 1 1-1V4.5M7 7h2M7 9h2M7 11h2",
+    block: true,
+    run: (view) => void makeScrewInventory(view, host),
   };
 }
 

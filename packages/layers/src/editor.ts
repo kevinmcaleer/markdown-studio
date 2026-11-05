@@ -8,7 +8,7 @@
 // with the document stored inside it.
 
 import {
-  ActiveSelection, BaseFabricObject, Canvas, Control, FabricImage, FabricObject, Group, Point, Polygon, Rect, Textbox, util, type TPointerEventInfo, type TPointerEvent,
+  ActiveSelection, BaseFabricObject, Canvas, Control, FabricImage, FabricObject, Group, Point, Polygon, Polyline, Rect, Textbox, util, type TPointerEventInfo, type TPointerEvent,
 } from "fabric";
 import { alignBoxes, distributeBoxes, type AlignHow, type DistributeHow } from "./align";
 import { Connector, type ConnectorEnd } from "./connector";
@@ -25,13 +25,14 @@ import type { ModelStore } from "./scene/render";
 import type { SceneModel } from "./scene/workspace";
 import { type DetailInfo, isDetail, isScene, placeholderPicture, SceneLayer } from "./sceneLayer";
 import { snap, type Box, type Guide } from "./snap";
-import { inventoryOf, isFastener, partsInStep, TURNED_DEGREES, turnedFromDefault } from "./stepFrame";
+import { inventoryOf, isFastener, partsInStep, screwInventoryOf, TURNED_DEGREES, turnedFromDefault } from "./stepFrame";
+import { SCREW_HEADS } from "./scene/screw";
 import css from "./layers.css?inline";
 
 // Saved with every layer. Set on the base class: Fabric's toObject reads them
 // from there, and a subclass with its own list (a scene, a line) would
 // otherwise lose its name, id and links when the graphic is saved.
-BaseFabricObject.customProperties = FabricObject.customProperties = ["name", "layerId", "layerLocked", "badge", "badgePinned", "boundTo", "partsStrip", "stepArrow", "turnMark", "detailOf"];
+BaseFabricObject.customProperties = FabricObject.customProperties = ["name", "layerId", "layerLocked", "badge", "badgePinned", "boundTo", "partsStrip", "stepArrow", "turnMark", "detailOf", "inventory"];
 // Corner handles that are easier to grab, and a selection colour that reads on any picture.
 Object.assign(FabricObject.ownDefaults, {
   borderColor: "#8b3dff",
@@ -121,6 +122,12 @@ export interface LayersHandle {
    * many pages it made.
    */
   assemblyGuide(guide: GuideOptions): Promise<number>;
+  /**
+   * Draws the screw inventory on this editor's page (every screw and
+   * heat-set insert in the project's model, by kind, with counts): false
+   * when the project has no screws yet.
+   */
+  screwInventory(): Promise<boolean>;
   focus(): void;
   destroy(): void;
 }
@@ -999,6 +1006,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
   const staleScenes = () => objects().filter((o): o is SceneLayer => isScene(o) && behindModel(o.scene, projectModel));
   function sayStale(): void {
     const n = staleScenes().length;
+    if (!n && staleInventory().length) return status("The screw list is out of date: the project's screws have changed. Add the Screw inventory template again to redraw it.", false, true);
     if (n) status(`${n === 1 ? "A 3D picture is" : `${n} 3D pictures are`} out of date: the project's model has changed. Select ${n === 1 ? "it" : "one"} and click Update picture.`, false, true);
   }
 
@@ -1006,7 +1014,9 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
   async function updateScenes(only?: SceneLayer[], all = false): Promise<number> {
     const model = await getProjectModel();
     const layers = only || objects().filter((o): o is SceneLayer => isScene(o) && (all || behindModel(o.scene, model)));
-    if (!layers.length) return 0;
+    // The screw inventory follows the model too (all of the page's, or only when it's behind).
+    const inventory = !only && model && inventoryLayers().length && (all || staleInventory().length) ? await screwInventory(true) : false;
+    if (!layers.length) return inventory ? 1 : 0;
     status(`Drawing ${layers.length === 1 ? "the picture" : `${layers.length} pictures`} again…`, false, true);
     let done = 0;
     try {
@@ -1613,6 +1623,140 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       status(e instanceof Error && e.message ? `The parts couldn't be drawn: ${e.message}` : "The parts couldn't be drawn.", true);
     }
   }
+  /** The screw inventory's layers: each carries `inventory`, with the model's stamp it was drawn from. */
+  type Inventory = { kind: "screws"; stamp?: number };
+  const inventoryOfObject = (o: FabricObject) => (o as FabricObject & { inventory?: Inventory }).inventory;
+  const inventoryLayers = () => objects().filter(o => inventoryOfObject(o)?.kind === "screws");
+  /** The inventory drawn from an older version of the project's model: its layers, or none. */
+  const staleInventory = () => {
+    const list = inventoryLayers();
+    const at = list.map(o => inventoryOfObject(o)?.stamp).find(s => typeof s === "number");
+    return projectModel && typeof at === "number" && at < projectModel.stamp ? list : [];
+  };
+
+  /**
+   * The screw inventory, as at the back of a flat-pack booklet: every kind
+   * of screw and heat-set insert the project's 3D scenes use, drawn at one
+   * scale in a box each, with its count, size and head, and a 10 mm bar to
+   * hold them against. From the project's model, or the first 3D scene's
+   * parts. An inventory already on the page is drawn again in its place.
+   */
+  async function screwInventory(quiet = false): Promise<boolean> {
+    const model = await getProjectModel();
+    const first = objects().find((o): o is SceneLayer => isScene(o) && !isDetail(o) && !!o.scene?.parts.length);
+    const parts = model?.parts.length ? model.parts : first?.scene ? normalizeScene(first.scene).parts : [];
+    const kinds = screwInventoryOf(parts);
+    if (!kinds.length) {
+      if (!quiet) status("No screws yet: put them in with the Screw tool (S) in a 3D scene, then add the screw inventory.", true);
+      return false;
+    }
+    const style = first?.scene ? normalizeScene(first.scene).style : blankScene().style;
+    // From a little above and to the front: the screw stands head up, its head's top in sight.
+    const direction: [number, number, number] = [1, -1.4, 0.5];
+    const mark: Inventory = { kind: "screws", ...(model ? { stamp: model.stamp } : {}) };
+    status("Drawing the screws…", false, true);
+    let fitTo = 0;
+    try {
+      const t = await sceneTools();
+      const thumbnailer = new t.Thumbnailer();
+      const made: FabricObject[] = [];
+      try {
+        const drawn = [];
+        for (const k of kinds) {
+          const m = await t.store.get(k.part);
+          if (destroyed) return false;
+          drawn.push({ ...k, model: m, span: thumbnailer.spanOf(m, style, direction) });
+        }
+        const unit = Math.min(W, H);
+        const margin = Math.round(W * 0.05);
+        const labelPx = Math.max(12, Math.round(unit * 0.03));
+        const inserts = kinds.some(k => k.screw.head === "insert");
+        const screws = kinds.some(k => k.screw.head !== "insert");
+        const title = screws && inserts ? "Screws and inserts" : inserts ? "Heat-set inserts" : "Screws";
+        made.push(tbox(title, { left: margin, top: margin, width: W - margin * 2, fontSize: Math.round(unit * 0.07), fontWeight: "800" }));
+        const top = margin + Math.round(unit * 0.12);
+        const bottom = H - margin - labelPx * 2.2;
+        const availW = W - margin * 2;
+        const availH = Math.max(labelPx * 6, bottom - top);
+        // As many columns as keep the boxes near square.
+        let cols = 1;
+        let best = Infinity;
+        for (let c = 1; c <= Math.min(6, drawn.length); c++) {
+          const r = Math.ceil(drawn.length / c);
+          const badness = Math.abs(Math.log(availW / c / (availH / r)));
+          if (badness < best) {
+            best = badness;
+            cols = c;
+          }
+        }
+        const rows = Math.ceil(drawn.length / cols);
+        const gap = Math.round(unit * 0.025);
+        const cellW = (availW - gap * (cols - 1)) / cols;
+        const cellH = Math.min((availH - gap * (rows - 1)) / rows, cellW * 1.25);
+        const textH = labelPx * 3.4;
+        const pad = Math.round(Math.min(cellW, cellH) * 0.08);
+        const picBox = Math.max(16, Math.min(cellW - pad * 2, cellH - textH - pad * 2));
+        // One scale for every screw: the longest fills its box.
+        const pxPerMm = picBox / Math.max(1, ...drawn.map(d => d.span));
+        const stroke = Math.max(3, Math.round(unit * 0.005));
+        for (const [i, k] of drawn.entries()) {
+          const x = margin + (i % cols) * (cellW + gap);
+          const y = top + Math.floor(i / cols) * (cellH + gap);
+          const name = SCREW_HEADS.find(h => h.id === k.screw.head)?.label || "Screw";
+          made.push(named(new Rect({ left: x, top: y, width: cellW, height: cellH, rx: 18, ry: 18, fill: "#ffffff", stroke: INK, strokeWidth: stroke, strokeUniform: true }), `${name} box`));
+          const pic = thumbnailer.drawAt(k.model, style, direction, pxPerMm);
+          const img = await FabricImage.fromURL(pic.url);
+          if (destroyed) return false;
+          img.scaleToWidth(pic.px);
+          const picTop = y + pad;
+          // Standing on the count, as in a LEGO parts box.
+          img.set({ left: x + (cellW - pic.px) / 2, top: picTop + picBox - pic.px });
+          Object.assign(img, { name: `M${k.screw.d} × ${k.screw.length} ${name.toLowerCase()}`, layerId: newId() });
+          const textTop = y + cellH - textH - pad * 0.5;
+          made.push(
+            img,
+            tbox(`${k.count}x`, { left: x, top: textTop, width: cellW, fontSize: Math.round(labelPx * 1.25), fontWeight: "800", textAlign: "center" }),
+            tbox(`M${k.screw.d} × ${k.screw.length}`, { left: x, top: textTop + labelPx * 1.45, width: cellW, fontSize: labelPx, fontWeight: "600", textAlign: "center" }),
+            tbox(name, { left: x, top: textTop + labelPx * 2.5, width: cellW, fontSize: Math.round(labelPx * 0.8), fill: "#495057", textAlign: "center" }),
+          );
+        }
+        // A 10 mm bar, at the screws' scale.
+        const bar = 10 * pxPerMm;
+        const gridBottom = top + rows * cellH + (rows - 1) * gap;
+        const by = gridBottom + labelPx * 1.6;
+        fitTo = by + margin;
+        const bx = W - margin - bar;
+        const tick = labelPx * 0.5;
+        made.push(
+          named(new Polyline([{ x: bx, y: by - tick }, { x: bx, y: by }, { x: bx + bar, y: by }, { x: bx + bar, y: by - tick }], { fill: "", stroke: INK, strokeWidth: stroke, strokeUniform: true, objectCaching: false }), "10 mm bar"),
+          tbox("10 mm", { left: bx - labelPx * 6, top: by - labelPx * 1.15, width: labelPx * 5.6, fontSize: Math.round(labelPx * 0.8), fill: "#495057", textAlign: "right" }),
+        );
+      } finally {
+        thumbnailer.dispose();
+      }
+      if (destroyed) return false;
+      // Drawn again in place of the old one.
+      const old = inventoryLayers();
+      if (old.length) canvas.remove(...old);
+      // A page of its own ends below the list, rather than with a blank half.
+      if (!objects().length && fitTo && fitTo < H - 1) resizePage(W, Math.round(fitTo));
+      made.forEach(o => {
+        Object.assign(o, { inventory: { ...mark } });
+        prepare(o);
+        canvas.add(o);
+      });
+      if (!quiet) selectAll(made);
+      canvas.requestRenderAll();
+      const n = kinds.reduce((a, k) => a + k.count, 0);
+      status(`${kinds.length} ${kinds.length === 1 ? "kind" : "kinds"} of screw listed, ${n} in all.`);
+      changed();
+      return true;
+    } catch (e) {
+      status(e instanceof Error && e.message ? `The screws couldn't be drawn: ${e.message}` : "The screws couldn't be drawn.", true);
+      return false;
+    }
+  }
+
   const tbox = (text: string, o: Record<string, unknown>) => {
     const t = new Textbox(text, { fontFamily: FONTS[0][1], fill: INK, ...o });
     Object.assign(t, { name: text, layerId: newId() });
@@ -2161,14 +2305,21 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
 
   /** An amber dashed frame and "Out of date" on scene pictures drawn from an older model (only on screen). */
   function drawStale(ctx: CanvasRenderingContext2D): void {
-    const stale = projectModel ? staleScenes() : [];
-    if (!stale.length) return;
+    const boxes: { left: number; top: number; width: number; height: number }[] = (projectModel ? staleScenes() : []).map(o => o.getBoundingRect());
+    // The screw inventory as one box round all of it.
+    const inv = projectModel ? staleInventory() : [];
+    if (inv.length) {
+      const rs = inv.map(o => o.getBoundingRect());
+      const left = Math.min(...rs.map(r => r.left));
+      const top = Math.min(...rs.map(r => r.top));
+      boxes.push({ left, top, width: Math.max(...rs.map(r => r.left + r.width)) - left, height: Math.max(...rs.map(r => r.top + r.height)) - top });
+    }
+    if (!boxes.length) return;
     const r = canvas.getRetinaScaling();
     ctx.save();
     ctx.setTransform(r * zoom, 0, 0, r * zoom, 0, 0);
     const u = 1 / zoom;
-    for (const o of stale) {
-      const b = o.getBoundingRect();
+    for (const b of boxes) {
       ctx.strokeStyle = "#d97706";
       ctx.lineWidth = 2 * u;
       ctx.setLineDash([8 * u, 5 * u]);
@@ -2906,6 +3057,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
         });
         numberStep();
         if (t.scene) void addScene(undefined, t.scene);
+        else if (t.inventory === "screws") void screwInventory();
         else if (t.inventory) void partsInventory();
         else selectAll(list);
       }
@@ -3512,6 +3664,10 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     exportResult,
     ready: () => opened,
     assemblyGuide,
+    screwInventory: async () => {
+      await opened;
+      return screwInventory(true);
+    },
     focus: () => root.focus({ preventScroll: true }),
     destroy,
   };
@@ -3533,7 +3689,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     renderContext();
     syncHistoryButtons();
     // Which 3D pictures the project's model has moved on from.
-    if (objects().some(isScene)) {
+    if (objects().some(isScene) || inventoryLayers().length) {
       await getProjectModel();
       if (destroyed) return;
       if (opts.updateScenes) await updateScenes(undefined, true);
