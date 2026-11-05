@@ -872,9 +872,9 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
             </li>` : ""}` : "";
         return `${joint}<li class="lyr-scene-row${p.id === selectedId && !shownJoint ? " lyr-on" : ""}${p.hidden ? " lyr-off" : ""}" data-id="${esc(p.id)}" style="--depth:${depth}">
               <button type="button" class="lyr-scene-name" data-pick="${esc(p.id)}" title="${broken ? "Its model couldn't be loaded" : "Select"}">${icon("cube", 14)}<span>${esc(p.name)}</span>${broken ? `<em>missing</em>` : ""}</button>
-              <button type="button" class="lyr-btn lyr-icon-btn${on ? " lyr-on" : ""}${inherited ? " lyr-inherited" : ""}" data-highlight="${esc(p.id)}" title="${inherited ? "Highlighted with the part above it: click to leave this one out" : on ? "Stop highlighting (and the parts under it)" : "Highlight (and the parts under it)"}" aria-label="Highlight ${esc(p.name)}" aria-pressed="${on}">${icon("highlight", 16)}</button>
-              <button type="button" class="lyr-btn lyr-icon-btn${p.ghost ? " lyr-on" : ""}" data-ghost-part="${esc(p.id)}" title="${p.ghost ? "Draw it normally" : "Ghost: draw it faint, as fitted in an earlier step"}" aria-label="Ghost ${esc(p.name)}" aria-pressed="${!!p.ghost}">${icon("opacity", 16)}</button>
-              <button type="button" class="lyr-btn lyr-icon-btn" data-hide="${esc(p.id)}" title="${linked() ? (p.hidden ? "Show it in this scene" : "Leave it out of this scene (it stays in the model)") : p.hidden ? "Show" : "Hide"}" aria-label="${p.hidden ? "Show" : "Hide"} ${esc(p.name)}">${icon(p.hidden ? "eyeOff" : "eye", 16)}</button>
+              <button type="button" class="lyr-btn lyr-icon-btn${on ? " lyr-on" : ""}${inherited ? " lyr-inherited" : ""}" data-highlight="${esc(p.id)}" title="${inherited ? "Highlighted with the part above it: click to leave it and the parts under it out" : on ? "Stop highlighting it and the parts under it" : "Highlight it and the parts under it"} (Shift-click: just this part)" aria-label="Highlight ${esc(p.name)}" aria-pressed="${on}">${icon("highlight", 16)}</button>
+              <button type="button" class="lyr-btn lyr-icon-btn${p.ghost ? " lyr-on" : ""}" data-ghost-part="${esc(p.id)}" title="${p.ghost ? "Draw it and the parts under it normally" : "Ghost it and the parts under it: draw them faint, as fitted in an earlier step"} (Shift-click: just this part)" aria-label="Ghost ${esc(p.name)}" aria-pressed="${!!p.ghost}">${icon("opacity", 16)}</button>
+              <button type="button" class="lyr-btn lyr-icon-btn" data-hide="${esc(p.id)}" title="${linked() ? (p.hidden ? "Show it and the parts under it in this scene" : "Leave it and the parts under it out of this scene (they stay in the model)") : p.hidden ? "Show it and the parts under it" : "Hide it and the parts under it"} (Shift-click: just this part)" aria-label="${p.hidden ? "Show" : "Hide"} ${esc(p.name)}">${icon(p.hidden ? "eyeOff" : "eye", 16)}</button>
               <button type="button" class="lyr-btn lyr-icon-btn" data-remove="${esc(p.id)}" title="${linked() ? "Remove it from the project's model (every scene)" : "Remove"}" aria-label="Remove ${esc(p.name)}">${icon("trash", 16)}</button>
             </li>${(byParent.get(p.id) || []).map(c => row(c, depth + 1)).join("")}`;
       };
@@ -968,9 +968,9 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           renderList();
           list.querySelector<HTMLInputElement>("[data-joint-explode-num]")?.focus();
         }
-      } else if (d.highlight) toggleHighlight(d.highlight);
-      else if (d.ghostPart) toggle(d.ghostPart, "ghost");
-      else if (d.hide) toggle(d.hide, "hidden");
+      } else if (d.highlight) toggleHighlight(d.highlight, e.shiftKey);
+      else if (d.ghostPart) toggle(d.ghostPart, "ghost", e.shiftKey);
+      else if (d.hide) toggle(d.hide, "hidden", e.shiftKey);
       else if (d.remove) removePart(d.remove);
     });
 
@@ -1048,45 +1048,73 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       commit();
     });
 
-    /**
-     * Turns a part's highlight on or off, for its whole branch: the parts
-     * under it follow it again, and it keeps a setting of its own only
-     * where it differs from the part above it.
-     */
-    function toggleHighlight(id: string): void {
-      const p = partById(id);
-      if (!p) return;
-      const lit = highlightedParts(scene.parts);
-      const want = !lit.has(id);
-      const above = p.parent ? lit.has(p.parent) : false;
-      if (want === above) delete p.highlight;
-      else p.highlight = want;
+    /** The parts joined under a part, all the way down its branch (not the part itself). */
+    function branchUnder(id: string): ScenePart[] {
       const under = new Set([id]);
+      const out: ScenePart[] = [];
       let grew = true;
       while (grew) {
         grew = false;
         for (const c of scene.parts) if (c.parent && under.has(c.parent) && !under.has(c.id)) {
           under.add(c.id);
+          out.push(c);
           grew = true;
-          delete c.highlight;
         }
+      }
+      return out;
+    }
+
+    /**
+     * Turns a part's highlight on or off. Normally for its whole branch: the
+     * parts under it follow it again, and it keeps a setting of its own only
+     * where it differs from the part above it. With `only` (Shift-click),
+     * just this part: the parts joined to it keep how they look now.
+     */
+    function toggleHighlight(id: string, only = false): void {
+      const p = partById(id);
+      if (!p) return;
+      const lit = highlightedParts(scene.parts);
+      const want = !lit.has(id);
+      const above = p.parent ? lit.has(p.parent) : false;
+      if (only) {
+        // Its children followed it: pin them to how they are now.
+        for (const c of scene.parts) if (c.parent === id && c.highlight === undefined) c.highlight = lit.has(c.id);
+      } else {
+        for (const c of branchUnder(id)) delete c.highlight;
+      }
+      if (want === above) delete p.highlight;
+      else p.highlight = want;
+      if (only) {
+        // A child pinned to what it would follow anyway follows again.
+        const now = highlightedParts(scene.parts).has(id);
+        for (const c of scene.parts) if (c.parent === id && c.highlight === now) delete c.highlight;
       }
       rebuild();
       commit();
       renderList();
       renderProps();
+      status(only ? `${want ? "Highlighted" : "Stopped highlighting"} just ${p.name}.` : `${want ? "Highlighted" : "Stopped highlighting"} ${p.name}${branchUnder(id).length ? " and the parts under it" : ""}. Shift-click for just this part.`);
     }
 
-    /** Turns a part's highlight, ghost or hidden on or off. */
-    function toggle(id: string, key: "highlight" | "ghost" | "hidden"): void {
+    /**
+     * Turns a part's ghost or hidden on or off: normally for it and every part
+     * joined under it, or with `only` (Shift-click) just this part.
+     */
+    function toggle(id: string, key: "ghost" | "hidden", only = false): void {
       const p = partById(id);
       if (!p) return;
-      if (p[key]) delete p[key];
-      else p[key] = true;
+      const want = !p[key];
+      const branch = only ? [] : branchUnder(id);
+      for (const x of [p, ...branch]) {
+        if (want) x[key] = true;
+        else delete x[key];
+      }
       rebuild();
       commit();
       renderList();
       renderProps();
+      const what = key === "ghost" ? (want ? "Ghosted" : "Stopped ghosting") : want ? "Hid" : "Showed";
+      status(`${what} ${only || !branch.length ? `just ${p.name}` : `${p.name} and ${branch.length === 1 ? "the part" : `the ${branch.length} parts`} under it`}.${only || !branch.length ? "" : " Shift-click for just this part."}`);
     }
 
     /** A copy of a part, standing on its own beside it (its joint isn't copied: join the copy where it goes). */
