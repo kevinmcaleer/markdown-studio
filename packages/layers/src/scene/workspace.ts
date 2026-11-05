@@ -28,6 +28,7 @@ import { toUrdf, zip } from "./urdf";
 import { createViewCube } from "./viewcube";
 import { MAX_SNAP_TRIANGLES, nearestSnap, Topology, type Face, type Snap } from "./snaps";
 import { createSectionTool } from "./sectionTool";
+import { insideReach, layTrack, MAX_TRACK_PIECES, trackPitch, trackTriangles, type TrackSpec, type TrackWheel, type WorldCircle } from "./track";
 import { fitDiameter, fitLength, holeDepth, isHoleSnap, matchingHoles, SCREW_HEADS, SCREW_LENGTHS, SCREW_SIZES, screwFile, screwLabel, screwLift, screwMesh, screwName, screwNoun, type ScrewHead, type ScrewSpec } from "./screw";
 
 export interface SceneModel {
@@ -599,12 +600,12 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
      * Angle / Slide, or once it's unjoined.
      */
     function locked(p: ScenePart | undefined): boolean {
-      return !!p?.parent && !!p.joint?.point;
+      return (!!p?.parent && !!p.joint?.point) || !!p?.track;
     }
 
     function attachGizmo(): void {
       const p = selectedId ? partById(selectedId) : undefined;
-      if (p && !p.hidden && !locked(p) && art.matrixOf(p.id) && !screwing) {
+      if (p && !p.hidden && !locked(p) && art.matrixOf(p.id) && !screwing && !trackPick) {
         placeProxy();
         gizmo.attach(proxy);
         gizmo.setMode(tool);
@@ -646,11 +647,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         return;
       }
       // A handle under the pointer is the gizmo's click, unless faces are being picked (the gizmo is put away then).
-      if (!joining && !screwing && (gizmo.dragging || (gizmo as unknown as { axis: string | null }).axis)) return;
+      if (!joining && !screwing && !trackPick && (gizmo.dragging || (gizmo as unknown as { axis: string | null }).axis)) return;
       const r = canvasEl.getBoundingClientRect();
       const ndc = new Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
       // A right-click (not a right-drag, which pans): the part's menu, or the view's.
-      if ((e.button === 2 || (e.button === 0 && e.ctrlKey && mac)) && !joining && !screwing) {
+      if ((e.button === 2 || (e.button === 0 && e.ctrlKey && mac)) && !joining && !screwing && !trackPick) {
         art.scene.updateMatrixWorld(true);
         raycaster.setFromCamera(ndc, camera);
         const hit = raycaster.intersectObjects(art.meshes(), false).find(h => art.keeps(h.point));
@@ -665,6 +666,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       if (screwing) {
         hoverAt(e);
         void screwClick(e.shiftKey);
+        return;
+      }
+      if (trackPick) {
+        hoverAt(e);
+        trackClick();
         return;
       }
       if (joining) {
@@ -949,7 +955,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       }
       else if (d.rejoin) {
         select(d.rejoin);
-        openJointDialog(d.rejoin);
+        if (partById(d.rejoin)?.track) openTrackDialog(d.rejoin);
+        else openJointDialog(d.rejoin);
       } else if (d.unjoin) {
         const p = partById(d.unjoin);
         if (p) unjoin(p);
@@ -1246,6 +1253,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           ? { label: `Edit joint to ${parent.name}`, icon: "link", run: () => { select(id); openJointDialog(id); } }
           : { label: "Join to another part…", icon: "link", run: () => { select(id); openJointDialog(id); } },
         ...(parent ? [{ label: "Remove joint", icon: "unlink", run: () => unjoin(p) }] : []),
+        ...(p.screw || broken || scene.parts.length < 2 ? [] : [{ label: p.track ? "Edit track…" : "Make track…", icon: "track", run: () => { select(id); openTrackDialog(id); } }]),
         null,
         { label: "Highlight", on: highlightedParts(scene.parts).has(id), run: () => toggleHighlight(id) },
         { label: "Ghost", on: !!p.ghost, run: () => toggle(id, "ghost") },
@@ -1848,7 +1856,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     function setFaceHeld(on: boolean): void {
       if (on === faceHeld) return;
       faceHeld = on;
-      if (joining && hover) placeSnaps();
+      if ((joining || trackPick) && hover) placeSnaps();
       draw();
     }
     /** How far (px) each of the face's round snaps reaches: its circle as drawn. */
@@ -1893,6 +1901,13 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     /** The meshes a join may pick now: the part being joined, then any part not on its branch. */
     function pickable(): Mesh[] {
       if (screwing) return art.meshes().filter(m => !partById(String(m.userData.partId || ""))?.screw);
+      if (trackPick && trackDraft) {
+        const d = trackDraft;
+        return art.meshes().filter(m => {
+          const id = String(m.userData.partId || "");
+          return trackPick === "wheel" ? id !== d.linkId && id !== d.trackId : id === d.linkId;
+        });
+      }
       if (!joining) return [];
       const branchIds = joining.childPoint ? branch(joining.childId) : null;
       return art.meshes().filter(m => {
@@ -1995,6 +2010,26 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           }
         });
       }
+      if (trackDraft) {
+        // The track's picks: the piece's pivots, and the middle of each wheel's circle.
+        const td = trackDraft;
+        const g = art.groupOf(td.linkId);
+        if (g) {
+          g.updateMatrixWorld(true);
+          for (const at of [td.spec.start, td.spec.end]) {
+            if (!at) continue;
+            const q = project(at, g.matrixWorld);
+            marks.push(`<span class="lyr-snap lyr-snap-picked" style="left:${q.x}px;top:${q.y}px"></span>`);
+          }
+        }
+        for (const w of td.spec.wheels) {
+          const wg = art.groupOf(w.id);
+          if (!wg) continue;
+          wg.updateMatrixWorld(true);
+          const q = project(w.point, wg.matrixWorld);
+          marks.push(`<span class="lyr-snap lyr-snap-joined" style="left:${q.x}px;top:${q.y}px"></span>`);
+        }
+      }
       if (joining?.childPoint) {
         const g = art.groupOf(joining.childId);
         if (g) {
@@ -2021,7 +2056,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         }
         if (on) {
           const p = screen[hover.snap];
-          const text = screwing ? screwHint(hover.id, on) : `${ROLE_LABEL[on.role]}${faceHeld ? " · face held" : ""}`;
+          const text = screwing ? screwHint(hover.id, on) : trackPick === "wheel" && on.radius ? `Ø${round(on.radius * 2, 1)} mm circle` : `${ROLE_LABEL[on.role]}${faceHeld ? " · face held" : ""}`;
           marks.push(`<span class="lyr-snap-label" style="left:${p.x}px;top:${p.y}px">${esc(text)}</span>`);
         }
         if (on?.radius && (on.role === "hole" || on.role === "rim" || on.role === "centre")) {
@@ -2049,6 +2084,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     /** The hovered face's snaps a click can take: only its round holes while putting screws in. */
     function hoverSnaps(): Snap[] {
       const all = hover?.face?.snaps || [];
+      if (trackPick === "wheel") return all.filter(s => !!s.radius);
       return screwing ? all.filter(isHoleSnap) : all;
     }
 
@@ -2068,16 +2104,16 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         hoverQueued = requestAnimationFrame(() => section.hover(at));
         return;
       }
-      if (!(joining || screwing) || e.buttons) return;
+      if (!(joining || screwing || trackPick) || e.buttons) return;
       faceHeld = !screwing && holdKey(e) && !!hover;
       shiftDown = e.shiftKey;
       const at = { clientX: e.clientX, clientY: e.clientY };
       cancelAnimationFrame(hoverQueued);
-      hoverQueued = requestAnimationFrame(() => (joining || screwing) && hoverAt(at));
+      hoverQueued = requestAnimationFrame(() => (joining || screwing || trackPick) && hoverAt(at));
     });
     canvasEl.addEventListener("pointerleave", () => {
       cancelAnimationFrame(hoverQueued);
-      if (joining || screwing) clearHover();
+      if (joining || screwing || trackPick) clearHover();
     });
 
     // ------------------------------------------------------------ the screw tool
@@ -2570,12 +2606,13 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       placeSnaps();
     }
 
-    // The dialog moves by its title bar, so it needn't cover the parts.
-    jointDialog.addEventListener("pointerdown", e => {
+    // A dialog moves by its title bar, so it needn't cover the parts.
+    function draggable(dialog: HTMLElement): void {
+    dialog.addEventListener("pointerdown", e => {
       const head = (e.target as HTMLElement).closest<HTMLElement>(".lyr-joint-head");
       if (!head || (e.target as HTMLElement).closest("button") || e.button !== 0) return;
       e.preventDefault();
-      const box = jointDialog.getBoundingClientRect();
+      const box = dialog.getBoundingClientRect();
       const area = stage.getBoundingClientRect();
       const dx = e.clientX - box.left, dy = e.clientY - box.top;
       head.setPointerCapture(e.pointerId);
@@ -2583,10 +2620,10 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const move = (m: PointerEvent) => {
         const x = Math.max(0, Math.min(m.clientX - dx - area.left, area.width - box.width));
         const y = Math.max(0, Math.min(m.clientY - dy - area.top, area.height - 40));
-        jointDialog.style.left = `${Math.round(x)}px`;
-        jointDialog.style.top = `${Math.round(y)}px`;
-        jointDialog.style.right = "auto";
-        jointDialog.style.bottom = "auto";
+        dialog.style.left = `${Math.round(x)}px`;
+        dialog.style.top = `${Math.round(y)}px`;
+        dialog.style.right = "auto";
+        dialog.style.bottom = "auto";
       };
       const up = () => {
         head.classList.remove("lyr-dragging");
@@ -2598,6 +2635,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       head.addEventListener("pointerup", up);
       head.addEventListener("pointercancel", up);
     });
+    }
+    draggable(jointDialog);
 
     jointDialog.addEventListener("change", e => {
       const t = e.target as HTMLSelectElement;
@@ -2675,12 +2714,508 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       }
     });
 
+    // ------------------------------------------------------------ the track dialog
+
+    // Make track: one piece (a track link) repeated round two or more wheels.
+    // Pick the piece's two pivots (where it joins the piece before and the
+    // piece after), then a round edge on each wheel; the track is laid round
+    // them as a belt (track.ts) and drawn as one part, joined to the part
+    // the wheels are on. Count, Offset (round the loop), Lift (off the
+    // wheels), Sideways and Flip line it up; it's redrawn as they change.
+
+    interface TrackDraft {
+      linkId: string;
+      /** The track's part, once there's one to show. */
+      trackId: string;
+      spec: { count: number; start?: Vec3; end?: Vec3; axis?: Vec3; wheels: TrackWheel[]; offset: number; lift: number; side: number; flip?: boolean };
+      /** The lift was typed in: Flip and new pivots leave it. */
+      liftSet: boolean;
+      /** How many pieces go round exactly, as last laid. */
+      fits: number;
+      pitch: number;
+      before: string;
+      busy?: boolean;
+    }
+    let trackDraft: TrackDraft | null = null;
+    /** What a click in the view picks for the track: a pivot on the piece, or a wheel's circle. */
+    let trackPick: "start" | "end" | "wheel" | null = null;
+
+    const trackDialog = document.createElement("div");
+    trackDialog.className = "lyr-joint-dialog lyr-track-dialog";
+    trackDialog.setAttribute("role", "dialog");
+    trackDialog.setAttribute("aria-label", "Make track");
+    trackDialog.hidden = true;
+    stage.appendChild(trackDialog);
+    draggable(trackDialog);
+
+    const trackSpecOf = (d: TrackDraft): TrackSpec | null => {
+      const s = d.spec;
+      if (!s.start || !s.end || !s.axis) return null;
+      return { link: d.linkId, count: s.count, start: s.start, end: s.end, axis: s.axis, wheels: s.wheels, offset: s.offset, lift: s.lift, side: s.side, ...(s.flip ? { flip: true } : {}) };
+    };
+    const linkModel = (): Model | null => {
+      const m = trackDraft ? models.get(trackDraft.linkId) : undefined;
+      return m && !(m instanceof Error) ? m : null;
+    };
+
+    function openTrackDialog(id: string): void {
+      const p = partById(id);
+      if (!p) return;
+      // A track's own button changes it; any other part is the piece.
+      const old = p.track;
+      const linkId = old ? old.link : id;
+      const link = partById(linkId);
+      if (!link || !(models.get(linkId) && !(models.get(linkId) instanceof Error))) {
+        status(old ? "The piece this track was made from isn't in the scene any more, so it can't be changed." : "That part's model isn't loaded.", true);
+        return;
+      }
+      if (draft) closeJointDialog();
+      if (joining) stopJoin();
+      stopScrews();
+      if (section.picking()) section.stop();
+      trackDraft = {
+        linkId,
+        trackId: old ? id : "",
+        spec: old
+          ? { count: old.count, start: old.start, end: old.end, axis: old.axis, wheels: structuredClone(old.wheels), offset: old.offset, lift: old.lift, side: old.side, ...(old.flip ? { flip: true } : {}) }
+          : { count: 0, wheels: [], offset: 0, lift: 0, side: 0 },
+        liftSet: !!old,
+        fits: 0,
+        pitch: 0,
+        before: snap(),
+      };
+      // The piece is shown while the dialog is open, so its pivots can be picked; OK puts it away.
+      if (link.hidden) {
+        delete link.hidden;
+        rebuild();
+      }
+      selectedId = trackDraft.trackId || linkId;
+      shownJoint = "";
+      renderList();
+      renderProps();
+      renderTrackDialog();
+      if (old) layTrackNow();
+      else startTrackPick("start");
+    }
+
+    function closeTrackDialog(): void {
+      if (trackPick) stopTrackPick();
+      trackDraft = null;
+      trackDialog.hidden = true;
+      attachGizmo();
+      renderList();
+      renderProps();
+      placeSnaps();
+      draw();
+    }
+
+    function startTrackPick(which: "start" | "end" | "wheel"): void {
+      if (!trackDraft) return;
+      trackPick = which;
+      canvasEl.classList.add("lyr-scene-picking");
+      gizmo.detach();
+      clearHover();
+      const name = esc(partById(trackDraft.linkId)?.name);
+      status(which === "start"
+        ? `Click the pivot on “${name}” where it joins the piece before it: the centre of its pin or hole. Esc to stop.`
+        : which === "end"
+          ? `Now the pivot at its other end, where the next piece joins on. Esc to stop.`
+          : `Click a round edge on each wheel the track goes round (two or more). Esc when they're all picked.`, false, true);
+      renderTrackDialog();
+      placeSnaps();
+      draw();
+    }
+
+    function stopTrackPick(message = ""): void {
+      trackPick = null;
+      faceHeld = false;
+      clearHover();
+      canvasEl.classList.remove("lyr-scene-picking");
+      status(message);
+      if (trackDraft) renderTrackDialog();
+      placeSnaps();
+      draw();
+    }
+
+    function trackClick(): void {
+      if (!trackDraft || !trackPick) return;
+      const s = hover && hover.snap >= 0 ? hoverSnaps()[hover.snap] : undefined;
+      const d = trackDraft;
+      if (trackPick === "wheel") {
+        if (!hover || !s?.radius) {
+          status("Click a round edge on a wheel: its rim, or the edge of its hub or axle hole. Esc when they're all picked.", true, true);
+          return;
+        }
+        if (hover.id === d.linkId || hover.id === d.trackId) return;
+        const r3 = (v: number[]) => v.map(n => round(n, 4)) as Vec3;
+        const w: TrackWheel = { id: hover.id, point: r3(s.p), normal: r3(s.n), radius: round(s.radius, 3) };
+        // The same circle again takes it out.
+        const at = d.spec.wheels.findIndex(x => x.id === w.id && Math.hypot(x.point[0] - w.point[0], x.point[1] - w.point[1], x.point[2] - w.point[2]) < 0.05);
+        if (at >= 0) d.spec.wheels.splice(at, 1);
+        else d.spec.wheels.push(w);
+        const n = d.spec.wheels.length;
+        status(n < 2 ? "Now a round edge on the next wheel. Esc when they're all picked." : `${n} wheels. Click another, or Esc when they're all picked.`, false, true);
+        clearHover();
+        layTrackNow();
+        renderTrackDialog();
+        return;
+      }
+      const f = hoverPick();
+      if (!f || f.id !== d.linkId) {
+        status(`Click a pivot on “${esc(partById(d.linkId)?.name)}” itself. Esc to stop.`, true, true);
+        return;
+      }
+      if (trackPick === "start") {
+        d.spec.start = f.point;
+        d.spec.axis = f.normal;
+      } else {
+        d.spec.end = f.point;
+        if (!d.spec.axis) d.spec.axis = f.normal;
+      }
+      const which = trackPick;
+      stopTrackPick();
+      if (d.spec.start && d.spec.end && !(trackPitch(trackSpecOf(d)!) > 0.5)) {
+        status("Those pivots are on the same pin: pick the pivot at the piece's other end.", true);
+        delete d.spec.end;
+        startTrackPick("end");
+        return;
+      }
+      autoLift();
+      if (which === "start" && !d.spec.end) startTrackPick("end");
+      else if (d.spec.wheels.length < 2) startTrackPick("wheel");
+      else layTrackNow();
+      renderTrackDialog();
+    }
+
+    /** The lift that sets the piece's inside on the wheels, unless one was typed in. */
+    function autoLift(force = false): void {
+      const d = trackDraft;
+      const spec = d && trackSpecOf(d);
+      const m = linkModel();
+      if (!d || !spec || !m || (d.liftSet && !force)) return;
+      d.spec.lift = insideReach(m.geometry.getAttribute("position").array as ArrayLike<number>, spec);
+      if (force) d.liftSet = false;
+    }
+
+    /** The deepest part every wheel is joined under (not a wheel, nor the piece): the track joins it. */
+    function trackParent(d: TrackDraft): ScenePart | undefined {
+      const chain = (id: string) => {
+        const out: string[] = [];
+        for (let p = partById(id)?.parent ? partById(partById(id)!.parent!) : undefined, k = 0; p && k < 64; p = p.parent ? partById(p.parent) : undefined, k++) out.push(p.id);
+        return out;
+      };
+      const chains = d.spec.wheels.map(w => chain(w.id));
+      if (!chains.length) return undefined;
+      const skip = new Set([d.linkId, d.trackId, ...d.spec.wheels.map(w => w.id), ...branch(d.trackId || d.linkId)]);
+      const common = chains[0].find(id => chains.every(c => c.includes(id)) && !skip.has(id));
+      return common ? partById(common) : undefined;
+    }
+
+    /** Lays the track round the wheels and shows it, as a part (made the first time). */
+    let trackPreview: Model | null = null;
+    function layTrackNow(): void {
+      const d = trackDraft;
+      const spec = d && trackSpecOf(d);
+      const m = linkModel();
+      if (!d || !spec || !m) return;
+      const link = partById(d.linkId)!;
+      const world = worldMatrices(scene.parts, 0, false);
+      const circles: WorldCircle[] = [];
+      for (const w of spec.wheels) {
+        const at = world.get(w.id);
+        if (!at || !partById(w.id)) continue;
+        circles.push({ centre: new Vector3(...w.point).applyMatrix4(at), normal: new Vector3(...w.normal).transformDirection(at), radius: w.radius });
+      }
+      if (circles.length < 2) {
+        d.fits = 0;
+        syncTrackInfo();
+        return;
+      }
+      // First time round: as many pieces as fit.
+      if (!d.spec.count) {
+        const trial = layTrack({ ...spec, count: 1 }, circles);
+        d.spec.count = Math.max(2, Math.min(MAX_TRACK_PIECES, Math.round(trial.fits) || 2));
+        spec.count = d.spec.count;
+      }
+      const lay = layTrack(spec, circles);
+      d.fits = lay.fits;
+      d.pitch = lay.pitch;
+      if (!lay.pieces.length) {
+        syncTrackInfo();
+        return;
+      }
+      const parent = trackParent(d);
+      const toParent = parent ? (world.get(parent.id) || new Matrix4()).clone().invert() : new Matrix4();
+      const tri = trackTriangles(m.geometry.getAttribute("position").array as ArrayLike<number>, lay.pieces, toParent);
+      const model = modelFromPositions(tri, null);
+      let part = d.trackId ? partById(d.trackId) : undefined;
+      if (!part) {
+        part = { id: newPartId(scene.parts), name: `${link.name} track`.slice(0, 120), position: [0, 0, 0], rotation: [0, 0, 0] };
+        scene.parts.push(part);
+        d.trackId = part.id;
+      }
+      part.position = model.centre.map(n => round(n, 3)) as Vec3;
+      part.rotation = [0, 0, 0];
+      part.track = { ...spec, wheels: structuredClone(spec.wheels) };
+      // It comes off sideways in an exploded view, along the axle, away from what it's on.
+      const W = circles[0].normal.clone().normalize();
+      if (parent) {
+        const pm = new Vector3().setFromMatrixPosition(world.get(parent.id) || new Matrix4());
+        const mid = new Vector3(...model.centre).applyMatrix4(world.get(parent.id) || new Matrix4());
+        if (mid.sub(pm).dot(W) < 0) W.negate();
+        part.parent = parent.id;
+        const n = W.transformDirection(toParent);
+        part.joint = { normal: [round(n.x, 5), round(n.y, 5), round(n.z, 5)], distance: Math.max(20, Math.round(Math.max(...m.size) * 2.5)) };
+      } else {
+        delete part.parent;
+        delete part.joint;
+      }
+      const was = trackPreview;
+      trackPreview = model;
+      keepModel(part, model);
+      selectedId = part.id;
+      rebuild();
+      if (was && was !== model) {
+        was.geometry.dispose();
+        was.edges.forEach(e => e.dispose());
+      }
+      renderProps();
+      syncTrackInfo();
+    }
+    let trackQueued = 0;
+    const layTrackSoon = () => {
+      clearTimeout(trackQueued);
+      trackQueued = window.setTimeout(layTrackNow, 120);
+    };
+
+    /** How the count compares with the loop: tight, slack or just right. */
+    function trackFitText(d: TrackDraft): string {
+      if (!d.fits) return "";
+      const f = round(d.fits, 1);
+      const off = d.spec.count - d.fits;
+      const by = Math.abs(off) * d.pitch;
+      const how = by < 0.5 ? "a good fit" : off > 0 ? `${round(by, 1)} mm too long, so it overlaps` : `${round(by, 1)} mm short of closing`;
+      return `${f} pieces go round: ${how}.`;
+    }
+
+    function syncTrackInfo(): void {
+      const d = trackDraft;
+      const el = trackDialog.querySelector<HTMLElement>("[data-track-info]");
+      if (!d || !el) return;
+      el.textContent = trackFitText(d);
+      const fit = trackDialog.querySelector<HTMLButtonElement>("[data-act=track-fit]");
+      if (fit) {
+        const n = Math.max(2, Math.round(d.fits));
+        fit.disabled = !d.fits || n === d.spec.count;
+        fit.querySelector("span")!.textContent = d.fits ? `Use ${n}` : "Use";
+      }
+      trackDialog.querySelectorAll<HTMLInputElement>("[data-track-field]").forEach(inp => {
+        if (document.activeElement !== inp) inp.value = String(round((d.spec as unknown as Record<string, number>)[inp.dataset.trackField!] || 0, 2));
+      });
+      const ok = trackDialog.querySelector<HTMLButtonElement>("[data-act=track-ok]");
+      if (ok) ok.disabled = !d.trackId || !!d.busy;
+    }
+
+    const tf = (key: string, label: string, unit: string, value: number, step: number, title: string) => `
+      <label class="lyr-scene-field" title="${esc(title)}">
+        <span>${esc(label)}</span>
+        <input class="lyr-num" type="number" step="${step}" data-track-field="${key}" value="${round(value, 2)}">
+        <em>${esc(unit)}</em>
+      </label>`;
+
+    function renderTrackDialog(): void {
+      const d = trackDraft;
+      if (!d) {
+        trackDialog.hidden = true;
+        return;
+      }
+      const link = partById(d.linkId);
+      if (!link) return closeTrackDialog();
+      const s = d.spec;
+      const pivot = (which: "start" | "end", label: string, title: string) => {
+        const picked = s[which];
+        const picking = trackPick === which;
+        return `<div class="lyr-joint-face" title="${esc(title)}">
+          <button type="button" class="lyr-wide-btn${picking ? " lyr-on" : ""}" data-track-pick="${which}">
+            ${icon(picked ? "check" : "plus", 14)} ${picking ? "Click the pivot in the view…" : picked ? `${esc(label)} at ${esc(mm(picked))}` : `${esc(label)}: pick…`}
+          </button>
+        </div>`;
+      };
+      const ready = !!(s.start && s.end && s.wheels.length >= 2);
+      trackDialog.innerHTML = `
+        <div class="lyr-joint-head">
+          ${icon("track", 16)}<strong title="Drag here to move the dialog">${d.trackId && partById(d.trackId)?.data ? "Edit track" : "Make track"}</strong>
+          <span class="lyr-grow"></span>
+          <button type="button" class="lyr-btn lyr-icon-btn" data-act="track-cancel" title="Close without keeping the track" aria-label="Close">${icon("close", 16)}</button>
+        </div>
+        <div class="lyr-joint-body">
+          <div class="lyr-panel-title">Track piece</div>
+          <p class="lyr-note lyr-track-piece">${icon("cube", 14)} <strong>${esc(link.name)}</strong></p>
+          <div class="lyr-panel-title">Pivots on the piece</div>
+          ${pivot("start", "Start pivot", "Where it joins the piece before it: the centre of its pin or hole")}
+          ${pivot("end", "End pivot", "Where the next piece joins on, at its other end")}
+          ${d.pitch ? `<p class="lyr-note">Pitch ${round(d.pitch, 2)} mm.</p>` : ""}
+          <div class="lyr-panel-title">Wheels to wrap</div>
+          <ul class="lyr-track-wheels">
+            ${s.wheels.map((w, i) => `<li><span>${icon("rotate", 14)} ${esc(partById(w.id)?.name || "Missing part")}</span><em>Ø${round(w.radius * 2, 1)}</em>
+              <button type="button" class="lyr-btn lyr-icon-btn" data-track-unwheel="${i}" title="Leave this wheel out" aria-label="Leave this wheel out">${icon("close", 14)}</button></li>`).join("")}
+          </ul>
+          <div class="lyr-joint-face">
+            <button type="button" class="lyr-wide-btn${trackPick === "wheel" ? " lyr-on" : ""}" data-track-pick="wheel" title="Click a round edge on each wheel: its rim, or the edge of its hub">
+              ${icon("plus", 14)} ${trackPick === "wheel" ? "Click each wheel's round edge…" : s.wheels.length ? "Add a wheel…" : "Pick the wheels…"}
+            </button>
+          </div>
+          ${ready ? `
+            <div class="lyr-panel-title">Pieces</div>
+            <div class="lyr-scene-fields">
+              ${tf("count", "How many", "", s.count, 1, "How many pieces make the track")}
+            </div>
+            <div class="lyr-track-fit">
+              <p class="lyr-note" data-track-info>${esc(trackFitText(d))}</p>
+              <button type="button" class="lyr-btn" data-act="track-fit" title="As many pieces as go round the wheels"><span>Use</span></button>
+            </div>
+            <div class="lyr-panel-title">Line-up</div>
+            <div class="lyr-scene-fields">
+              ${tf("offset", "Offset", "mm", s.offset, 0.5, "Move the pieces on round the wheels, to line teeth up with holes")}
+              ${tf("lift", "Lift", "mm", s.lift, 0.1, "How far the pivots sit outside the wheels' round edges")}
+              ${tf("side", "Sideways", "mm", s.side, 0.5, "Move the track along the axles")}
+            </div>
+            <div class="lyr-scene-quick">
+              <button type="button" class="lyr-btn" data-act="track-flip" title="Turn the pieces over, so their other side faces the wheels">${icon("flipV", 16)}<span>Flip</span></button>
+              <button type="button" class="lyr-btn" data-act="track-lift" title="Set the lift so the pieces' insides sit on the wheels">Sit on wheels</button>
+            </div>`
+          : `<p class="lyr-note">Pick the piece's two pivots, then a round edge on two or more wheels. The track is laid round them.</p>`}
+        </div>
+        <div class="lyr-joint-foot">
+          <button type="button" class="lyr-btn" data-act="track-cancel">Cancel</button>
+          <button type="button" class="lyr-btn lyr-done" data-act="track-ok">${icon("check", 16)}<span>OK</span></button>
+        </div>`;
+      trackDialog.hidden = false;
+      syncTrackInfo();
+    }
+
+    trackDialog.addEventListener("input", e => {
+      const t = e.target as HTMLInputElement;
+      const d = trackDraft;
+      const key = t.dataset.trackField;
+      if (!d || !key) return;
+      const v = Number(t.value);
+      if (!Number.isFinite(v)) return;
+      if (key === "count") d.spec.count = Math.max(1, Math.min(MAX_TRACK_PIECES, Math.round(v)));
+      else if (key === "offset" || key === "side") d.spec[key] = Math.max(-1e4, Math.min(1e4, v));
+      else if (key === "lift") {
+        d.spec.lift = Math.max(-1e3, Math.min(1e3, v));
+        d.liftSet = true;
+      }
+      layTrackSoon();
+    });
+    trackDialog.addEventListener("keydown", e => {
+      const t = e.target as HTMLInputElement;
+      if (!t.dataset.trackField || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+      e.preventDefault();
+      const step = Number(t.step) || 1;
+      const by = step * (e.shiftKey ? 10 : e.altKey ? 0.1 : 1) * (e.key === "ArrowUp" ? 1 : -1);
+      t.value = String(round(Number(t.value) + by, 3));
+      t.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    trackDialog.addEventListener("click", e => {
+      const b = (e.target as HTMLElement).closest("button");
+      const d = trackDraft;
+      if (!b || !d) return;
+      const a = b.dataset;
+      if (a.trackPick) {
+        if (trackPick === a.trackPick) stopTrackPick();
+        else startTrackPick(a.trackPick as "start" | "end" | "wheel");
+      } else if (a.trackUnwheel) {
+        d.spec.wheels.splice(Number(a.trackUnwheel), 1);
+        layTrackNow();
+        renderTrackDialog();
+      } else if (a.act === "track-fit") {
+        if (d.fits) d.spec.count = Math.max(2, Math.round(d.fits));
+        layTrackNow();
+      } else if (a.act === "track-flip") {
+        d.spec.flip = !d.spec.flip || undefined;
+        autoLift();
+        layTrackNow();
+      } else if (a.act === "track-lift") {
+        autoLift(true);
+        layTrackNow();
+      } else if (a.act === "track-ok") void finishTrack();
+      else if (a.act === "track-cancel") cancelTrack();
+    });
+
+    function cancelTrack(): void {
+      const d = trackDraft;
+      if (!d) return;
+      clearTimeout(trackQueued);
+      const before = d.before;
+      closeTrackDialog();
+      trackPreview = null;
+      restore(before);
+      syncHistory();
+      status("");
+    }
+
+    async function finishTrack(): Promise<void> {
+      const d = trackDraft;
+      if (!d || d.busy) return;
+      clearTimeout(trackQueued);
+      layTrackNow();
+      const part = d.trackId ? partById(d.trackId) : undefined;
+      const model = part ? models.get(part.id) : undefined;
+      if (!part || !model || model instanceof Error) return;
+      d.busy = true;
+      syncTrackInfo();
+      status("Saving the track…", false, true);
+      try {
+        const data = await packMesh(model.geometry.getAttribute("position").array as Float32Array);
+        if (closed || trackDraft !== d) return;
+        if (data.length > MAX_EMBED) {
+          status(tooBigToCarry(`The track (${part.track?.count} pieces)`, data.length), true, true);
+          return;
+        }
+        part.data = data;
+        part.file = `${(partById(d.linkId)?.name || "track").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "piece"}-track.stl`;
+        opts.store.put(part, model);
+        keepModel(part, model);
+        trackPreview = null;
+        // The piece is in the track now: it's put away.
+        const link = partById(d.linkId);
+        if (link) link.hidden = true;
+        const n = part.track?.count || 0;
+        const wheels = part.track?.wheels.length || 0;
+        selectedId = part.id;
+        closeTrackDialog();
+        rebuild();
+        commit();
+        status(`“${part.name}” made: ${n} pieces round ${wheels} wheels. The piece it's made from is hidden.`);
+      } catch (e) {
+        status(`The track couldn't be saved: ${e instanceof Error ? e.message : String(e)}`, true, true);
+      } finally {
+        d.busy = false;
+        if (trackDraft === d) syncTrackInfo();
+      }
+    }
+
+    /** Make track (or Edit track, on a track): under the joint's buttons. */
+    function trackButton(p: ScenePart): string {
+      if (p.screw || scene.parts.length < 2) return "";
+      return p.track
+        ? `<div class="lyr-scene-join"><button type="button" class="lyr-wide-btn" data-act="track" title="Change the track: its pieces, pivots, wheels and line-up">${icon("track", 16)} Edit track…</button></div>`
+        : `<div class="lyr-scene-join"><button type="button" class="lyr-wide-btn" data-act="track" title="Repeat this part as a track round two or more wheels, joined at its pivots">${icon("track", 16)} Make track…</button></div>`;
+    }
+
     function jointSection(p: ScenePart, parent: ScenePart | undefined): string {
       const others = scene.parts.length > 1;
+      if (p.track) {
+        return `<div class="lyr-scene-join"><p class="lyr-note">A track of ${p.track.count} pieces round ${p.track.wheels.length} wheels${parent ? `, on <strong>${esc(parent.name)}</strong>` : ""}. Change it with Edit track.</p></div>
+          ${parent ? `<div class="lyr-scene-fields">${field("distance", "Explode", "mm", p.joint?.distance || 0, 1, "How far it slides off in the exploded view")}</div>` : ""}
+          ${trackButton(p)}`;
+      }
       if (!parent) {
-        return others
+        return (others
           ? `<div class="lyr-scene-join"><button type="button" class="lyr-wide-btn" data-act="join" title="Pick a face on this part, then the face on another part it fits against">${icon("layers", 16)} Join to another part…</button></div>`
-          : "";
+          : "") + trackButton(p);
       }
       const picked = !!p.joint?.point;
       const type: JointType = (picked && p.joint?.type) || "fixed";
@@ -2711,7 +3246,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           <button type="button" class="lyr-btn" data-act="join" title="Pick the two faces again">Re-join</button>
           <button type="button" class="lyr-btn" data-act="unjoin" title="Stand on its own again, where it is now">Unjoin</button>
         </div>
-      </div>`;
+      </div>${trackButton(p)}`;
     }
 
     const explodeInput = $<HTMLInputElement>("[data-explode]");
@@ -2759,7 +3294,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           ${p ? `
             <label class="lyr-scene-namebox">Name <input type="text" maxlength="120" data-name value="${esc(p.name)}"></label>
             ${jointSection(p, parent)}
-            ${locked(p) ? `<p class="lyr-note lyr-scene-locked-note">${icon("link", 14)} Held in place by its joint to ${esc(parent?.name || "its parent")}, so it moves with it. Turn or slide it with the joint's ${p.joint?.type === "prismatic" ? "Slide" : p.joint?.type === "revolute" ? "Angle" : "Spin and Gap"}, or Unjoin it to place it by hand.</p>` : ""}
+            ${locked(p) && !p.track ? `<p class="lyr-note lyr-scene-locked-note">${icon("link", 14)} Held in place by its joint to ${esc(parent?.name || "its parent")}, so it moves with it. Turn or slide it with the joint's ${p.joint?.type === "prismatic" ? "Slide" : p.joint?.type === "revolute" ? "Angle" : "Spin and Gap"}, or Unjoin it to place it by hand.</p>` : ""}
             <fieldset class="lyr-scene-placing"${locked(p) ? " disabled" : ""}>
             <div class="lyr-scene-sub">Position</div>
             <div class="lyr-scene-fields">
@@ -2901,6 +3436,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         if (p) setJointType(p, b.dataset.jtype as JointType);
       } else if (b.dataset.act === "join") {
         if (selectedId) openJointDialog(selectedId);
+      } else if (b.dataset.act === "track") {
+        if (selectedId) openTrackDialog(selectedId);
       } else if (b.dataset.act === "unjoin") {
         const p = partById(selectedId);
         if (p) unjoin(p);
@@ -3224,7 +3761,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       e.stopPropagation();
       const mod = e.metaKey || e.ctrlKey;
       const key = e.key.toLowerCase();
-      if (joining && (e.key === "Meta" || e.key === "Control")) setFaceHeld(holdKey(e) && !!hover);
+      if ((joining || trackPick) && (e.key === "Meta" || e.key === "Control")) setFaceHeld(holdKey(e) && !!hover);
       if (e.key === "Shift" && screwing && !shiftDown) {
         shiftDown = true;
         if (hover) placeSnaps();
@@ -3256,6 +3793,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         if (!ctx.hidden) closeCtx();
         else if (section.picking()) section.stop(scene.section ? "" : "Section stopped.");
         else if (screwing) stopScrews();
+        else if (trackPick) stopTrackPick();
+        else if (trackDraft) cancelTrack();
         else if (joining) stopJoin("Join stopped.");
         else if (!menu.hidden) closeMenu();
         else if (selectedId) select("");
@@ -3323,6 +3862,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
 
     async function finish(): Promise<void> {
       if (busy) return;
+      // A track still in its dialog is kept, as its OK would.
+      if (trackDraft) {
+        await finishTrack();
+        if (trackDraft) return;
+      }
       busy = true;
       commit();
       const btn = $<HTMLButtonElement>("[data-act=done]");
