@@ -250,6 +250,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         if (closed) return;
         art.arrows = !!scene.arrows;
         art.setSelected(shownJoint ? "" : selectedId);
+        art.selectedArrow = shownJoint;
         art.draw(camera, viewW, viewH, Math.min(2, window.devicePixelRatio || 1));
         placeSnaps();
         placeDial();
@@ -670,6 +671,14 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       if (joining) {
         hoverAt(e);
         pickFace(hoverPick());
+        return;
+      }
+      // An arrow picks its joint: tinted on the model and lit in the list. Clicking it again, or off it, lets go.
+      const arrow = scene.arrows ? art.arrowAt(e.clientX - r.left, e.clientY - r.top, camera, r.width, r.height) : "";
+      if (arrow && partById(arrow)?.joint) {
+        if (shownJoint === arrow) select("");
+        else showJoint(arrow);
+        if (shownJoint) list.querySelector(".lyr-scene-joint-row.lyr-on")?.scrollIntoView({ block: "nearest" });
         return;
       }
       art.scene.updateMatrixWorld(true);
