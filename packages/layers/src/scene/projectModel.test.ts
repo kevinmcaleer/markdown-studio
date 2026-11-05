@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nextStepDoc, staleScenes, hasScene, blankDoc } from "../doc";
+import { nextStepDoc, duplicateStepDoc, staleScenes, hasScene, blankDoc } from "../doc";
 import { behindModel, blankScene, followModel, modelOf, normalizeModel, normalizeScene, partsDiffer, type ScenePart } from "./model";
 
 const part = (id: string, over: Partial<ScenePart> = {}): ScenePart => ({ id, name: id, url: `/m/${id}.stl`, position: [0, 0, 0], rotation: [0, 0, 0], ...over });
@@ -67,6 +67,23 @@ describe("documents with scenes", () => {
     expect(parts[0]).toMatchObject({ ghost: true, explode: 0 });
     expect(parts[0].highlight).toBeUndefined();
     expect(parts[1].ghost).toBeUndefined();
+    const g = d.objects[1] as { badge: number; name: string; objects: { text?: string }[] };
+    expect(g.badge).toBe(3);
+    expect(g.name).toBe("Step 3");
+    expect(g.objects[1].text).toBe("3");
+    expect(d.title).toBe("Step 3");
+  });
+
+  it("duplicates a step: the same scene, its own copy, numbers up", () => {
+    const src = doc();
+    const before = JSON.stringify(src);
+    const d = duplicateStepDoc(src);
+    const parts = (d.objects[0] as { scene: { parts: ScenePart[] } }).scene.parts;
+    const was = (src.objects[0] as { scene: { parts: ScenePart[] } }).scene.parts;
+    expect(parts).toEqual(was);
+    expect(parts[0]).not.toBe(was[0]);
+    parts[0].hidden = true;
+    expect(JSON.stringify(src)).toBe(before);
     const g = d.objects[1] as { badge: number; name: string; objects: { text?: string }[] };
     expect(g.badge).toBe(3);
     expect(g.name).toBe("Step 3");
