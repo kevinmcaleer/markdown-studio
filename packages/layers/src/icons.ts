@@ -76,6 +76,10 @@ const P: Record<string, string> = {
   wire: "M3 18c4.5 0 4.5-6 9-6s4.5-6 9-6M3 16v4M21 4v4",
   plug: "M9 3v4M15 3v4M6 7h12v4a6 6 0 0 1-12 0zM12 17v4",
   track: "M7 8h10a4 4 0 0 1 0 8H7a4 4 0 0 1 0-8zM7 12h.01M17 12h.01M10 8v-2M14 8v-2M10 16v2M14 16v2",
+  play: "M7 4v16l13-8z",
+  chevronUp: "m6 15 6-6 6 6",
+  chevronDown: "m6 9 6 6 6-6",
+  chevronRight: "m9 6 6 6-6 6",
 };
 
 export type IconName = keyof typeof P;

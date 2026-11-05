@@ -1,0 +1,254 @@
+{
+  "title": "A lead tied in with another for part of its run",
+  "why": "The blue lead comes from the left servo, runs with the red one from 25% to 80% of the way along it, lying against it (a loom), then leaves it to run down the right servo's side to its plug on the plate.",
+  "scene": {
+    "parts": [
+      {
+        "id": "plate",
+        "shape": {
+          "box": [
+            140,
+            50,
+            4
+          ]
+        }
+      },
+      {
+        "id": "servo-a",
+        "shape": {
+          "box": [
+            24,
+            45,
+            36
+          ]
+        },
+        "position": [
+          -35,
+          0,
+          20
+        ],
+        "parent": "plate"
+      },
+      {
+        "id": "servo-b",
+        "shape": {
+          "box": [
+            24,
+            45,
+            36
+          ]
+        },
+        "position": [
+          35,
+          0,
+          20
+        ],
+        "parent": "plate"
+      },
+      {
+        "id": "plug-a1",
+        "parent": "servo-a",
+        "plug": {
+          "connector": "molex-5264-3",
+          "socket": "s1"
+        },
+        "joint": {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "distance": 12,
+          "point": [
+            0,
+            10,
+            18
+          ]
+        }
+      },
+      {
+        "id": "plug-b1",
+        "parent": "servo-b",
+        "plug": {
+          "connector": "molex-5264-3",
+          "socket": "s1"
+        },
+        "joint": {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "distance": 12,
+          "point": [
+            0,
+            10,
+            18
+          ]
+        }
+      },
+      {
+        "id": "plug-b2",
+        "parent": "servo-b",
+        "plug": {
+          "connector": "molex-5264-3",
+          "socket": "s1"
+        },
+        "joint": {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "distance": 12,
+          "point": [
+            0,
+            -10,
+            18
+          ]
+        }
+      },
+      {
+        "id": "plug-board",
+        "parent": "plate",
+        "plug": {
+          "connector": "molex-5264-3",
+          "socket": "s1"
+        },
+        "joint": {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "distance": 12,
+          "point": [
+            60,
+            -12,
+            2
+          ]
+        }
+      },
+      {
+        "id": "plug-a2",
+        "parent": "servo-a",
+        "plug": {
+          "connector": "molex-5264-3",
+          "socket": "s2"
+        },
+        "joint": {
+          "normal": [
+            0,
+            0,
+            1
+          ],
+          "distance": 12,
+          "point": [
+            0,
+            -10,
+            18
+          ]
+        }
+      },
+      {
+        "id": "lead-1",
+        "wire": {
+          "from": {
+            "part": "plug-a1",
+            "point": [
+              0,
+              -0.68,
+              5
+            ],
+            "normal": [
+              0,
+              0,
+              1
+            ]
+          },
+          "to": {
+            "part": "plug-b1",
+            "point": [
+              0,
+              -0.68,
+              5
+            ],
+            "normal": [
+              0,
+              0,
+              1
+            ]
+          },
+          "waypoints": [],
+          "color": "#d33a2c",
+          "diameter": 2,
+          "slack": 10
+        }
+      },
+      {
+        "id": "lead-2",
+        "wire": {
+          "from": {
+            "part": "plug-a2",
+            "point": [
+              0,
+              -0.68,
+              5
+            ],
+            "normal": [
+              0,
+              0,
+              1
+            ]
+          },
+          "to": {
+            "part": "plug-board",
+            "point": [
+              0,
+              -0.68,
+              5
+            ],
+            "normal": [
+              0,
+              0,
+              1
+            ]
+          },
+          "waypoints": [
+            {
+              "along": {
+                "wire": "lead-1",
+                "from": 0.25,
+                "to": 0.8
+              }
+            },
+            {
+              "part": "servo-b",
+              "point": [
+                12,
+                -10,
+                0
+              ],
+              "normal": [
+                1,
+                0,
+                0
+              ]
+            }
+          ],
+          "color": "#2f6fd6",
+          "diameter": 2,
+          "slack": 6
+        }
+      }
+    ],
+    "camera": {
+      "direction": [
+        1,
+        -1,
+        0.82
+      ],
+      "fit": true
+    }
+  }
+}

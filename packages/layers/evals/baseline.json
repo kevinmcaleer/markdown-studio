@@ -39,7 +39,11 @@
   "wire/bundle-over-a-face": 1,
   "wire/facing-ends-sag": 1,
   "wire/flat-cable-plugs-turned": 1,
+  "wire/hairpin-too-tight": 1,
+  "wire/loom-part-way": 1,
+  "wire/plain-corners-not-tight": 1,
   "wire/routed-over-faces": 1,
   "wire/servo-lead-default-route": 1,
-  "wire/servo-lead-flat-cable": 1
+  "wire/servo-lead-flat-cable": 1,
+  "wireStep/second-of-three": 1
 }

@@ -166,6 +166,12 @@ export interface SceneData {
   wiring?: boolean;
   /** The wires and plugs left out of this picture. */
   hideWiring?: boolean;
+  /**
+   * A wiring step of the assembly guide: the wire (or cable) put in at this
+   * step, by id. It's drawn as it is, the wires before it (in the model's
+   * order) ghosted, the ones after it left out, and the other parts ghosted.
+   */
+  wireStep?: string;
 }
 
 /**
@@ -349,7 +355,7 @@ export function normalizeScene(value: unknown): SceneData {
     if (p.wire) {
       delete p.parent;
       delete p.joint;
-      p.wire.waypoints = p.wire.waypoints.filter(w => !w.part || ids.has(w.part));
+      p.wire.waypoints = p.wire.waypoints.filter(w => (!w.part || ids.has(w.part)) && (!w.along || (w.along.wire !== p.id && !!byId.get(w.along.wire)?.wire)));
     }
     if (p.parent && !ids.has(p.parent)) delete p.parent;
     const seen = new Set([p.id]);
@@ -391,6 +397,7 @@ export function normalizeScene(value: unknown): SceneData {
   if (v.arrows === true) out.arrows = true;
   if (v.wiring === true) out.wiring = true;
   if (v.hideWiring === true) out.hideWiring = true;
+  if (typeof v.wireStep === "string" && out.parts.some(p => p.id === v.wireStep && p.wire)) out.wireStep = v.wireStep;
   return out;
 }
 
@@ -559,10 +566,58 @@ export function isWiring(p: Pick<ScenePart, "wire" | "plug">): boolean {
  * What the scene's wiring settings make of a part's look: in the wiring view
  * every other part is ghosted; with wiring hidden, wires and plugs are left out.
  */
-export function shownAs(p: ScenePart, scene: Pick<SceneData, "wiring" | "hideWiring">): ScenePart {
+export function shownAs(p: ScenePart, scene: SceneLook): ScenePart {
   if (scene.hideWiring && isWiring(p) && !p.hidden) return { ...p, hidden: true };
+  if (scene.step) {
+    if (scene.step.hidden.has(p.id) && !p.hidden) return { ...p, hidden: true };
+    if (scene.step.ghost.has(p.id) && !p.ghost) return { ...p, ghost: true };
+    return p;
+  }
   if (scene.wiring && !isWiring(p) && !p.ghost) return { ...p, ghost: true };
   return p;
+}
+
+/** How a scene's wiring settings show its parts: the flags, and a wiring step's parts worked out. */
+export interface SceneLook {
+  wiring?: boolean;
+  hideWiring?: boolean;
+  step?: { ghost: Set<string>; hidden: Set<string> };
+}
+
+/** The wires in the order they go in: the model's. */
+export const wiresInOrder = (parts: ScenePart[]) => parts.filter(p => p.wire);
+
+/**
+ * What a scene's settings show: in a wiring step, every part but the
+ * step's wire and its plugs ghosted, with the wires before it (and their
+ * plugs) ghosted too, and those after it left out.
+ */
+export function lookOf(scene: Pick<SceneData, "parts" | "wiring" | "hideWiring" | "wireStep">): SceneLook {
+  const look: SceneLook = { wiring: scene.wiring, hideWiring: scene.hideWiring };
+  const wires = wiresInOrder(scene.parts);
+  const at = scene.wireStep ? wires.findIndex(w => w.id === scene.wireStep) : -1;
+  if (at < 0) return look;
+  const ghost = new Set<string>();
+  const hidden = new Set<string>();
+  const now = new Set<string>();
+  wires.forEach((w, i) => {
+    const ends = [w.wire!.from.part, w.wire!.to.part];
+    if (i < at) {
+      ghost.add(w.id);
+      ends.forEach(e => ghost.add(e));
+    } else if (i > at) hidden.add(w.id);
+    else ends.forEach(e => now.add(e));
+  });
+  for (const p of scene.parts) {
+    if (p.wire) continue;
+    if (p.plug) {
+      // A plug is drawn with the newest wire on it.
+      if (now.has(p.id)) ghost.delete(p.id);
+      else if (!ghost.has(p.id)) hidden.add(p.id);
+    } else ghost.add(p.id);
+  }
+  for (const id of now) hidden.delete(id);
+  return { ...look, step: { ghost, hidden } };
 }
 
 export function newPartId(parts: ScenePart[]): string {

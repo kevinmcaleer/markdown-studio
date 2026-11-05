@@ -186,6 +186,17 @@ const editor = mount(el, {
   diagram's cables that has sockets at both ends; **Open in wiring
   diagram** goes to it; and a part's sockets can be saved to its catalog
   part, so every project using it gets them (matched by the model's size).
+- **Showing the wiring**: wires go in in the model's order (Goes in i of n
+  in a wire's settings). **Assemble n wires** plays them in one by one, each
+  growing along its route from its first plug (1×/2×/4×, Skip, Esc stops).
+  A scene's **Wiring step** draws one wire and its plugs, earlier wires
+  grey and later ones out, and Next step moves on to the next wire
+  (`lookOf` in `src/scene/model.ts`). **Runs with** ties a wire to another
+  for a stretch of it (from/to, as % along that wire), as wires in a loom.
+  A wire that bends tighter than 3× its diameter is flagged in its settings,
+  and `wireList` on the handle (and `/Wire list` in the Markdown editor)
+  gives every wire's ends, colours, length and cut length (+5 mm each end)
+  as a Markdown table (`src/scene/wireList.ts`).
 - **URDF** in the top bar downloads the parts as a robot: `robot.urdf` and
   `meshes/*.stl` in a .zip, in Snakie's conventions (metres, meshes scaled
   0.001, each joined part's link frame at its joint point, joints at their

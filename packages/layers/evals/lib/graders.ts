@@ -4,14 +4,14 @@
 
 import { BufferAttribute, BufferGeometry, Matrix4, Quaternion, Vector3 } from "three";
 import { jointPlace } from "../../src/scene/joint";
-import { ARROW_FROM, ARROW_TO, placeBeside, type Box3, type ScenePart, type Vec3 } from "../../src/scene/model";
+import { ARROW_FROM, ARROW_TO, lookOf, placeBeside, shownAs, type Box3, type ScenePart, type Vec3 } from "../../src/scene/model";
 import { arrowEnd, cameraFor, frameTight, localMatrix, worldMatrices, type Placed } from "../../src/scene/render";
 import { fitDiameter, fitLength, holeDepth, isHoleSnap, type ScrewHead } from "../../src/scene/screw";
 import { Topology, type Face, type Snap } from "../../src/scene/snaps";
 import { layTrack, type TrackSpec } from "../../src/scene/track";
-import { cableRadius, coreLines, leadLength, ringRadius, wireRoute } from "../../src/scene/wire";
+import { cableRadius, coreLines, leadLength, MIN_BEND, ringRadius, tightestBend, wireRoute } from "../../src/scene/wire";
 import { mirrorPartner, mirrorPlane, mirrorPoint } from "../../src/scene/wireMirror";
-import { coresOf, normalizeWire } from "../../src/scene/wireSpec";
+import { coresOf, normalizeWire, type Looms } from "../../src/scene/wireSpec";
 import { missingWires, type WiringInfo } from "../../src/scene/wiring2d";
 import { atLeast, type Check, near, nearPoint, same, show, yes } from "./score";
 import { centred, type ReadFile, shapeTriangles, type ShapeSpec } from "./shapes";
@@ -336,17 +336,26 @@ export const GRADERS: Record<string, Grader> = {
    * stay on their parts when the scene explodes.
    */
   wire(
-    input: { parts: (Pick<ScenePart, "id" | "position"> & Partial<ScenePart>)[]; wire: unknown; explode?: number },
+    input: { parts: (Pick<ScenePart, "id" | "position"> & Partial<ScenePart>)[]; wire: unknown; explode?: number; /** Other wires by id, for one that runs along them. */ others?: Record<string, unknown> },
     expect: {
       leaves?: boolean; extra?: [number, number]; bow?: Vec3; through?: { at: Vec3; normal: Vec3 }[]; ends?: [Vec3, Vec3]; tol?: number;
       /** A cable: its wires at the plugs' pin spacing at each end, and gathered in the middle ("round": touching round it; "flat": side by side). */
       cable?: { pins?: boolean; gathered?: "round" | "flat" };
+      /** In a loom: its middle this far (mm, between the middles) off wire `wire`'s line. */
+      loom?: { wire: string; gap: number };
+      /** Whether it bends tighter than MIN_BEND × its outer diameter. */
+      tight?: boolean;
     },
   ) {
     const parts: ScenePart[] = input.parts.map(p => ({ name: p.id, rotation: [0, 0, 0], ...p }) as ScenePart);
     const spec = normalizeWire(input.wire);
     if (!spec) return [yes("the wire reads", false)];
-    const route = wireRoute(spec, worldMatrices(parts, input.explode || 0));
+    const looms: Looms = new Map();
+    for (const [id, w] of Object.entries(input.others || {})) {
+      const o = normalizeWire(w);
+      if (o) looms.set(id, o);
+    }
+    const route = wireRoute(spec, worldMatrices(parts, input.explode || 0), looms);
     if (!route) return [yes("the wire can be laid", false)];
     const c = route.centre;
     const tol = expect.tol ?? 0.25;
@@ -422,6 +431,28 @@ export const GRADERS: Record<string, Grader> = {
         checks.push(near("no wire runs through another (mm into it)", Math.max(0, overlap), 0, 0.05, 2));
       }
     }
+    if (expect.loom) {
+      const other = looms.get(expect.loom.wire);
+      const line = other && wireRoute(other, worldMatrices(parts, input.explode || 0));
+      if (!line) checks.push(yes("the loom's wire can be laid", false));
+      else {
+        const q = c[Math.floor(c.length / 2)];
+        let best = Infinity;
+        for (let i = 1; i < line.centre.length; i++) {
+          const a = line.centre[i - 1];
+          const ab = line.centre[i].clone().sub(a);
+          const t = Math.max(0, Math.min(1, q.clone().sub(a).dot(ab) / (ab.lengthSq() || 1)));
+          best = Math.min(best, a.clone().addScaledVector(ab, t).distanceTo(q));
+        }
+        checks.push(near("runs beside the loom's wire in the middle (mm between them)", best, expect.loom.gap, 0.15, 2));
+      }
+    }
+    if (expect.tight !== undefined) {
+      const outer = cableRadius(spec) * 2;
+      const bend = tightestBend(route, outer);
+      const tight = !!bend && bend.radius < MIN_BEND * outer;
+      checks.push(yes(expect.tight ? "warns of a too-tight bend" : "no too-tight bend", tight === expect.tight, bend ? `${bend.radius.toFixed(1)} mm` : "none"));
+    }
     void leadLength;
     return checks;
   },
@@ -459,6 +490,26 @@ export const GRADERS: Record<string, Grader> = {
    * ones (by their connections, in each cable's pin order), and how many it
    * can't for want of a socket.
    */
+  /**
+   * A wiring step in the Assembly guide: the step's wire and its plugs
+   * drawn, earlier wires (and their plugs) grey, later ones out, every
+   * other part grey.
+   */
+  wireStep(input: { parts: (Pick<ScenePart, "id" | "position"> & Partial<ScenePart>)[]; wireStep: string }, expect: { shown: string[]; ghost: string[]; hidden: string[] }) {
+    const parts: ScenePart[] = input.parts.map(p => ({ name: p.id, rotation: [0, 0, 0], ...p }) as ScenePart);
+    const look = lookOf({ parts, wireStep: input.wireStep });
+    const as = (id: string) => {
+      const p = parts.find(x => x.id === id);
+      if (!p) return "missing";
+      const s = shownAs(p, look);
+      return s.hidden ? "hidden" : s.ghost ? "ghost" : "shown";
+    };
+    return [
+      ...expect.shown.map(id => yes(`${id} drawn`, as(id) === "shown", as(id))),
+      ...expect.ghost.map(id => yes(`${id} grey`, as(id) === "ghost", as(id))),
+      ...expect.hidden.map(id => yes(`${id} not there yet`, as(id) === "hidden", as(id))),
+    ];
+  },
   diagram(input: { info: WiringInfo; parts: (Pick<ScenePart, "id" | "position"> & Partial<ScenePart>)[] }, expect: { wires: string[][]; skipped: number; colours?: string[][] }) {
     const parts: ScenePart[] = input.parts.map(p => ({ name: p.id, rotation: [0, 0, 0], ...p }) as ScenePart);
     const got = missingWires(input.info, parts);

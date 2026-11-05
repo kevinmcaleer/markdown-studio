@@ -15,7 +15,7 @@
 
 import { CatmullRomCurve3, Color, Matrix3, Matrix4, Vector3 } from "three";
 import type { ScenePart } from "./model";
-import { BUNDLE_TWIST, coresOf, type WireEnd, type WireSpec } from "./wireSpec";
+import { BUNDLE_TWIST, coresOf, type Looms, type WireAlong, type WireEnd, type WireSpec } from "./wireSpec";
 
 /** Mm a wire runs straight out of each end before it bends. */
 export function leadLength(spec: Pick<WireSpec, "diameter">): number {
@@ -52,6 +52,43 @@ interface Anchor {
   /** The way out of the face (none for a free waypoint). */
   n: Vector3 | null;
   row?: Vector3 | null;
+  /** Held beside another wire (in a loom): the span to the next tied point doesn't bow. */
+  tied?: boolean;
+}
+
+/**
+ * The points a wire of radius `r` passes running beside `loom` (another
+ * wire, as laid by `mats`) along `along`'s stretch of it, touching it, on
+ * the side it comes from (`from`, the point before). None when the other
+ * wire can't be laid.
+ */
+function alongside(along: WireAlong, loom: WireSpec, mats: Map<string, Matrix4>, r: number, from: Vector3): Anchor[] {
+  const route = wireRoute(loom, mats);
+  if (!route || route.centre.length < 2) return [];
+  const c = route.centre;
+  // By length along it (its samples aren't evenly spread over the whole).
+  const run = [0];
+  for (let i = 1; i < c.length; i++) run.push(run[i - 1] + c[i].distanceTo(c[i - 1]));
+  const total = run[run.length - 1] || 1;
+  const at = (t: number) => {
+    const want = Math.max(0, Math.min(1, t)) * total;
+    let i = 0;
+    while (i < c.length - 2 && run[i + 1] < want) i++;
+    const f = (want - run[i]) / (run[i + 1] - run[i] || 1);
+    return { p: c[i].clone().lerp(c[i + 1], Math.max(0, Math.min(1, f))), t: c[i + 1].clone().sub(c[i]) };
+  };
+  const span = Math.abs(along.to - along.from) * route.length;
+  const n = Math.max(2, Math.min(30, Math.ceil(span / Math.max(4, loom.diameter * 3)) + 1));
+  const gap = cableRadius(loom) + r;
+  const out: Anchor[] = [];
+  let side: Vector3 | null = null;
+  for (let k = 0; k < n; k++) {
+    const { p, t } = at(along.from + ((along.to - along.from) * k) / (n - 1));
+    // The same side all the way: the last way across, square to here.
+    side = across(t, side || from.clone().sub(p));
+    out.push({ p: p.addScaledVector(side, gap), n: null, tied: true });
+  }
+  return out;
 }
 
 function anchor(e: Pick<WireEnd, "part" | "point"> & { normal?: WireEnd["normal"]; row?: WireEnd["row"] }, mats: Map<string, Matrix4>): Anchor | null {
@@ -80,7 +117,7 @@ function across(chord: Vector3, want: Vector3 | null): Vector3 {
  * the world, as worldMatrices gives). Null when one of its ends' parts isn't
  * there.
  */
-export function wireRoute(spec: WireSpec, mats: Map<string, Matrix4>): WireRoute | null {
+export function wireRoute(spec: WireSpec, mats: Map<string, Matrix4>, looms?: Looms): WireRoute | null {
   const a = anchor(spec.from, mats);
   const b = anchor(spec.to, mats);
   if (!a || !b || !a.n || !b.n) return null;
@@ -89,6 +126,14 @@ export function wireRoute(spec: WireSpec, mats: Map<string, Matrix4>): WireRoute
   // The run between the two leads: waypoints on faces lifted by the radius, free ones placed after.
   const mid: (Anchor | { lift: number })[] = [];
   for (const w of spec.waypoints) {
+    if (w.along) {
+      // Beside another wire for a stretch (that wire laid as it is, not along any of its own).
+      const loom = looms?.get(w.along.wire);
+      if (!loom || loom === spec) continue;
+      const before = [...mid].reverse().find((m): m is Anchor => "p" in m)?.p || a.p.clone().addScaledVector(a.n, lead);
+      mid.push(...alongside(w.along, { ...loom, waypoints: loom.waypoints.filter(x => !x.along) }, mats, r, before));
+      continue;
+    }
     if (w.part && w.point) {
       const at = anchor({ part: w.part, point: w.point, normal: w.normal }, mats);
       if (!at) continue;
@@ -121,14 +166,15 @@ export function wireRoute(spec: WireSpec, mats: Map<string, Matrix4>): WireRoute
   // each, as far as a parabola sags with that much extra. The curve through
   // them isn't quite a parabola, so the bow is scaled until the wire really
   // is `slack` longer than pulled tight.
-  const spans = run.slice(1).map((q, i) => q.p.distanceTo(run[i].p));
+  // Spans held in a loom don't bow, so they don't share in the slack.
+  const spans = run.slice(1).map((q, i) => (q.tied && run[i].tied ? 0 : q.p.distanceTo(run[i].p)));
   const total = spans.reduce((s, x) => s + x, 0);
   const bows = run.slice(1).map((p1, i) => {
     const p0 = run[i];
     const L = spans[i];
     const s = total > 1e-6 ? (spec.slack * L) / total : 0;
     const h = Math.sqrt((3 * L * s) / 8);
-    if (L <= 0.5 || h <= 0.05) return null;
+    if (L <= 0.5 || h <= 0.05 || (p0.tied && p1.tied)) return null;
     const want = new Vector3();
     if (p0.n) want.add(p0.n);
     if (p1.n) want.add(p1.n);
@@ -324,13 +370,15 @@ export interface WireMesh {
 }
 
 /** The wire's (or cable's) model in the world, each wire in its colour, for the parts placed by `mats` (empty when it can't be laid). */
-export function wireMesh(part: ScenePart, mats: Map<string, Matrix4>): WireMesh {
+export function wireMesh(part: ScenePart, mats: Map<string, Matrix4>, upto = 1, looms?: Looms): WireMesh {
   const empty = { positions: new Float32Array(0), colors: new Float32Array(0) };
-  if (!part.wire) return empty;
-  const route = wireRoute(part.wire, mats);
+  if (!part.wire || upto <= 0) return empty;
+  const route = wireRoute(part.wire, mats, looms);
   if (!route) return empty;
   const cores = coresOf(part.wire);
-  const tubes = coreLines(part.wire, route).map(line => tubeTriangles(line, part.wire!.diameter / 2));
+  // Grown part of the way along (as it's put in, in the assembly playback).
+  const cut = (line: Vector3[]) => (upto >= 1 ? line : line.slice(0, Math.max(2, Math.ceil(line.length * upto))));
+  const tubes = coreLines(part.wire, route).map(line => tubeTriangles(cut(line), part.wire!.diameter / 2));
   const total = tubes.reduce((t, x) => t + x.length, 0);
   const positions = new Float32Array(total);
   const colors = new Float32Array(total);
@@ -350,11 +398,42 @@ export function wireMesh(part: ScenePart, mats: Map<string, Matrix4>): WireMesh 
 }
 
 /** The wire's model in the world, for the parts placed by `mats` (empty when it can't be laid). */
-export function wireTriangles(part: ScenePart, mats: Map<string, Matrix4>): Float32Array {
-  return wireMesh(part, mats).positions;
+export function wireTriangles(part: ScenePart, mats: Map<string, Matrix4>, looms?: Looms): Float32Array {
+  return wireMesh(part, mats, 1, looms).positions;
 }
 
 /** How long a wire is between its ends, mm (0 when it can't be laid). */
-export function wireLength(part: ScenePart, mats: Map<string, Matrix4>): number {
-  return part.wire ? wireRoute(part.wire, mats)?.length || 0 : 0;
+export function wireLength(part: ScenePart, mats: Map<string, Matrix4>, looms?: Looms): number {
+  return part.wire ? wireRoute(part.wire, mats, looms)?.length || 0 : 0;
+}
+
+/** A wire's bend is too tight below this many times its outer diameter (a usual rule for hook-up wire and ribbon). */
+export const MIN_BEND = 3;
+
+/**
+ * The tightest bend along a route: how far it turns within a stretch of
+ * `MIN_BEND` × 2 diameters, as the radius of the arc that turns as much in
+ * as long (a wire at its minimum radius turns two radians in that), and
+ * where. A plain corner out of a plug is no worry; a hairpin is. Null when
+ * the route is too short to tell.
+ */
+export function tightestBend(route: Pick<WireRoute, "centre" | "length">, diameter: number): { radius: number; at: Vector3 } | null {
+  const c = route.centre;
+  if (c.length < 3 || route.length <= 0) return null;
+  const run = [0];
+  for (let i = 1; i < c.length; i++) run.push(run[i - 1] + c[i].distanceTo(c[i - 1]));
+  const window = Math.min(route.length, MIN_BEND * 2 * Math.max(diameter, 0.3));
+  const dir = (i: number) => c[Math.min(i + 1, c.length - 1)].clone().sub(c[Math.max(0, Math.min(i, c.length - 2))]).normalize();
+  let best: { radius: number; at: Vector3 } | null = null;
+  let j = 0;
+  for (let i = 0; i < c.length - 1; i++) {
+    while (j < c.length - 2 && run[j] - run[i] < window) j++;
+    const len = run[j] - run[i];
+    if (len < window * 0.5) break;
+    const turn = dir(i).angleTo(dir(j));
+    if (turn < 1e-3) continue;
+    const radius = len / turn;
+    if (!best || radius < best.radius) best = { radius, at: c[Math.round((i + j) / 2)].clone() };
+  }
+  return best;
 }

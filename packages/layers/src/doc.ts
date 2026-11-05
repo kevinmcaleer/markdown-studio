@@ -158,7 +158,7 @@ export function exportScales(w: number, h: number): number[] {
 
 // ------------------------------------------------------------ 3D scenes in a document
 
-type SceneRecord = Record<string, unknown> & { scene?: { model?: { stamp?: number }; parts?: Record<string, unknown>[] } };
+type SceneRecord = Record<string, unknown> & { scene?: { model?: { stamp?: number }; parts?: Record<string, unknown>[]; wireStep?: string } };
 function* sceneRecords(objects: Record<string, unknown>[]): Generator<SceneRecord> {
   for (const o of objects) {
     if (String(o.type).toLowerCase() === "scenelayer" && o.scene && typeof o.scene === "object") yield o as SceneRecord;
@@ -203,13 +203,25 @@ export function hasScene(doc: LayersDoc | null): boolean {
  * The next assembly step after `doc`: its 3D scenes' shown parts become
  * ghosts (fitted already) with nothing highlighted, drawn fitted (a screw
  * drawn out of its hole in this step is in it in the next), and its step
- * numbers go up by one. Its pictures need drawing again (mount with
+ * numbers go up by one. A wiring step (scene.wireStep) moves on to the
+ * next wire instead. Its pictures need drawing again (mount with
  * updateScenes).
  */
 export function nextStepDoc(doc: LayersDoc): LayersDoc {
   const out = structuredClone(doc);
   for (const o of sceneRecords(out.objects)) {
-    for (const p of o.scene?.parts || []) {
+    const scene = o.scene;
+    // A wiring step goes on to the next wire; after the last, a plain step.
+    if (scene?.wireStep) {
+      const wires = (scene.parts || []).filter(p => p.wire);
+      const next = wires[wires.findIndex(w => w.id === scene.wireStep) + 1];
+      if (next) {
+        scene.wireStep = String(next.id);
+        continue;
+      }
+      delete scene.wireStep;
+    }
+    for (const p of scene?.parts || []) {
       delete p.highlight;
       if (!p.hidden) {
         p.ghost = true;

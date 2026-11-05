@@ -1,0 +1,24 @@
+{
+  "title": "A wire joins a loom for the middle of its run",
+  "why": "Two leads run side by side 30 mm apart, 200 mm long. The second is set to run with the first from 20% to 80% of the way along it, so in its middle it lies against the first: its middle 2 mm (two 1 mm radii) off the first's, not 30 mm away, and leaves each end straight up as before.",
+  "input": {
+    "parts": [
+      { "id": "a", "position": [0, 0, 0] },
+      { "id": "b", "position": [200, 0, 0] },
+      { "id": "c", "position": [0, 30, 0] },
+      { "id": "d", "position": [200, 30, 0] }
+    ],
+    "others": {
+      "trunk": { "from": { "part": "a", "point": [0, 0, 5], "normal": [0, 0, 1] }, "to": { "part": "b", "point": [0, 0, 5], "normal": [0, 0, 1] }, "waypoints": [], "color": "#222222", "diameter": 2, "slack": 0 }
+    },
+    "wire": {
+      "from": { "part": "c", "point": [0, 0, 5], "normal": [0, 0, 1] },
+      "to": { "part": "d", "point": [0, 0, 5], "normal": [0, 0, 1] },
+      "waypoints": [{ "along": { "wire": "trunk", "from": 0.2, "to": 0.8 } }],
+      "color": "#d33a2c",
+      "diameter": 2,
+      "slack": 20
+    }
+  },
+  "expect": { "leaves": true, "loom": { "wire": "trunk", "gap": 2 }, "tight": false }
+}
