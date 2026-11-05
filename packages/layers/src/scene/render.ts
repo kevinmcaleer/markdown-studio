@@ -315,6 +315,12 @@ export class LineArt {
   arrows = false;
   private arrowMesh: Mesh | null = null;
   private arrowMaterial: MeshBasicMaterial | null = null;
+  /** The arrow picked in the workspace (its part's id, "" for none): drawn in the selected part's shade (never in a saved picture). */
+  selectedArrow = "";
+  private arrowSelMesh: Mesh | null = null;
+  private arrowSelMaterial: MeshBasicMaterial | null = null;
+  /** Each arrow as last drawn, in the world: its part, its ends, and half its widest (the head), for clicking on. */
+  private arrowShapes: { id: string; start: Vector3; end: Vector3; half: number }[] = [];
   /** The parts' depth as drawn, for keeping each arrow's head out from behind a part. */
   private depthTarget: WebGLRenderTarget | null = null;
   private depthMaterial: ShaderMaterial | null = null;
@@ -692,11 +698,14 @@ export class LineArt {
   }
 
   private drawArrows(camera: OrthographicCamera, h: number): void {
-    if (this.arrowMesh) {
-      this.draftScene.remove(this.arrowMesh);
-      this.arrowMesh.geometry.dispose();
-      this.arrowMesh = null;
+    for (const m of [this.arrowMesh, this.arrowSelMesh]) {
+      if (!m) continue;
+      this.draftScene.remove(m);
+      m.geometry.dispose();
     }
+    this.arrowMesh = null;
+    this.arrowSelMesh = null;
+    this.arrowShapes = [];
     const style = this.style;
     if (!style || !this.arrows || !this.axes.length) return;
     const mmPerPx = (camera.top - camera.bottom) / camera.zoom / h;
@@ -705,7 +714,9 @@ export class LineArt {
     const headHalf = Math.max(4, h * 0.019) * mmPerPx;
     const view = new Vector3();
     camera.getWorldDirection(view);
-    const verts: number[] = [];
+    const plain: number[] = [];
+    const picked: number[] = [];
+    let verts = plain;
     const quad = (a: Vector3, b: Vector3, c: Vector3, d: Vector3) => verts.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, a.x, a.y, a.z, c.x, c.y, c.z, d.x, d.y, d.z);
     for (const { part, from, to } of this.axes) {
       const a = part.arrow;
@@ -744,6 +755,8 @@ export class LineArt {
       const hw = headHalf * k;
       const sw = shaft * Math.max(0.6, k);
       const neck = end.clone().addScaledVector(axis, -hl);
+      verts = part.id === this.selectedArrow ? picked : plain;
+      this.arrowShapes.push({ id: part.id, start, end, half: Math.max(hw, sw) });
       quad(
         start.clone().addScaledVector(side, -sw),
         neck.clone().addScaledVector(side, -sw),
@@ -754,15 +767,55 @@ export class LineArt {
       const r2 = neck.clone().addScaledVector(side, hw);
       verts.push(l.x, l.y, l.z, end.x, end.y, end.z, r2.x, r2.y, r2.z);
     }
-    if (!verts.length) return;
-    this.arrowMaterial ??= new MeshBasicMaterial({ color: 0, side: DoubleSide, depthTest: true, depthWrite: false, transparent: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
-    this.arrowMaterial.color.set(style.line);
-    const geo = new BufferGeometry();
-    geo.setAttribute("position", new Float32BufferAttribute(verts, 3));
-    this.arrowMesh = new Mesh(geo, this.arrowMaterial);
-    this.arrowMesh.raycast = () => {};
-    this.arrowMesh.renderOrder = 3;
-    this.draftScene.add(this.arrowMesh);
+    const mesh = (v: number[], material: MeshBasicMaterial) => {
+      const geo = new BufferGeometry();
+      geo.setAttribute("position", new Float32BufferAttribute(v, 3));
+      const m = new Mesh(geo, material);
+      m.raycast = () => {};
+      m.renderOrder = 3;
+      this.draftScene.add(m);
+      return m;
+    };
+    const arrowMaterial = () => new MeshBasicMaterial({ color: 0, side: DoubleSide, depthTest: true, depthWrite: false, transparent: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+    if (plain.length) {
+      this.arrowMaterial ??= arrowMaterial();
+      this.arrowMaterial.color.set(style.line);
+      this.arrowMesh = mesh(plain, this.arrowMaterial);
+    }
+    if (picked.length) {
+      this.arrowSelMaterial ??= arrowMaterial();
+      this.arrowSelMaterial.color.set(selectedFill(style.highlight));
+      this.arrowSelMesh = mesh(picked, this.arrowSelMaterial);
+    }
+  }
+
+  /**
+   * The part whose arrow is under (x, y), in pixels from the top left of a
+   * `w`×`h` view, as last drawn ("" for none). Within `slack` pixels of an
+   * arrow counts, so a thin one is easy to hit; the nearest in sight wins.
+   */
+  arrowAt(x: number, y: number, camera: OrthographicCamera, w: number, h: number, slack = 5): string {
+    const px = (v: Vector3) => {
+      const n = v.clone().project(camera);
+      return { x: ((n.x + 1) / 2) * w, y: ((1 - n.y) / 2) * h };
+    };
+    const mmPerPx = (camera.top - camera.bottom) / camera.zoom / h;
+    let best = "";
+    let bestD = Infinity;
+    for (const s of this.arrowShapes) {
+      const a = px(s.start);
+      const b = px(s.end);
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / (dx * dx + dy * dy || 1)));
+      const d = Math.hypot(x - (a.x + dx * t), y - (a.y + dy * t));
+      // Where it passes behind a part, the click is the part's.
+      if (d <= s.half / mmPerPx + slack && d < bestD && this.visibleAt(s.start.clone().lerp(s.end, t), camera)) {
+        best = s.id;
+        bestD = d;
+      }
+    }
+    return best;
   }
 
   /** A part's place in the world as drawn now. */
@@ -969,6 +1022,8 @@ export class LineArt {
     this.depthMaterial?.dispose();
     this.arrowMaterial?.dispose();
     this.arrowMesh?.geometry.dispose();
+    this.arrowSelMaterial?.dispose();
+    this.arrowSelMesh?.geometry.dispose();
     this.lineMaterials.forEach(m => m.dispose());
     this.outline.dispose();
     this.target?.dispose();
