@@ -97,7 +97,9 @@ function show(wrap: HTMLElement, entries: LayersHistoryEntry[], button: HTMLButt
     document.removeEventListener("mousedown", away, true);
   };
   document.addEventListener("mousedown", away, true);
-  x.focus();
+  // Focus goes in (for Escape) without ringing the close button.
+  panel.tabIndex = -1;
+  panel.focus({ preventScroll: true });
 }
 
 export const historyTheme = EditorView.theme({
@@ -120,6 +122,7 @@ export const historyTheme = EditorView.theme({
     font: "13px/1.35 var(--font-sans, system-ui)",
     whiteSpace: "normal",
     cursor: "default",
+    outline: "none",
   },
   ".cm-md-image-history-head": {
     display: "flex",
