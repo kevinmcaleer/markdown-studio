@@ -19,6 +19,10 @@ export function layersUrl(url: string): string {
 /** Fired on window when the project's 3D model is saved, so graphics check whether they're out of date. */
 export const LAYERS_MODEL_EVENT = "layers-model-changed";
 
+/** Fired on window while "Update all" runs (detail: { done, total }, or null when it ends). */
+export const LAYERS_UPDATE_EVENT = "layers-updating";
+export type LayersUpdateProgress = { done: number; total: number } | null;
+
 export type LayersOpenHow = {
   /** Draw its 3D pictures again from the project's model as it opens. */
   update?: boolean;
@@ -35,6 +39,14 @@ export type LayersOpener = {
    * number it should have when its own is out of place in `text` (null: can't tell).
    */
   status?(url: string, text?: string): Promise<{ scene: boolean; stale: number; step?: number } | null>;
+  /** Draws the graphic at `url` again (its 3D pictures, its step number) and saves it, without opening it. */
+  update?(view: EditorView, url: string): Promise<void>;
+  /** How many graphics in `text` are out of date. */
+  pending?(text: string): Promise<number>;
+  /** Draws and saves every out-of-date graphic in the text, one at a time. Says how many it saved. */
+  updateAll?(view: EditorView): Promise<number>;
+  /** "Update all"'s progress in `view` (null: not running). */
+  progress?(view: EditorView): LayersUpdateProgress;
 };
 
 export const layersOpener = Facet.define<LayersOpener, LayersOpener | null>({

@@ -16,7 +16,7 @@ import { galleryField, galleryTheme, openGalleryBlocks } from "./galleryWidget";
 import { videosField, videosTheme } from "./videosWidget";
 import { tableCursor, tableField } from "./tableWidget";
 import { sizePicture } from "./steadyScroll";
-import { isLayersUrl, LAYERS_MODEL_EVENT, layersOpener } from "./layersFacet";
+import { isLayersUrl, LAYERS_MODEL_EVENT, LAYERS_UPDATE_EVENT, layersOpener, type LayersUpdateProgress } from "./layersFacet";
 import { imagePopover, imagePopoverAt, openImagePopover } from "./imagePopover";
 import { imageCaption } from "./imageCaption";
 
@@ -307,7 +307,7 @@ class ImageWidget extends WidgetType {
           }
           checked = true;
           const st = await layers.status!(src, view.state.doc.toString()).catch(() => null);
-          wrap.querySelector(".cm-md-image-stale")?.remove();
+          wrap.querySelector(".cm-md-image-stale-bar")?.remove();
           if (!st) return;
           if (st.scene && !tools.querySelector("[data-next-step]")) {
             const next = document.createElement("button");
@@ -325,22 +325,69 @@ class ImageWidget extends WidgetType {
             tools.prepend(next);
           }
           if (st.stale || st.step) {
-            const mark = document.createElement("button");
-            mark.type = "button";
-            mark.className = "cm-md-image-stale";
-            mark.textContent = "Out of date · Update";
-            mark.title = [
+            // "Update" draws it again and saves it in one press; "Update all"
+            // does that for every out-of-date graphic in the write-up.
+            const marks = document.createElement("span");
+            marks.className = "cm-md-image-stale-bar";
+            const why = [
               st.stale ? "The project's 3D model has changed since this was drawn." : "",
               st.step ? `Its step number should be ${st.step}, from its place in the write-up.` : "",
-              "Update opens it with that put right; then Save.",
             ].filter(Boolean).join(" ");
-            mark.addEventListener("mousedown", (e) => e.preventDefault());
-            mark.addEventListener("click", (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              layers.open(view, view.posAtDOM(wrap), undefined, { update: true });
-            });
-            wrap.append(mark);
+            const button = (label: string, title: string, run: (b: HTMLButtonElement) => Promise<unknown>) => {
+              const b = document.createElement("button");
+              b.type = "button";
+              b.className = "cm-md-image-stale";
+              b.textContent = label;
+              b.title = title;
+              b.addEventListener("mousedown", (e) => e.preventDefault());
+              b.addEventListener("click", (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (b.disabled) return;
+                b.disabled = true;
+                run(b).then(
+                  () => { if (b.isConnected) { b.disabled = false; b.textContent = label; } },
+                  (err: unknown) => {
+                    b.disabled = false;
+                    b.textContent = "Couldn't update · Try again";
+                    b.title = err instanceof Error && err.message ? `It couldn't be updated: ${err.message}` : "It couldn't be updated.";
+                  },
+                );
+              });
+              marks.append(b);
+              return b;
+            };
+            const one = layers.update
+              ? button("Out of date · Update", `${why} Update draws it again and saves it.`, async (b) => {
+                  b.textContent = "Updating…";
+                  await layers.update!(view, src);
+                })
+              : button("Out of date · Update", `${why} Update opens it with that put right; then Save.`, async () => {
+                  layers.open(view, view.posAtDOM(wrap), undefined, { update: true });
+                });
+            wrap.querySelector(".cm-md-image-stale-bar")?.remove();
+            wrap.append(marks);
+            if (layers.updateAll && layers.pending) {
+              const n = await layers.pending(view.state.doc.toString()).catch(() => 0);
+              if (n > 1 && marks.isConnected && !marks.querySelector("[data-update-all]")) {
+                const all = button(`Update all (${n})`, `Draw and save all ${n} out-of-date graphics in this write-up, one after another.`, async (b) => {
+                  await layers.updateAll!(view);
+                  b.textContent = "Updated";
+                });
+                all.dataset.updateAll = "";
+                const showProgress = (p: LayersUpdateProgress) => {
+                  if (!marks.isConnected) {
+                    removeEventListener(LAYERS_UPDATE_EVENT, onProgress);
+                    return;
+                  }
+                  all.disabled = one.disabled = !!p;
+                  if (p) all.textContent = `Updating ${Math.min(p.done + 1, p.total)} of ${p.total}…`;
+                };
+                const onProgress = (e: Event) => showProgress((e as CustomEvent<LayersUpdateProgress>).detail);
+                addEventListener(LAYERS_UPDATE_EVENT, onProgress);
+                showProgress(layers.progress?.(view) ?? null);
+              }
+            }
           }
         };
         addEventListener(LAYERS_MODEL_EVENT, check);
@@ -372,7 +419,7 @@ class ImageWidget extends WidgetType {
   }
   ignoreEvent(event: Event) {
     if (!(event.target instanceof Element)) return false;
-    return !!event.target.closest(".cm-md-image-sizes, .cm-md-image-layers, .cm-md-image-stale") || (!this.readOnly && event.target.classList.contains("cm-md-image"));
+    return !!event.target.closest(".cm-md-image-sizes, .cm-md-image-layers, .cm-md-image-stale-bar") || (!this.readOnly && event.target.classList.contains("cm-md-image"));
   }
 }
 
