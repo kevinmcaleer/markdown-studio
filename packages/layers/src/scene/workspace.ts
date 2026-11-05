@@ -7,7 +7,7 @@
 //
 // This module and three.js load only when a scene is opened.
 
-import { Box3 as Bounds, BufferAttribute, BufferGeometry, DoubleSide, Euler, Line, LineBasicMaterial, Matrix4, Mesh, MeshBasicMaterial, Object3D, OrthographicCamera, Plane, Quaternion, Raycaster, Vector2, Vector3 } from "three";
+import { Box3 as Bounds, BufferAttribute, BufferGeometry, DoubleSide, Euler, Line, LineBasicMaterial, Matrix3, Matrix4, Mesh, MeshBasicMaterial, Object3D, OrthographicCamera, Plane, Quaternion, Raycaster, Vector2, Vector3 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { TransformControls } from "three/examples/jsm/controls/TransformControls.js";
 import { icon } from "../icons";
@@ -18,9 +18,12 @@ import {
   type JointType, type NamedView, type PartJoint, type ProjectModel,
   type Box3 as PlainBox, type SceneCamera, type SceneData, type ScenePart, type SceneStyle, type Vec3,
   explodeOf,
-  highlightedParts, ARROW_FROM, ARROW_TO } from "./model";
+  highlightedParts, ARROW_FROM, ARROW_TO, isWiring } from "./model";
+import { connectorFile, connectorMesh, connectorOf, CONNECTOR_FAMILIES, DEFAULT_CONNECTOR, plugLift } from "./connectors";
+import { wireLength, wireTriangles } from "./wire";
+import { newSocketId, nextWireColour, WIRE_COLOURS, WIRE_DEFAULTS, WIRE_LIMITS, wireColourName, type PartSocket, type WireEnd, type WireSpec, type WireWaypoint } from "./wireSpec";
 import { applyJoint } from "./joint";
-import { frame, frameTight, LineArt, modelFromPositions, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
+import { emptyModel, frame, frameTight, LineArt, modelFromPositions, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
 import { MAX_EMBED, parseStl, stlFaces, toBinaryStl, tooBigToCarry } from "./stl";
 import { isPacked, packMesh, packParts } from "./mesh";
 import { isStepFile, mergeBodies, readStep, type StepBody } from "./step";
@@ -149,6 +152,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
               <button type="button" class="lyr-btn" data-tool="translate" title="Move parts with the handles (M)">${icon("move", 16)}<span>Move</span></button>
               <button type="button" class="lyr-btn" data-tool="rotate" title="Turn parts with the handles (R)">${icon("rotate", 16)}<span>Turn</span></button>
               <button type="button" class="lyr-btn" data-act="screw" title="Screws: click a hole to put a screw in it (S)">${icon("screw", 16)}<span>Screw</span></button>
+              <button type="button" class="lyr-btn" data-act="wire" title="Wires: click where a plug goes, then the faces it runs over, then the other plug (W)">${icon("wire", 16)}<span>Wire</span></button>
               <span class="lyr-sep"></span>
               ${VIEWS.map(v => `<button type="button" class="lyr-btn" data-view="${v.id}" title="Look from the ${esc(v.label.toLowerCase())}">${esc(v.label)}</button>`).join("")}
               <span class="lyr-sep"></span>
@@ -163,6 +167,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
               <button type="button" class="lyr-btn lyr-scene-explode-follow" data-act="explode-follow" hidden>${icon("rotate", 16)}<span></span></button>
             </div>
             <div class="lyr-screw-bar" role="toolbar" aria-label="Screw" hidden></div>
+            <div class="lyr-screw-bar lyr-wire-bar" role="toolbar" aria-label="Wire" hidden></div>
             <div class="lyr-scene-frame"><canvas class="lyr-scene-canvas"></canvas></div>
             <div class="lyr-scene-help">Drag to look around, right-drag to pan, scroll to zoom. Hold Shift on a handle for 5 mm or 15° steps.</div>
             <div class="lyr-drop" hidden>Drop STL or STEP files to add them</div>
@@ -254,6 +259,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         art.selectedArrow = shownJoint;
         art.draw(camera, viewW, viewH, Math.min(2, window.devicePixelRatio || 1));
         placeSnaps();
+        placeWireHandles();
         placeDial();
         section.place();
         viewCube.sync(camera.quaternion);
@@ -287,8 +293,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     function layout(): void {
       const box = stage.getBoundingClientRect();
       const availW = Math.max(100, box.width - 32);
-      const bar = root.querySelector<HTMLElement>(".lyr-screw-bar");
-      const barH = bar && !bar.hidden ? bar.offsetHeight + 10 : 0;
+      const barH = [...root.querySelectorAll<HTMLElement>(".lyr-screw-bar")].reduce((h, bar) => h + (bar.hidden ? 0 : bar.offsetHeight + 10), 0);
       const availH = Math.max(100, box.height - 96 - barH);
       viewW = Math.floor(Math.min(availW, availH * aspect));
       viewH = Math.floor(viewW / aspect);
@@ -370,6 +375,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     /** Puts the parts in the view again (after adding, removing or restyling). */
     function rebuild(): void {
       art.setSection(scene.section);
+      art.look = { wiring: scene.wiring, hideWiring: scene.hideWiring };
       syncSectionButton();
       art.setParts(loaded(), scene.style, scene.explode);
       attachGizmo();
@@ -426,7 +432,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     function exportUrdf(): void {
       const parts = scene.parts.filter(p => {
         const m = models.get(p.id);
-        return m && !(m instanceof Error);
+        // A wire is drawn from its parts, not a link of the robot.
+        return m && !(m instanceof Error) && !p.wire;
       });
       if (!parts.length) {
         status(scene.parts.length ? "The parts' models haven't loaded yet." : "Add a part first.", true);
@@ -446,7 +453,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       a.click();
       a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
-      const skipped = scene.parts.length - parts.length;
+      const skipped = scene.parts.filter(p => !p.wire).length - parts.length;
       status(`Downloaded robot-urdf.zip: ${parts.length} part${parts.length === 1 ? "" : "s"}${skipped ? ` (${skipped} not loaded, left out)` : ""}. Unzip it and open robot.urdf in Snakie.`);
     }
 
@@ -555,8 +562,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         delete c.joint;
         delete c.explode;
       }
-      scene.parts = scene.parts.filter(x => x.id !== id);
-      models.delete(id);
+      // Wires ending on it go with it; a plug's socket stays on its part for the next one.
+      const gone = new Set([id, ...scene.parts.filter(w => w.wire && (w.wire.from.part === id || w.wire.to.part === id)).map(w => w.id)]);
+      scene.parts = scene.parts.filter(x => !gone.has(x.id));
+      for (const w of scene.parts) if (w.wire?.waypoints.some(x => x.part === id)) w.wire = { ...w.wire, waypoints: w.wire.waypoints.filter(x => x.part !== id) };
+      gone.forEach(g => models.delete(g));
       if (selectedId === id) selectedId = "";
       rebuild();
       commit();
@@ -601,12 +611,12 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
      * Angle / Slide, or once it's unjoined.
      */
     function locked(p: ScenePart | undefined): boolean {
-      return (!!p?.parent && !!p.joint?.point) || !!p?.track;
+      return (!!p?.parent && !!p.joint?.point) || !!p?.track || !!p?.wire;
     }
 
     function attachGizmo(): void {
       const p = selectedId ? partById(selectedId) : undefined;
-      if (p && !p.hidden && !locked(p) && art.matrixOf(p.id) && !screwing && !trackPick) {
+      if (p && !p.hidden && !locked(p) && art.matrixOf(p.id) && !screwing && !trackPick && !wiringOn) {
         placeProxy();
         gizmo.attach(proxy);
         gizmo.setMode(tool);
@@ -648,11 +658,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         return;
       }
       // A handle under the pointer is the gizmo's click, unless faces are being picked (the gizmo is put away then).
-      if (!joining && !screwing && !trackPick && (gizmo.dragging || (gizmo as unknown as { axis: string | null }).axis)) return;
+      if (!joining && !screwing && !trackPick && !wiringOn && (gizmo.dragging || (gizmo as unknown as { axis: string | null }).axis)) return;
       const r = canvasEl.getBoundingClientRect();
       const ndc = new Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
       // A right-click (not a right-drag, which pans): the part's menu, or the view's.
-      if ((e.button === 2 || (e.button === 0 && e.ctrlKey && mac)) && !joining && !screwing && !trackPick) {
+      if ((e.button === 2 || (e.button === 0 && e.ctrlKey && mac)) && !joining && !screwing && !trackPick && !wiringOn) {
         art.scene.updateMatrixWorld(true);
         raycaster.setFromCamera(ndc, camera);
         const hit = raycaster.intersectObjects(art.meshes(), false).find(h => art.keeps(h.point));
@@ -673,6 +683,20 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         hoverAt(e);
         trackClick();
         return;
+      }
+      if (wiringOn) {
+        hoverAt(e);
+        wireClick(e.shiftKey);
+        return;
+      }
+      // Shift-click on a part with a wire picked: a waypoint there.
+      const pickedWire = e.shiftKey ? wireById(selectedId) : undefined;
+      if (pickedWire) {
+        const w = surfaceAt(e.clientX, e.clientY);
+        if (w) {
+          addWaypoint(pickedWire, w);
+          return;
+        }
       }
       if (joining) {
         hoverAt(e);
@@ -857,6 +881,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const byParent = new Map<string, ScenePart[]>();
       const ids = new Set(scene.parts.map(p => p.id));
       for (const p of scene.parts) {
+        if (p.wire) continue;
         const key = p.parent && ids.has(p.parent) ? p.parent : "";
         let l = byParent.get(key);
         if (!l) byParent.set(key, (l = []));
@@ -893,7 +918,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
               <button type="button" class="lyr-wide-btn" data-explode-only title="Keep every other joint assembled in this scene, so only ${many ? `these ${explodeSet.length}` : "this one"} come${many ? "" : "s"} apart">${icon("expand", 14)}<span>Explode only ${many ? "these" : "this one"}</span></button>
             </li>` : ""}` : "";
         return `${joint}<li class="lyr-scene-row${p.id === selectedId && !shownJoint ? " lyr-on" : ""}${p.hidden ? " lyr-off" : ""}" data-id="${esc(p.id)}" style="--depth:${depth}">
-              <button type="button" class="lyr-scene-name" data-pick="${esc(p.id)}" title="${broken ? "Its model couldn't be loaded" : "Select"}">${icon("cube", 14)}<span>${esc(p.name)}</span>${broken ? `<em>missing</em>` : ""}</button>
+              <button type="button" class="lyr-scene-name" data-pick="${esc(p.id)}" title="${broken ? "Its model couldn't be loaded" : "Select"}">${p.wire ? `<span class="lyr-wire-dot" style="--swatch:${esc(p.wire.color)}"></span>` : icon(p.plug ? "plug" : "cube", 14)}<span>${esc(p.name)}</span>${broken ? `<em>missing</em>` : ""}</button>
               <button type="button" class="lyr-btn lyr-icon-btn${on ? " lyr-on" : ""}${inherited ? " lyr-inherited" : ""}" data-highlight="${esc(p.id)}" title="${inherited ? "Highlighted with the part above it: click to leave it and the parts under it out" : on ? "Stop highlighting it and the parts under it" : "Highlight it and the parts under it"} (Shift-click: just this part)" aria-label="Highlight ${esc(p.name)}" aria-pressed="${on}">${icon("highlight", 16)}</button>
               <button type="button" class="lyr-btn lyr-icon-btn${p.ghost ? " lyr-on" : ""}" data-ghost-part="${esc(p.id)}" title="${p.ghost ? "Draw it and the parts under it normally" : "Ghost it and the parts under it: draw them faint, as fitted in an earlier step"} (Shift-click: just this part)" aria-label="Ghost ${esc(p.name)}" aria-pressed="${!!p.ghost}">${icon("opacity", 16)}</button>
               <button type="button" class="lyr-btn lyr-icon-btn" data-hide="${esc(p.id)}" title="${linked() ? (p.hidden ? "Show it and the parts under it in this scene" : "Leave it and the parts under it out of this scene (they stay in the model)") : p.hidden ? "Show it and the parts under it" : "Hide it and the parts under it"} (Shift-click: just this part)" aria-label="${p.hidden ? "Show" : "Hide"} ${esc(p.name)}">${icon(p.hidden ? "eyeOff" : "eye", 16)}</button>
@@ -902,7 +927,10 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       };
       renderModelNote();
       const had = list.contains(document.activeElement);
-      list.innerHTML = scene.parts.length ? (byParent.get("") || []).map(p => row(p, 0)).join("") : `<li class="lyr-note">No parts yet.</li>`;
+      const wires = scene.parts.filter(p => p.wire);
+      list.innerHTML = scene.parts.length
+        ? (byParent.get("") || []).map(p => row(p, 0)).join("") + (wires.length ? `<li class="lyr-scene-row lyr-scene-list-head">${icon("wire", 14)}<span>Wiring · ${wires.length} wire${wires.length === 1 ? "" : "s"}</span></li>${wires.map(p => row(p, 0)).join("")}` : "")
+        : `<li class="lyr-note">No parts yet.</li>`;
       // The button clicked has gone: keep the keys working in the scene.
       if (had) root.focus({ preventScroll: true });
     }
@@ -1256,13 +1284,13 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       openCtx(x, y, p.name, [
         { label: "Zoom to it", icon: "frame", run: () => { select(id); zoomTo(id, false); } },
         { label: "Rename", icon: "pencil", run: () => renameAt(id) },
-        ...(broken ? [] : [{ label: "Duplicate", icon: "copy", keys: keyName("D"), run: () => duplicatePart(id) }]),
+        ...(broken || isWiring(p) ? [] : [{ label: "Duplicate", icon: "copy", keys: keyName("D"), run: () => duplicatePart(id) }]),
         null,
-        parent
+        ...(p.wire ? [] : [parent
           ? { label: `Edit joint to ${parent.name}`, icon: "link", run: () => { select(id); openJointDialog(id); } }
-          : { label: "Join to another part…", icon: "link", run: () => { select(id); openJointDialog(id); } },
+          : { label: "Join to another part…", icon: "link", run: () => { select(id); openJointDialog(id); } }]),
         ...(parent ? [{ label: "Remove joint", icon: "unlink", run: () => unjoin(p) }] : []),
-        ...(p.screw || broken || scene.parts.length < 2 ? [] : [{ label: p.track ? "Edit track…" : "Make track…", icon: "track", run: () => { select(id); openTrackDialog(id); } }]),
+        ...(p.screw || isWiring(p) || broken || scene.parts.length < 2 ? [] : [{ label: p.track ? "Edit track…" : "Make track…", icon: "track", run: () => { select(id); openTrackDialog(id); } }]),
         null,
         { label: "Highlight", on: highlightedParts(scene.parts).has(id), run: () => toggleHighlight(id) },
         { label: "Ghost", on: !!p.ghost, run: () => toggle(id, "ghost") },
@@ -1338,6 +1366,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         case "upper": return p?.joint?.upper ?? 0;
         case "arrowFrom": return Math.round((p?.arrow?.from ?? ARROW_FROM) * 100);
         case "arrowTo": return Math.round((p?.arrow?.to ?? ARROW_TO) * 100);
+        case "wireDiameter": return p?.wire?.diameter ?? 0;
+        case "wireSlack": return p?.wire?.slack ?? 0;
       }
       return 0;
     }
@@ -1350,6 +1380,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const rot = ["roll", "pitch", "yaw"].indexOf(key);
       // A part held by its joint isn't placed by hand.
       if ((pos >= 0 || rot >= 0) && locked(p)) return;
+      if ((key === "wireDiameter" || key === "wireSlack") && p?.wire) {
+        const v = key === "wireDiameter" ? Math.max(WIRE_LIMITS.diameter[0], Math.min(WIRE_LIMITS.diameter[1], round(value, 2))) : Math.max(0, Math.min(WIRE_LIMITS.slack[1], round(value, 1)));
+        setWire(w => (key === "wireDiameter" ? { ...w, diameter: v } : { ...w, slack: v }));
+        return;
+      }
       if (pos >= 0 && p) {
         p.position[pos] = round(Math.max(-100_000, Math.min(100_000, value)));
         if (looseJoint(p)) renderProps();
@@ -1910,6 +1945,10 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     /** The meshes a join may pick now: the part being joined, then any part not on its branch. */
     function pickable(): Mesh[] {
       if (screwing) return art.meshes().filter(m => !partById(String(m.userData.partId || ""))?.screw);
+      if (wiringOn) return art.meshes().filter(m => {
+        const q = partById(String(m.userData.partId || ""));
+        return q && !isWiring(q);
+      });
       if (trackPick && trackDraft) {
         const d = trackDraft;
         return art.meshes().filter(m => {
@@ -2046,7 +2085,42 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           marks.push(`<span class="lyr-snap lyr-snap-picked" style="left:${at.x}px;top:${at.y}px"></span>`);
         }
       }
-      if (hover) {
+      // Wiring: every socket on the view, and the one near the pointer taken over the face's snaps.
+      socketHover = null;
+      if (wiringOn) {
+        let best = 14;
+        for (const so of socketsOnView()) {
+          const d = Math.hypot(so.x - pointer.x, so.y - pointer.y);
+          if (hover && d < best) {
+            best = d;
+            socketHover = { part: so.part, socket: so.socket };
+          }
+        }
+        for (const so of socketsOnView()) {
+          const on = socketHover?.socket === so.socket && socketHover.part === so.part;
+          marks.push(`<span class="lyr-snap lyr-snap-socket${on ? " lyr-on" : ""}" style="left:${so.x}px;top:${so.y}px"></span>`);
+          if (on) {
+            const c = connectorOf(so.socket.connector);
+            const busy = plugIn(so.part, so.socket.id);
+            marks.push(`<span class="lyr-snap-label" style="left:${so.x}px;top:${so.y}px">${esc(`${so.socket.name || "Socket"}${c ? ` · ${c.family.label} ${c.ways}-way` : ""}${busy ? " · has a plug" : ""}`)}</span>`);
+          }
+        }
+        if (wireDraft) {
+          const world = worldMatrices(scene.parts, scene.explode);
+          wireDraft.waypoints.forEach(w => {
+            const mm = w.part ? world.get(w.part) : undefined;
+            if (!mm || !w.point) return;
+            const q = project(w.point, mm);
+            marks.push(`<span class="lyr-snap lyr-snap-picked" style="left:${q.x}px;top:${q.y}px"></span>`);
+          });
+          const fm = world.get(wireDraft.from.part);
+          if (fm) {
+            const q = project(wireDraft.from.socket.point, fm);
+            marks.push(`<span class="lyr-snap lyr-snap-joined" style="left:${q.x}px;top:${q.y}px"></span>`);
+          }
+        }
+      }
+      if (hover && !socketHover) {
         const snaps = hoverSnaps();
         const m = hover.mesh.matrixWorld;
         const screen = snaps.map(s => project(s.p, m));
@@ -2065,7 +2139,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         }
         if (on) {
           const p = screen[hover.snap];
-          const text = screwing ? screwHint(hover.id, on) : trackPick === "wheel" && on.radius ? `Ø${round(on.radius * 2, 1)} mm circle` : `${ROLE_LABEL[on.role]}${faceHeld ? " · face held" : ""}`;
+          const text = wiringOn ? `${wireDraft ? (shiftDown ? "End the wire here" : "Waypoint") : "First plug"} · ${ROLE_LABEL[on.role]}` : screwing ? screwHint(hover.id, on) : trackPick === "wheel" && on.radius ? `Ø${round(on.radius * 2, 1)} mm circle` : `${ROLE_LABEL[on.role]}${faceHeld ? " · face held" : ""}`;
           marks.push(`<span class="lyr-snap-label" style="left:${p.x}px;top:${p.y}px">${esc(text)}</span>`);
         }
         if (on?.radius && (on.role === "hole" || on.role === "rim" || on.role === "centre")) {
@@ -2113,16 +2187,19 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         hoverQueued = requestAnimationFrame(() => section.hover(at));
         return;
       }
-      if (!(joining || screwing || trackPick) || e.buttons) return;
+      if (!(joining || screwing || trackPick || wiringOn) || e.buttons) return;
       faceHeld = !screwing && holdKey(e) && !!hover;
       shiftDown = e.shiftKey;
       const at = { clientX: e.clientX, clientY: e.clientY };
       cancelAnimationFrame(hoverQueued);
-      hoverQueued = requestAnimationFrame(() => (joining || screwing || trackPick) && hoverAt(at));
+      hoverQueued = requestAnimationFrame(() => {
+        if (joining || screwing || trackPick || wiringOn) hoverAt(at);
+        if (wiringOn) drawWirePreview();
+      });
     });
     canvasEl.addEventListener("pointerleave", () => {
       cancelAnimationFrame(hoverQueued);
-      if (joining || screwing || trackPick) clearHover();
+      if (joining || screwing || trackPick || wiringOn) clearHover();
     });
 
     // ------------------------------------------------------------ the screw tool
@@ -2189,6 +2266,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     });
 
     function startScrews(): void {
+      stopWires();
       if (joining) stopJoin();
       if (section.picking()) section.stop();
       if (draft) closeJointDialog();
@@ -2352,6 +2430,532 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       } finally {
         screwBusy = false;
       }
+    }
+
+    // ------------------------------------------------------------ the wire tool
+
+    // Arm it (the Wire button, or W). The first click on a part puts a plug
+    // there (in a socket already on the part, or a new one on the face
+    // clicked); each click after that adds a waypoint on the face clicked;
+    // clicking a socket, or Shift-clicking a face, ends the wire with a plug
+    // there. Enter ends it at the last waypoint; Esc drops the wire being
+    // made, then puts the tool away. Each end and waypoint belongs to its
+    // part, so the wire follows the parts as they move or explode.
+
+    interface WireChoice { color: string | "auto"; diameter: number; slack: number; connector: string }
+    const WIRE_KEY = "layers.wireTool";
+    const readWireChoice = (): WireChoice => {
+      try {
+        const v = JSON.parse(localStorage.getItem(WIRE_KEY) || "null") as Partial<WireChoice> | null;
+        if (v) {
+          return {
+            color: typeof v.color === "string" && (v.color === "auto" || /^#[0-9a-f]{6}$/i.test(v.color)) ? v.color : "auto",
+            diameter: Number.isFinite(v.diameter) ? Math.max(WIRE_LIMITS.diameter[0], Math.min(WIRE_LIMITS.diameter[1], Number(v.diameter))) : WIRE_DEFAULTS.diameter,
+            slack: Number.isFinite(v.slack) ? Math.max(0, Math.min(WIRE_LIMITS.slack[1], Number(v.slack))) : WIRE_DEFAULTS.slack,
+            connector: connectorOf(String(v.connector || "")) ? String(v.connector) : DEFAULT_CONNECTOR,
+          };
+        }
+      } catch {
+        /* storage off: the defaults */
+      }
+      return { color: "auto", diameter: WIRE_DEFAULTS.diameter, slack: WIRE_DEFAULTS.slack, connector: DEFAULT_CONNECTOR };
+    };
+    let wireChoice = readWireChoice();
+    /** Armed while true. */
+    let wiringOn = false;
+    /** One end of a wire being made: a socket on a part (one already there, or one to add). */
+    interface DraftEnd { part: string; socket: PartSocket; fresh: boolean }
+    let wireDraft: { from: DraftEnd; waypoints: WireWaypoint[] } | null = null;
+    /** The socket under the pointer while wiring, if any. */
+    let socketHover: { part: string; socket: PartSocket } | null = null;
+    const wireBar = $(".lyr-wire-bar");
+    const connectorOptions = (on: string) => CONNECTOR_FAMILIES.map(f => `<optgroup label="${esc(f.label)}">${f.ways.map(n => {
+      const id = `${f.id}-${n}`;
+      return `<option value="${id}"${id === on ? " selected" : ""}>${esc(`${f.label}, ${n} way`)}</option>`;
+    }).join("")}</optgroup>`).join("");
+
+    function renderWireBar(): void {
+      const used = scene.parts.flatMap(p => (p.wire ? [p.wire.color] : []));
+      const auto = nextWireColour(used);
+      wireBar.innerHTML = `
+        <span class="lyr-screw-bar-title">${icon("wire", 16)}<span>Wire</span></span>
+        <label title="The wire's colour. Auto: the next colour not used yet"><span>Colour</span><select data-wire="color"><option value="auto"${wireChoice.color === "auto" ? " selected" : ""}>Auto (${esc(wireColourName(auto))})</option>${WIRE_COLOURS.map(c => `<option value="${c.id}"${wireChoice.color === c.id ? " selected" : ""}>${esc(c.label)}</option>`).join("")}</select></label>
+        <label title="Mm across"><span>Ø</span><input type="number" min="${WIRE_LIMITS.diameter[0]}" max="${WIRE_LIMITS.diameter[1]}" step="0.1" data-wire="diameter" value="${wireChoice.diameter}"><span>mm</span></label>
+        <label title="Mm of extra length: the wire bows out between the points it passes"><span>Slack</span><input type="number" min="0" max="${WIRE_LIMITS.slack[1]}" step="1" data-wire="slack" value="${wireChoice.slack}"><span>mm</span></label>
+        <label title="The plug a new socket takes (the STS3215 servo lead's is Molex Mini-SPOX 5264, 3 way)"><span>Plug</span><select data-wire="connector">${connectorOptions(wireChoice.connector)}</select></label>
+        <button type="button" class="lyr-btn lyr-icon-btn" data-act="wire-stop" title="Stop making wires (Esc)" aria-label="Stop">${icon("close", 16)}</button>`;
+    }
+    wireBar.addEventListener("change", e => {
+      const el = e.target as HTMLInputElement | HTMLSelectElement;
+      const key = el.dataset.wire;
+      if (key === "color") wireChoice.color = el.value;
+      else if (key === "connector") wireChoice.connector = connectorOf(el.value) ? el.value : DEFAULT_CONNECTOR;
+      else if (key === "diameter") wireChoice.diameter = Math.max(WIRE_LIMITS.diameter[0], Math.min(WIRE_LIMITS.diameter[1], Number(el.value) || WIRE_DEFAULTS.diameter));
+      else if (key === "slack") wireChoice.slack = Math.max(0, Math.min(WIRE_LIMITS.slack[1], Number(el.value) || 0));
+      try {
+        localStorage.setItem(WIRE_KEY, JSON.stringify(wireChoice));
+      } catch {
+        /* storage off: kept for now */
+      }
+      drawWirePreview();
+    });
+    wireBar.addEventListener("click", e => {
+      if ((e.target as HTMLElement).closest("[data-act=wire-stop]")) stopWires();
+    });
+    wireBar.addEventListener("keydown", e => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        stopWires();
+      }
+    });
+
+    function startWires(): void {
+      stopScrews();
+      if (joining) stopJoin();
+      if (trackPick) stopTrackPick();
+      if (section.picking()) section.stop("");
+      wiringOn = true;
+      wireDraft = null;
+      renderWireBar();
+      wireBar.hidden = false;
+      $("[data-act=wire]").classList.add("lyr-on");
+      canvasEl.classList.add("lyr-scene-picking");
+      attachGizmo();
+      layout();
+      status("Click a part where the first plug goes: a socket's face, or a dot for a socket already there.", false, true);
+    }
+
+    function stopWires(message = ""): void {
+      if (!wiringOn) return;
+      wiringOn = false;
+      wireDraft = null;
+      socketHover = null;
+      wireBar.hidden = true;
+      $("[data-act=wire]").classList.remove("lyr-on");
+      canvasEl.classList.remove("lyr-scene-picking");
+      drawWirePreview();
+      clearHover();
+      attachGizmo();
+      layout();
+      status(message);
+    }
+
+    /** Every socket on a shown part, where it is on the view. */
+    function socketsOnView(): { part: string; socket: PartSocket; x: number; y: number }[] {
+      const out: { part: string; socket: PartSocket; x: number; y: number }[] = [];
+      for (const p of scene.parts) {
+        if (!p.sockets?.length || p.hidden) continue;
+        const g = art.groupOf(p.id);
+        if (!g) continue;
+        g.updateMatrixWorld(true);
+        for (const s of p.sockets) {
+          const v = new Vector3(...s.point).applyMatrix4(g.matrixWorld).project(camera);
+          out.push({ part: p.id, socket: s, x: ((v.x + 1) / 2) * viewW, y: ((1 - v.y) / 2) * viewH });
+        }
+      }
+      return out;
+    }
+
+    /** The plug sitting in a socket, if one is. */
+    const plugIn = (partId: string, socketId: string) => scene.parts.find(p => p.plug?.socket === socketId && p.parent === partId);
+
+    /** The socket a wire end would take from the pointer now: a socket's dot, or a new one on the face (with its snap). */
+    function wireTarget(): DraftEnd | null {
+      if (socketHover) return { part: socketHover.part, socket: socketHover.socket, fresh: false };
+      const pick = hoverPick();
+      const p = pick ? partById(pick.id) : undefined;
+      if (!pick || !p || isWiring(p)) return null;
+      const socket: PartSocket = { id: newSocketId(p.sockets), point: pick.point, normal: pick.normal, connector: wireChoice.connector };
+      return { part: p.id, socket, fresh: true };
+    }
+
+    /** A waypoint at the point under the pointer (on its face), or null off the parts. */
+    function wireWaypointHere(): WireWaypoint | null {
+      const pick = hoverPick();
+      const p = pick ? partById(pick.id) : undefined;
+      if (!pick || !p || isWiring(p)) return null;
+      return { part: pick.id, point: pick.point, normal: pick.normal };
+    }
+
+    let wireBusy = false;
+    function wireClick(shift: boolean): void {
+      if (wireBusy) return;
+      if (!wireDraft) {
+        const t = wireTarget();
+        if (!t) {
+          status("Click a part where the wire starts. Esc to stop.", true, true);
+          return;
+        }
+        wireDraft = { from: t, waypoints: [] };
+        status(`Wire started at ${partById(t.part)?.name || "the part"}. Click faces for it to pass over, then click a socket (or Shift-click a face) to end it.`, false, true);
+        drawWirePreview();
+        return;
+      }
+      if (socketHover || shift) {
+        const t = wireTarget();
+        if (!t) return;
+        if (t.part === wireDraft.from.part && t.socket.id === wireDraft.from.socket.id && !t.fresh) {
+          status("That's where the wire starts: end it at another socket.", true);
+          return;
+        }
+        void finishWire(t);
+        return;
+      }
+      const w = wireWaypointHere();
+      if (!w) return;
+      wireDraft.waypoints.push(w);
+      status(`${wireDraft.waypoints.length} waypoint${wireDraft.waypoints.length === 1 ? "" : "s"}. Click a socket or Shift-click a face to end the wire there, Enter to end it at the last point, Esc to drop it.`, false, true);
+      drawWirePreview();
+    }
+
+    /** Ends the wire being made at its last waypoint (Enter). */
+    function endWireHere(): void {
+      if (!wireDraft) return;
+      const last = wireDraft.waypoints.pop();
+      if (!last?.part || !last.point || !last.normal) {
+        status("Click at least one point past the first plug, or click a socket to end the wire.", true);
+        return;
+      }
+      const p = partById(last.part)!;
+      void finishWire({ part: p.id, socket: { id: newSocketId(p.sockets), point: last.point, normal: last.normal, connector: wireChoice.connector }, fresh: true });
+    }
+
+    /** Each connector's model, packed to carry, made once. */
+    const plugData = new Map<string, Promise<string>>();
+    function plugModelData(id: string): Promise<string> {
+      let d = plugData.get(id);
+      if (!d) {
+        d = packMesh(connectorMesh(id).positions);
+        plugData.set(id, d);
+        d.catch(() => plugData.delete(id));
+      }
+      return d;
+    }
+
+    /** The plug in this socket: the one there, or a new one joined to the part, from the connector's model. */
+    async function plugFor(end: DraftEnd): Promise<ScenePart> {
+      const host = partById(end.part)!;
+      if (end.fresh) host.sockets = [...(host.sockets || []), end.socket];
+      const had = plugIn(host.id, end.socket.id);
+      if (had) return had;
+      const built = connectorMesh(end.socket.connector);
+      const data = await plugModelData(end.socket.connector);
+      const c = connectorOf(end.socket.connector);
+      const plug: ScenePart = {
+        id: newPartId(scene.parts),
+        name: c ? `${c.family.label} ${c.ways}-way plug` : "Plug",
+        position: [0, 0, 0],
+        rotation: [0, 0, 0],
+        file: connectorFile(end.socket.connector),
+        data,
+        parent: host.id,
+        plug: { connector: end.socket.connector, socket: end.socket.id },
+        joint: {
+          normal: end.socket.normal.map(n => round(n, 5)) as Vec3,
+          distance: plugLift(end.socket.connector),
+          point: end.socket.point.map(n => round(n, 3)) as Vec3,
+          childPoint: built.contact,
+          childNormal: built.normal,
+          spin: end.socket.spin || 0,
+          gap: 0,
+        },
+      };
+      applyJoint(plug);
+      const model = modelFromPositions(built.positions.slice(), null);
+      opts.store.put(plug, model);
+      keepModel(plug, model);
+      scene.parts.push(plug);
+      return plug;
+    }
+
+    /** Where a wire leaves a plug (its back), in the plug's frame. */
+    function plugExit(plug: ScenePart): WireEnd {
+      const m = connectorMesh(plug.plug?.connector || DEFAULT_CONNECTOR);
+      return { part: plug.id, point: m.exit, normal: m.exitNormal };
+    }
+
+    async function finishWire(to: DraftEnd): Promise<void> {
+      const draft = wireDraft;
+      if (!draft || wireBusy) return;
+      wireBusy = true;
+      try {
+        const a = await plugFor(draft.from);
+        const b = await plugFor(to);
+        if (closed) return;
+        const used = scene.parts.flatMap(p => (p.wire ? [p.wire.color] : []));
+        const color = wireChoice.color === "auto" ? nextWireColour(used) : wireChoice.color;
+        const from = partById(draft.from.part)?.name || "";
+        const toName = partById(to.part)?.name || "";
+        const wire: ScenePart = {
+          id: newPartId(scene.parts),
+          name: `${wireColourName(color)} wire, ${from} to ${toName}`.slice(0, 120),
+          position: [0, 0, 0],
+          rotation: [0, 0, 0],
+          wire: { from: plugExit(a), to: plugExit(b), waypoints: draft.waypoints, color, diameter: wireChoice.diameter, slack: wireChoice.slack },
+        };
+        keepModel(wire, emptyModel());
+        scene.parts.push(wire);
+        wireDraft = null;
+        renderWireBar();
+        drawWirePreview();
+        clearHover();
+        rebuild();
+        commit();
+        status(`${wire.name} added. Click a part to start the next wire, or Esc when done.`, false, true);
+      } finally {
+        wireBusy = false;
+      }
+    }
+
+    // The wire being made, drawn live (in the overlay, over the picture) to the pointer.
+    const previewMaterial = new MeshBasicMaterial({ color: 0xd33a2c, transparent: true, opacity: 0.85, depthTest: true });
+    const preview = new Mesh(new BufferGeometry(), previewMaterial);
+    preview.raycast = () => {};
+    preview.visible = false;
+    art.overlay.add(preview);
+    function drawWirePreview(): void {
+      preview.visible = false;
+      if (!wiringOn || !wireDraft) return draw();
+      const world = worldMatrices(scene.parts, scene.explode);
+      const d = wireDraft;
+      const fromM = world.get(d.from.part);
+      if (!fromM) return draw();
+      // The ends as they'd be: out of each socket by the plug's length.
+      const lead = (s: PartSocket) => connectorMesh(s.connector).size[2];
+      const endAt = (e: DraftEnd): WireEnd => ({ part: e.part, point: e.socket.point.map((v, i) => v + e.socket.normal[i] * lead(e.socket)) as Vec3, normal: e.socket.normal });
+      const t = wireTarget();
+      const here = socketHover || (wireDraft && t) ? t : null;
+      const ways = [...d.waypoints];
+      let to: WireEnd | null = here && !(here.part === d.from.part && here.socket.id === d.from.socket.id) ? endAt(here) : null;
+      if (!to && ways.length) {
+        // The last waypoint stands in for the end until there's a target.
+        const last = ways[ways.length - 1];
+        if (last.part && last.point && last.normal) to = { part: last.part, point: last.point, normal: last.normal };
+        ways.pop();
+      }
+      if (!to) return draw();
+      const used = scene.parts.flatMap(p => (p.wire ? [p.wire.color] : []));
+      const color = wireChoice.color === "auto" ? nextWireColour(used) : wireChoice.color;
+      const tris = wireTriangles({ id: "", name: "", position: [0, 0, 0], rotation: [0, 0, 0], wire: { from: endAt(d.from), to, waypoints: ways, color, diameter: wireChoice.diameter, slack: wireChoice.slack } }, world);
+      preview.geometry.dispose();
+      preview.geometry = new BufferGeometry();
+      preview.geometry.setAttribute("position", new BufferAttribute(tris, 3));
+      previewMaterial.color.set(color);
+      preview.visible = tris.length > 0;
+      draw();
+    }
+
+    // ------------------------------------------------------------ editing a wire
+
+    // A wire picked (not while making one) shows its waypoints as handles:
+    // drag one over the parts to move it, click it to take it out, and
+    // Shift-click a part to add one where it lengthens the wire least.
+    const wireLayer = document.createElement("div");
+    wireLayer.className = "lyr-wire-handles";
+    frameEl.appendChild(wireLayer);
+    const wireById = (id: string) => {
+      const p = partById(id);
+      return p?.wire ? p : undefined;
+    };
+    function placeWireHandles(): void {
+      const p = !wiringOn ? wireById(selectedId) : undefined;
+      if (!p?.wire || p.hidden) {
+        if (wireLayer.childElementCount) wireLayer.innerHTML = "";
+        return;
+      }
+      const world = worldMatrices(scene.parts, scene.explode);
+      const r = p.wire.diameter / 2;
+      const spots = p.wire.waypoints.map(w => {
+        let at: Vector3 | null = null;
+        if (w.part && w.point) {
+          const m = world.get(w.part);
+          if (m) {
+            at = new Vector3(...w.point).applyMatrix4(m);
+            if (w.normal) at.addScaledVector(new Vector3(...w.normal).applyMatrix3(new Matrix3().setFromMatrix4(m)).normalize(), r);
+          }
+        }
+        if (!at) return null;
+        const v = at.project(camera);
+        return { x: ((v.x + 1) / 2) * viewW, y: ((1 - v.y) / 2) * viewH };
+      });
+      // The same handles moved, not made again (one may be held by a drag).
+      const have = [...wireLayer.querySelectorAll<HTMLElement>("[data-wp]")];
+      if (have.length === spots.length) {
+        spots.forEach((sp, i) => {
+          have[i].hidden = !sp;
+          if (sp) Object.assign(have[i].style, { left: `${sp.x}px`, top: `${sp.y}px` });
+        });
+        return;
+      }
+      wireLayer.innerHTML = spots.map((sp, i) => `<button type="button" class="lyr-wire-point" data-wp="${i}"${sp ? ` style="left:${sp.x}px;top:${sp.y}px"` : " hidden"} title="Drag over the parts to move this point; click to take it out" aria-label="Waypoint ${i + 1}"></button>`).join("");
+    }
+
+    /** The part's face under a point on the view, as a waypoint (wires and plugs aren't faces to run over). */
+    function surfaceAt(clientX: number, clientY: number): WireWaypoint | null {
+      const r = canvasEl.getBoundingClientRect();
+      art.scene.updateMatrixWorld(true);
+      raycaster.setFromCamera(new Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1), camera);
+      const meshes = art.meshes().filter(m => {
+        const q = partById(String(m.userData.partId || ""));
+        return q && !isWiring(q);
+      });
+      const hit = raycaster.intersectObjects(meshes, false).find(h => h.face && art.keeps(h.point));
+      if (!hit) return null;
+      const local = hit.object.worldToLocal(hit.point.clone());
+      const n = hit.face!.normal.clone().normalize();
+      return { part: String(hit.object.userData.partId), point: [round(local.x, 3), round(local.y, 3), round(local.z, 3)], normal: [round(n.x, 5), round(n.y, 5), round(n.z, 5)] };
+    }
+
+    /** Lays the wire again where it now runs. */
+    function relay(p: ScenePart): void {
+      art.rewire(p, scene.parts, scene.explode);
+      placeWireHandles();
+      draw();
+    }
+
+    /** Adds a waypoint to a wire where it makes the wire least longer. */
+    function addWaypoint(p: ScenePart, w: WireWaypoint): void {
+      if (!p.wire) return;
+      const world = worldMatrices(scene.parts, scene.explode);
+      let best = 0;
+      let bestLen = Infinity;
+      for (let i = 0; i <= p.wire.waypoints.length; i++) {
+        const ways = [...p.wire.waypoints];
+        ways.splice(i, 0, w);
+        const len = wireLength({ ...p, wire: { ...p.wire, waypoints: ways, slack: 0 } }, world);
+        if (len && len < bestLen) {
+          bestLen = len;
+          best = i;
+        }
+      }
+      const ways = [...p.wire.waypoints];
+      ways.splice(best, 0, w);
+      p.wire = { ...p.wire, waypoints: ways };
+      relay(p);
+      commit();
+      renderProps();
+      status("Waypoint added. Drag it to move it, click it to take it out.");
+    }
+
+    wireLayer.addEventListener("pointerdown", e => {
+      const h = (e.target as HTMLElement).closest<HTMLElement>("[data-wp]");
+      const p = wireById(selectedId);
+      if (!h || !p?.wire) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const i = Number(h.dataset.wp);
+      const x0 = e.clientX, y0 = e.clientY;
+      let moved = false;
+      h.setPointerCapture(e.pointerId);
+      wireLayer.classList.add("lyr-dragging");
+      const onMove = (m: PointerEvent) => {
+        if (!moved && Math.hypot(m.clientX - x0, m.clientY - y0) < 4) return;
+        moved = true;
+        const w = surfaceAt(m.clientX, m.clientY);
+        if (!w || !p.wire) return;
+        const ways = [...p.wire.waypoints];
+        ways[i] = w;
+        p.wire = { ...p.wire, waypoints: ways };
+        relay(p);
+      };
+      const onUp = () => {
+        h.removeEventListener("pointermove", onMove);
+        h.removeEventListener("pointerup", onUp);
+        wireLayer.classList.remove("lyr-dragging");
+        if (!p.wire) return;
+        if (!moved) {
+          p.wire = { ...p.wire, waypoints: p.wire.waypoints.filter((_, k) => k !== i) };
+          relay(p);
+          status("Waypoint taken out. Shift-click a part to add one.");
+        }
+        commit();
+        renderProps();
+      };
+      h.addEventListener("pointermove", onMove);
+      h.addEventListener("pointerup", onUp);
+    });
+
+    /** Sets something about the picked wire and lays it again. */
+    function setWire(change: (w: WireSpec) => WireSpec): void {
+      const p = wireById(selectedId);
+      if (!p?.wire) return;
+      p.wire = change(p.wire);
+      relay(p);
+    }
+
+    /** Swaps a plug for another connector (the socket takes it too), keeping it in its socket. */
+    async function setPlugConnector(plug: ScenePart, id: string): Promise<void> {
+      if (!plug.plug || !connectorOf(id) || !plug.joint) return;
+      const built = connectorMesh(id);
+      const data = await plugModelData(id);
+      const host = plug.parent ? partById(plug.parent) : undefined;
+      if (host?.sockets) host.sockets = host.sockets.map(s => (s.id === plug.plug!.socket ? { ...s, connector: id } : s));
+      const c = connectorOf(id)!;
+      plug.plug = { ...plug.plug, connector: id };
+      plug.name = `${c.family.label} ${c.ways}-way plug`;
+      plug.file = connectorFile(id);
+      plug.data = data;
+      plug.joint = { ...plug.joint, childPoint: built.contact, childNormal: built.normal, distance: plugLift(id) };
+      applyJoint(plug);
+      const model = modelFromPositions(built.positions.slice(), null);
+      opts.store.put(plug, model);
+      keepModel(plug, model);
+      // Its wires leave its new back.
+      for (const w of scene.parts) {
+        if (!w.wire) continue;
+        if (w.wire.from.part === plug.id) w.wire = { ...w.wire, from: plugExit(plug) };
+        if (w.wire.to.part === plug.id) w.wire = { ...w.wire, to: plugExit(plug) };
+      }
+      rebuild();
+      commit();
+      renderProps();
+    }
+
+    /** Turns a plug a quarter turn in its socket. */
+    function turnPlug(plug: ScenePart): void {
+      if (!plug.joint) return;
+      const spin = wrapAngle((plug.joint.spin || 0) + 90);
+      plug.joint = { ...plug.joint, spin };
+      const host = plug.parent ? partById(plug.parent) : undefined;
+      if (host?.sockets && plug.plug) host.sockets = host.sockets.map(s => (s.id === plug.plug!.socket ? { ...s, spin } : s));
+      applyJoint(plug);
+      follow();
+      commit();
+    }
+
+    /** The wire's settings, in the side panel. */
+    function wireSection(p: ScenePart): string {
+      const w = p.wire!;
+      const world = worldMatrices(scene.parts, scene.explode);
+      const len = wireLength(p, worldMatrices(scene.parts, 0, false));
+      const endName = (e: WireEnd) => {
+        const q = partById(e.part);
+        const host = q?.parent ? partById(q.parent) : undefined;
+        return q ? (q.plug && host ? `${q.name} on ${host.name}` : q.name) : "missing";
+      };
+      void world;
+      return `
+        <div class="lyr-scene-sub">Colour</div>
+        <div class="lyr-wire-swatches" role="radiogroup" aria-label="Colour">
+          ${WIRE_COLOURS.map(c => `<button type="button" class="lyr-wire-swatch${c.id.toLowerCase() === w.color.toLowerCase() ? " lyr-on" : ""}" data-wire-colour="${c.id}" style="--swatch:${c.id}" title="${esc(c.label)}" aria-label="${esc(c.label)}" role="radio" aria-checked="${c.id.toLowerCase() === w.color.toLowerCase()}"></button>`).join("")}
+          <label class="lyr-wire-swatch lyr-wire-swatch-pick" title="Another colour"><input type="color" data-wire-colour-pick value="${esc(w.color.slice(0, 7))}" aria-label="Another colour"></label>
+        </div>
+        <div class="lyr-scene-fields">
+          ${field("wireDiameter", "Ø", "mm", w.diameter, 0.1, "Mm across")}
+          ${field("wireSlack", "Slack", "mm", w.slack, 1, "Mm of extra length: it bows out between the points it passes")}
+        </div>
+        <p class="lyr-note">${esc(endName(w.from))} → ${esc(endName(w.to))}. About ${Math.round(len)} mm long, assembled.</p>
+        <p class="lyr-note">${w.waypoints.length ? `${w.waypoints.length} waypoint${w.waypoints.length === 1 ? "" : "s"}: drag one over the parts to move it, click it to take it out.` : "No waypoints: it takes the shortest smooth run."} Shift-click a part to add one.</p>
+        ${w.waypoints.length ? `<button type="button" class="lyr-wide-btn" data-act="wire-clear">${icon("close", 14)} Take out every waypoint</button>` : ""}`;
+    }
+
+    /** A plug's settings, in the side panel. */
+    function plugSection(p: ScenePart): string {
+      return `
+        <label class="lyr-scene-namebox">Connector <select data-plug-connector>${connectorOptions(p.plug!.connector)}</select></label>
+        <div class="lyr-scene-quick">
+          <button type="button" class="lyr-btn" data-act="plug-turn" title="Turn the plug a quarter turn in its socket">${icon("rotate", 16)}<span>Turn 90°</span></button>
+        </div>`;
     }
 
     /**
@@ -3299,9 +3903,13 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const parent = p?.parent ? partById(p.parent) : undefined;
       props.innerHTML = `
         <section class="lyr-scene-section">
-          <div class="lyr-panel-title">Part</div>
-          ${p ? `
+          <div class="lyr-panel-title">${p?.wire ? "Wire" : p?.plug ? "Plug" : "Part"}</div>
+          ${p?.wire ? `
             <label class="lyr-scene-namebox">Name <input type="text" maxlength="120" data-name value="${esc(p.name)}"></label>
+            ${wireSection(p)}`
+          : p ? `
+            <label class="lyr-scene-namebox">Name <input type="text" maxlength="120" data-name value="${esc(p.name)}"></label>
+            ${p.plug ? plugSection(p) : ""}
             ${jointSection(p, parent)}
             ${locked(p) && !p.track ? `<p class="lyr-note lyr-scene-locked-note">${icon("link", 14)} Held in place by its joint to ${esc(parent?.name || "its parent")}, so it moves with it. Turn or slide it with the joint's ${p.joint?.type === "prismatic" ? "Slide" : p.joint?.type === "revolute" ? "Angle" : "Spin and Gap"}, or Unjoin it to place it by hand.</p>` : ""}
             <fieldset class="lyr-scene-placing"${locked(p) ? " disabled" : ""}>
@@ -3348,6 +3956,9 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           <label class="lyr-scene-check" title="In an exploded view, a line from each part back to where it fits"><input type="checkbox" data-draft${scene.style.draft === false ? "" : " checked"}> Draft lines when exploded</label>
           ${scene.style.draft === false ? "" : `<label class="lyr-scene-check" title="Thin solid lines, as on a flat-pack sheet, instead of dashed ones"><input type="checkbox" data-draft-solid${scene.style.draftSolid ? " checked" : ""}> Solid draft lines</label>`}
           <label class="lyr-scene-check" title="Solid arrows in the picture along each exploded part's gap, from the part to where it fits, as on a flat-pack sheet"><input type="checkbox" data-arrows${scene.arrows ? " checked" : ""}> Arrows when exploded</label>
+          ${scene.parts.some(isWiring) || scene.wiring || scene.hideWiring ? `
+          <label class="lyr-scene-check" title="Ghost every part but the wires and plugs, so the wiring reads"><input type="checkbox" data-wiring${scene.wiring ? " checked" : ""}${scene.hideWiring ? " disabled" : ""}> Wiring view</label>
+          <label class="lyr-scene-check" title="Leave the wires and plugs out of this picture (they stay in the model)"><input type="checkbox" data-hide-wiring${scene.hideWiring ? " checked" : ""}> Hide wiring</label>` : ""}
           <p class="lyr-note">The background is the page's colour: change it in Layers.</p>
         </section>`;
       syncPresets();
@@ -3373,6 +3984,15 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         renderProps();
         draw();
         commit();
+      } else if (t.dataset.wiring !== undefined || t.dataset.hideWiring !== undefined) {
+        const key = t.dataset.wiring !== undefined ? "wiring" : "hideWiring";
+        if (t.checked) scene[key] = true;
+        else delete scene[key];
+        rebuild();
+        renderProps();
+        commit();
+      } else if (t.dataset.wireColourPick !== undefined) {
+        setWire(w => ({ ...w, color: t.value }));
       } else if (t.dataset.arrow !== undefined) {
         const p = partById(selectedId);
         if (!p) return;
@@ -3406,6 +4026,12 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     });
     props.addEventListener("change", e => {
       const t = e.target as HTMLInputElement;
+      if (t.dataset.plugConnector !== undefined) {
+        const p = partById(selectedId);
+        if (p?.plug) void setPlugConnector(p, t.value);
+        return;
+      }
+      if (t.dataset.wireColourPick !== undefined) renderProps();
       if (t.dataset.field) t.value = String(fieldValue(t.dataset.field, partById(selectedId)));
       commit();
     });
@@ -3424,7 +4050,18 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     props.addEventListener("click", e => {
       const b = (e.target as HTMLElement).closest("button");
       if (!b) return;
-      if (b.dataset.preset) {
+      if (b.dataset.wireColour) {
+        setWire(w => ({ ...w, color: b.dataset.wireColour! }));
+        commit();
+        renderProps();
+      } else if (b.dataset.act === "wire-clear") {
+        setWire(w => ({ ...w, waypoints: [] }));
+        commit();
+        renderProps();
+      } else if (b.dataset.act === "plug-turn") {
+        const p = partById(selectedId);
+        if (p?.plug) turnPlug(p);
+      } else if (b.dataset.preset) {
         scene.style = applyPreset(scene.style, b.dataset.preset);
         rebuild();
         commit();
@@ -3740,7 +4377,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         case "add": if (menu.hidden) void openMenu(); else closeMenu(); break;
         case "upload": closeMenu(); fileInput.click(); break;
         case "fit": fitView(true); break;
-        case "screw": if (screwing) stopScrews(); else startScrews(); break;
+        case "screw": stopWires(); if (screwing) stopScrews(); else startScrews(); break;
+        case "wire": if (wiringOn) stopWires(); else startWires(); break;
         case "screw-stop": stopScrews(); break;
         case "views": if (viewsMenu.hidden) openViews(); else viewsMenu.hidden = true; break;
         case "urdf": exportUrdf(); break;
@@ -3771,6 +4409,10 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const mod = e.metaKey || e.ctrlKey;
       const key = e.key.toLowerCase();
       if ((joining || trackPick) && (e.key === "Meta" || e.key === "Control")) setFaceHeld(holdKey(e) && !!hover);
+      if (e.key === "Shift" && wiringOn && !shiftDown) {
+        shiftDown = true;
+        if (hover) placeSnaps();
+      }
       if (e.key === "Shift" && screwing && !shiftDown) {
         shiftDown = true;
         if (hover) placeSnaps();
@@ -3795,13 +4437,19 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       } else if (mod && key === "y") {
         e.preventDefault();
         redo();
-      } else if (mod && key === "d" && selectedId) {
+      } else if (mod && key === "d" && selectedId && !isWiring(partById(selectedId) || {})) {
         e.preventDefault();
         duplicatePart(selectedId);
       } else if (e.key === "Escape") {
         if (!ctx.hidden) closeCtx();
         else if (section.picking()) section.stop(scene.section ? "" : "Section stopped.");
         else if (screwing) stopScrews();
+        else if (wiringOn && wireDraft) {
+          wireDraft = null;
+          renderWireBar();
+          drawWirePreview();
+          status("Wire dropped. Click a part to start another, or Esc to stop.", false, true);
+        } else if (wiringOn) stopWires();
         else if (trackPick) stopTrackPick();
         else if (trackDraft) cancelTrack();
         else if (joining) stopJoin("Join stopped.");
@@ -3811,7 +4459,14 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       } else if ((e.key === "Delete" || e.key === "Backspace") && selectedId) {
         e.preventDefault();
         removePart(selectedId);
+      } else if (e.key === "Enter" && wiringOn) {
+        e.preventDefault();
+        endWireHere();
+      } else if (!mod && key === "w") {
+        if (wiringOn) stopWires();
+        else startWires();
       } else if (!mod && key === "s") {
+        stopWires();
         if (screwing) stopScrews();
         else startScrews();
       } else if (!mod && key === "m") {
@@ -3833,7 +4488,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       if (e.key === "Meta" || e.key === "Control") setFaceHeld(false);
       if (e.key === "Shift" && shiftDown) {
         shiftDown = false;
-        if (screwing && hover) placeSnaps();
+        if ((screwing || wiringOn) && hover) placeSnaps();
       }
       if (e.key === "Shift") {
         gizmo.setTranslationSnap(null);

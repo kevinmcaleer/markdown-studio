@@ -1,0 +1,19 @@
+{
+  "title": "Servo lead between two servos side by side, no waypoints",
+  "why": "Both plugs face up, 60 mm apart. With no waypoints the lead should leave each plug straight up, arc over between them (up, the way both ends face), and be about its 10 mm of slack longer than the same wire pulled tight (the parabola sag works the slack out exactly, the curve through it rounds it a little, so ±2 mm).",
+  "input": {
+    "parts": [
+      { "id": "servo-a", "position": [0, 0, 0] },
+      { "id": "servo-b", "position": [60, 0, 0] }
+    ],
+    "wire": {
+      "from": { "part": "servo-a", "point": [0, 0, 18], "normal": [0, 0, 1] },
+      "to": { "part": "servo-b", "point": [0, 0, 18], "normal": [0, 0, 1] },
+      "waypoints": [],
+      "color": "#d33a2c",
+      "diameter": 2,
+      "slack": 10
+    }
+  },
+  "expect": { "leaves": true, "extra": [10, 2], "bow": [0, 0, 1], "ends": [[0, 0, 18], [60, 0, 18]] }
+}

@@ -155,6 +155,20 @@ const editor = mount(el, {
   joined faces' normal) or **Slides** (prismatic, along it). A moving joint
   has From/To limits (degrees or mm), and its Angle or Slide is where it
   sits in this picture, kept inside them.
+- **Wires** (W, or Wire on the view's bar): click a part where the first
+  plug goes (a socket already there shows as a green square), click the
+  faces the wire runs over, then click a socket or Shift-click a face to
+  end it (Enter ends it at the last point, Esc drops it). Each end gets a
+  plug: a real connector housing (Molex Mini-SPOX 5264 for STS3215 servo
+  leads, JST XH, PH and SH, Dupont), joined to the socket so it comes out of
+  it when exploded (`src/scene/connectors.ts`). Every end and waypoint
+  belongs to a part, so the wire follows joints and explode. It leaves each
+  plug straight out, lies a radius off the faces it's routed over, and its
+  slack bows each free span out (or down, when the ends face each other)
+  (`src/scene/wire.ts`). Picked, a wire shows its waypoints: drag one over
+  the parts, click it to take it out, Shift-click a part to add one. Wires
+  are filled in their colour with the normal outline; **Wiring view**
+  ghosts every other part, and **Hide wiring** leaves them out of a picture.
 - **URDF** in the top bar downloads the parts as a robot: `robot.urdf` and
   `meshes/*.stl` in a .zip, in Snakie's conventions (metres, meshes scaled
   0.001, each joined part's link frame at its joint point, joints at their

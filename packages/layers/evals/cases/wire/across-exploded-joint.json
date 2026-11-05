@@ -1,0 +1,20 @@
+{
+  "title": "Lead across a joint that's exploded",
+  "why": "The second servo is joined to the first and comes 40 mm away along +X when exploded. The wire's ends belong to the servos, so its far end must go with the second servo (60 + 40 = 100 mm along X), still leaving straight up, and the span between stretches.",
+  "input": {
+    "parts": [
+      { "id": "servo-a", "position": [0, 0, 0] },
+      { "id": "servo-b", "position": [60, 0, 0], "parent": "servo-a", "joint": { "normal": [1, 0, 0], "distance": 40 } }
+    ],
+    "explode": 1,
+    "wire": {
+      "from": { "part": "servo-a", "point": [0, 0, 18], "normal": [0, 0, 1] },
+      "to": { "part": "servo-b", "point": [0, 0, 18], "normal": [0, 0, 1] },
+      "waypoints": [],
+      "color": "#d33a2c",
+      "diameter": 2,
+      "slack": 10
+    }
+  },
+  "expect": { "leaves": true, "ends": [[0, 0, 18], [100, 0, 18]], "bow": [0, 0, 1] }
+}

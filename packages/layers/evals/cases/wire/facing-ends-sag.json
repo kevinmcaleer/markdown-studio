@@ -1,0 +1,19 @@
+{
+  "title": "Lead between two boards facing each other across a gap",
+  "why": "The plugs face each other along X, so 'away from the faces' cancels out: the free span should sag down, as a real lead does, not bow sideways.",
+  "input": {
+    "parts": [
+      { "id": "left", "position": [0, 0, 0] },
+      { "id": "right", "position": [80, 0, 0] }
+    ],
+    "wire": {
+      "from": { "part": "left", "point": [5, 0, 10], "normal": [1, 0, 0] },
+      "to": { "part": "right", "point": [-5, 0, 10], "normal": [-1, 0, 0] },
+      "waypoints": [],
+      "color": "#222222",
+      "diameter": 1.6,
+      "slack": 12
+    }
+  },
+  "expect": { "leaves": true, "extra": [12, 2.4], "bow": [0, 0, -1] }
+}

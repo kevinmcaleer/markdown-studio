@@ -836,3 +836,44 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 .lyr-track-fit { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
 .lyr-track-fit .lyr-note { flex: 1; margin: 0; }
 .lyr-track-fit .lyr-btn { flex: none; }
+
+/* Wires in 3D scenes: the wire tool's bar, sockets on the view, a picked wire's waypoint handles. */
+.lyr-wire-bar input[type="number"] { width: 52px; height: 26px; padding: 0 4px; border: 1px solid var(--lyr-line); border-radius: 6px; font: inherit; color: var(--lyr-ink); background: #fff; }
+.lyr-wire-bar select { max-width: 170px; }
+.lyr-snap-socket { width: 13px; height: 13px; margin: -6.5px 0 0 -6.5px; border-color: #2e9e4f; border-radius: 3px; background: #fff; }
+.lyr-snap-socket.lyr-on { border-color: #2e9e4f; background: #2e9e4f; box-shadow: 0 0 0 3px rgb(46 158 79 / 0.25); }
+.lyr-wire-handles { position: absolute; inset: 0; z-index: 3; pointer-events: none; overflow: hidden; }
+.lyr-wire-point {
+  position: absolute;
+  width: 13px;
+  height: 13px;
+  margin: -6.5px 0 0 -6.5px;
+  padding: 0;
+  border: 2px solid #1f6fe0;
+  border-radius: 50%;
+  background: #fff;
+  box-sizing: border-box;
+  cursor: grab;
+  pointer-events: auto;
+}
+.lyr-wire-point:hover { background: #1f6fe0; box-shadow: 0 0 0 3px rgb(31 111 224 / 0.25); }
+.lyr-wire-handles.lyr-dragging .lyr-wire-point { cursor: grabbing; }
+.lyr-wire-swatches { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; }
+.lyr-wire-swatch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid rgb(0 0 0 / 0.25);
+  border-radius: 50%;
+  background: var(--swatch, #fff);
+  cursor: pointer;
+}
+.lyr-wire-swatch.lyr-on { box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--lyr-accent); }
+.lyr-wire-swatch-pick { overflow: hidden; background: conic-gradient(#d33a2c, #f2c400, #2e9e4f, #2f6fd6, #8a4fc9, #d33a2c); }
+.lyr-wire-swatch-pick input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.lyr-wire-dot { display: inline-block; flex: 0 0 auto; width: 10px; height: 10px; margin: 0 2px; border: 1px solid rgb(0 0 0 / 0.35); border-radius: 50%; background: var(--swatch, #d33a2c); }
+.lyr-scene-list-head { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding: 6px 4px 2px; border-top: 1px solid var(--lyr-line); color: var(--lyr-muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }

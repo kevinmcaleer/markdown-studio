@@ -10,6 +10,7 @@
 import { meshTable, restoreParts, type Meshes } from "./meshTable";
 import { normalizeScrew, type ScrewSpec } from "./screw";
 import { normalizeTrack, type TrackSpec } from "./trackSpec";
+import { normalizePlug, normalizeSockets, normalizeWire, type PartSocket, type PlugSpec, type WireSpec } from "./wireSpec";
 
 export type Vec3 = [number, number, number];
 
@@ -62,6 +63,15 @@ export interface ScenePart {
    * the arrow runs, and whether it's left out.
    */
   arrow?: PartArrow;
+  /**
+   * A wire (see wireSpec.ts): its model is worked out from the parts its
+   * ends and waypoints are on, so it has no file and stays at the origin.
+   */
+  wire?: WireSpec;
+  /** Places on this part a plug goes in (a servo's two lead sockets, say). */
+  sockets?: PartSocket[];
+  /** A connector housing sitting in one of its parent's sockets (its model carried in `data`). */
+  plug?: PlugSpec;
 }
 
 export interface PartArrow {
@@ -150,6 +160,10 @@ export interface SceneData {
   section?: SectionPlane;
   /** Solid arrows drawn in the picture along each exploded part's gap, from the part to where it fits (an assembly step). */
   arrows?: boolean;
+  /** The wiring view: every part but the wires and plugs drawn ghosted, so the wires read. */
+  wiring?: boolean;
+  /** The wires and plugs left out of this picture. */
+  hideWiring?: boolean;
 }
 
 /**
@@ -273,6 +287,20 @@ export function normalizeScene(value: unknown): SceneData {
         if (screw) part.screw = screw;
         const track = normalizeTrack(p.track);
         if (track) part.track = track;
+        const wire = normalizeWire(p.wire);
+        if (wire) {
+          // A wire's place is its ends': it has no file, and sits at the origin.
+          part.wire = wire;
+          part.position = [0, 0, 0];
+          part.rotation = [0, 0, 0];
+          delete part.url;
+          delete part.data;
+          delete part.file;
+        }
+        const sockets = normalizeSockets(p.sockets);
+        if (sockets.length) part.sockets = sockets;
+        const plug = normalizePlug(p.plug);
+        if (plug) part.plug = plug;
         if (p.arrow && typeof p.arrow === "object") {
           const a = p.arrow as { from?: unknown; to?: unknown; off?: unknown };
           const arrow: PartArrow = {};
@@ -313,6 +341,12 @@ export function normalizeScene(value: unknown): SceneData {
   const ids = new Set(parts.map(p => p.id));
   const byId = new Map(parts.map(p => [p.id, p]));
   for (const p of parts) {
+    // A wire isn't joined to anything (its ends are), and its points on parts no longer there go.
+    if (p.wire) {
+      delete p.parent;
+      delete p.joint;
+      p.wire.waypoints = p.wire.waypoints.filter(w => !w.part || ids.has(w.part));
+    }
     if (p.parent && !ids.has(p.parent)) delete p.parent;
     const seen = new Set([p.id]);
     for (let q = p.parent ? byId.get(p.parent) : undefined; q; q = q.parent ? byId.get(q.parent) : undefined) {
@@ -351,6 +385,8 @@ export function normalizeScene(value: unknown): SceneData {
   const section = normalizeSection(v.section);
   if (section) out.section = section;
   if (v.arrows === true) out.arrows = true;
+  if (v.wiring === true) out.wiring = true;
+  if (v.hideWiring === true) out.hideWiring = true;
   return out;
 }
 
@@ -508,6 +544,21 @@ export function highlightedParts(parts: ScenePart[]): Set<string> {
 export function applyPreset(style: SceneStyle, id: string): SceneStyle {
   const p = STYLE_PRESETS.find(x => x.id === id);
   return p ? { ...p.style, highlight: style.highlight, ghost: style.ghost, ...(style.draft === false ? { draft: false } : {}), ...(style.draftSolid ? { draftSolid: true } : {}), preset: p.id } : style;
+}
+
+/** Whether a part is wiring: a wire, or a plug on the end of one. */
+export function isWiring(p: Pick<ScenePart, "wire" | "plug">): boolean {
+  return !!(p.wire || p.plug);
+}
+
+/**
+ * What the scene's wiring settings make of a part's look: in the wiring view
+ * every other part is ghosted; with wiring hidden, wires and plugs are left out.
+ */
+export function shownAs(p: ScenePart, scene: Pick<SceneData, "wiring" | "hideWiring">): ScenePart {
+  if (scene.hideWiring && isWiring(p) && !p.hidden) return { ...p, hidden: true };
+  if (scene.wiring && !isWiring(p) && !p.ghost) return { ...p, ghost: true };
+  return p;
 }
 
 export function newPartId(parts: ScenePart[]): string {
