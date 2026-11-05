@@ -1,0 +1,57 @@
+{
+  "title": "Block stood on a plate's middle",
+  "why": "Bottom centre to top centre: the block sits on the plate, not turned. The plate's top is at z = 2 (parts are centred), the block's bottom 5 below its middle, so its middle goes to z = 7.",
+  "input": {
+    "parent": {
+      "shape": {
+        "plate": [
+          40,
+          40,
+          4
+        ]
+      }
+    },
+    "child": {
+      "shape": {
+        "box": [
+          10,
+          10,
+          10
+        ]
+      }
+    },
+    "parentClick": {
+      "at": [
+        1,
+        1,
+        2
+      ]
+    },
+    "childClick": {
+      "at": [
+        1,
+        1,
+        -5
+      ],
+      "looking": [
+        0,
+        0,
+        1
+      ]
+    },
+    "parentSnap": "centre",
+    "childSnap": "centre"
+  },
+  "expect": {
+    "position": [
+      0,
+      0,
+      7
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ]
+  }
+}

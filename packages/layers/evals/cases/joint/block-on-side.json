@@ -1,0 +1,62 @@
+{
+  "title": "Block joined to the side of a cube",
+  "why": "The block's bottom meets the cube's +X face, so the block lies along X: turned 90\u00b0 about Y (pitch). Its bottom is 15 below its middle, so its middle is 15 out from the face at x = 10.",
+  "input": {
+    "parent": {
+      "shape": {
+        "box": [
+          20,
+          20,
+          20
+        ]
+      }
+    },
+    "child": {
+      "shape": {
+        "box": [
+          10,
+          20,
+          30
+        ]
+      }
+    },
+    "parentClick": {
+      "at": [
+        10,
+        1,
+        1
+      ],
+      "looking": [
+        -1,
+        0,
+        0
+      ]
+    },
+    "childClick": {
+      "at": [
+        1,
+        1,
+        -15
+      ],
+      "looking": [
+        0,
+        0,
+        1
+      ]
+    },
+    "parentSnap": "centre",
+    "childSnap": "centre"
+  },
+  "expect": {
+    "position": [
+      25,
+      0,
+      0
+    ],
+    "rotation": [
+      0,
+      90,
+      0
+    ]
+  }
+}

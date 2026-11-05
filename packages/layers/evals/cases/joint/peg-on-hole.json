@@ -1,0 +1,65 @@
+{
+  "title": "Peg stood over a hole",
+  "why": "The peg's bottom centre goes to the hole's centre on the plate's top (10, 0, 2); the peg is 8 tall, so its middle is 4 above that.",
+  "input": {
+    "parent": {
+      "shape": {
+        "plate": [
+          40,
+          20,
+          4
+        ],
+        "holes": [
+          {
+            "at": [
+              10,
+              0
+            ],
+            "r": 3
+          }
+        ]
+      }
+    },
+    "child": {
+      "shape": {
+        "cylinder": [
+          3,
+          8
+        ]
+      }
+    },
+    "parentClick": {
+      "at": [
+        13.5,
+        0,
+        2
+      ]
+    },
+    "childClick": {
+      "at": [
+        0.5,
+        0.5,
+        -4
+      ],
+      "looking": [
+        0,
+        0,
+        1
+      ]
+    },
+    "parentSnap": "hole",
+    "childSnap": "centre"
+  },
+  "expect": {
+    "position": [
+      10,
+      0,
+      6
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ]
+  }
+}

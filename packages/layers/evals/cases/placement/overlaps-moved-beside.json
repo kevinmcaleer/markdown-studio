@@ -1,0 +1,38 @@
+{
+  "title": "New part whose file spot is inside another",
+  "why": "It would sit inside the cube, so it goes just beside the group along X: 10 (the cube's side) + 10 (the gap) + 10 (half its width), standing on the floor.",
+  "input": {
+    "existing": [
+      {
+        "min": [
+          -10,
+          -10,
+          0
+        ],
+        "max": [
+          10,
+          10,
+          20
+        ]
+      }
+    ],
+    "at": [
+      0,
+      0,
+      10
+    ],
+    "size": [
+      20,
+      20,
+      20
+    ]
+  },
+  "expect": {
+    "keepsOwnSpot": false,
+    "position": [
+      30,
+      0,
+      10
+    ]
+  }
+}

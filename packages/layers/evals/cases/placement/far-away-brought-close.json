@@ -1,0 +1,38 @@
+{
+  "title": "New part whose file spot is metres away",
+  "why": "A part drawn at some far-off spot must not land out of sight: it comes to just beside the group.",
+  "input": {
+    "existing": [
+      {
+        "min": [
+          -10,
+          -10,
+          0
+        ],
+        "max": [
+          10,
+          10,
+          20
+        ]
+      }
+    ],
+    "at": [
+      5000,
+      3000,
+      0
+    ],
+    "size": [
+      10,
+      10,
+      10
+    ]
+  },
+  "expect": {
+    "keepsOwnSpot": false,
+    "position": [
+      25,
+      0,
+      5
+    ]
+  }
+}

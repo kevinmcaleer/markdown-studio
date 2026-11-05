@@ -1,0 +1,28 @@
+{
+  "title": "Coarse track round a very small wheel",
+  "why": "A 5 mm wheel with 8 mm pieces is a tight bend: the pieces still must not cut through the wheel.",
+  "input": {
+    "wheels": [
+      {
+        "centre": [
+          0,
+          0,
+          0
+        ],
+        "radius": 5
+      },
+      {
+        "centre": [
+          80,
+          0,
+          0
+        ],
+        "radius": 25
+      }
+    ],
+    "pitch": 8,
+    "count": 28,
+    "lift": 1
+  },
+  "expect": {}
+}

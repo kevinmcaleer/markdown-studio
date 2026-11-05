@@ -1,0 +1,27 @@
+{
+  "title": "Track round a big and a small wheel",
+  "why": "Unequal wheels make the straights slope; the pieces should still join all the way round.",
+  "input": {
+    "wheels": [
+      {
+        "centre": [
+          0,
+          0,
+          0
+        ],
+        "radius": 30
+      },
+      {
+        "centre": [
+          150,
+          0,
+          0
+        ],
+        "radius": 10
+      }
+    ],
+    "pitch": 12,
+    "count": 30
+  },
+  "expect": {}
+}

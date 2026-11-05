@@ -1,0 +1,27 @@
+{
+  "title": "A cube from the usual three-quarter view",
+  "why": "One part: it should fill the picture (at least 90% of the way to the edge) with nothing cut off.",
+  "input": {
+    "parts": [
+      {
+        "shape": {
+          "box": [
+            40,
+            40,
+            40
+          ]
+        }
+      }
+    ],
+    "camera": {
+      "direction": [
+        1,
+        -1,
+        1
+      ]
+    }
+  },
+  "expect": {
+    "fill": 0.9
+  }
+}

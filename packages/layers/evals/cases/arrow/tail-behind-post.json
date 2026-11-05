@@ -1,0 +1,55 @@
+{
+  "title": "Arrow starting behind a post, tip behind a plate",
+  "why": "A post hides the start and the plate hides the tip, but the middle is in sight. A person would still want a short arrow with its head showing in the middle.",
+  "pass": 0,
+  "input": {
+    "parts": [
+      {
+        "shape": {
+          "box": [
+            60,
+            60,
+            4
+          ]
+        },
+        "position": [
+          0,
+          0,
+          2
+        ]
+      },
+      {
+        "shape": {
+          "box": [
+            8,
+            8,
+            60
+          ]
+        },
+        "position": [
+          8,
+          -8,
+          -30
+        ]
+      }
+    ],
+    "camera": {
+      "direction": [
+        1,
+        -1,
+        1
+      ]
+    },
+    "from": [
+      0,
+      0,
+      -50
+    ],
+    "to": [
+      0,
+      0,
+      0
+    ]
+  },
+  "expect": {}
+}

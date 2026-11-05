@@ -1,0 +1,87 @@
+{
+  "title": "New part highlighted, earlier part ghosted",
+  "why": "The part fitted in this step is tinted blue; one fitted in an earlier step is drawn faint grey.",
+  "scene": {
+    "parts": [
+      {
+        "id": "base",
+        "shape": {
+          "plate": [
+            80,
+            50,
+            5
+          ],
+          "holes": [
+            {
+              "at": [
+                -30,
+                -17
+              ],
+              "r": 1.6
+            },
+            {
+              "at": [
+                30,
+                -17
+              ],
+              "r": 1.6
+            },
+            {
+              "at": [
+                -30,
+                17
+              ],
+              "r": 1.6
+            },
+            {
+              "at": [
+                30,
+                17
+              ],
+              "r": 1.6
+            }
+          ]
+        }
+      },
+      {
+        "id": "old",
+        "shape": {
+          "box": [
+            20,
+            20,
+            15
+          ]
+        },
+        "position": [
+          -20,
+          0,
+          10
+        ],
+        "ghost": true
+      },
+      {
+        "id": "new",
+        "shape": {
+          "cylinder": [
+            8,
+            25
+          ]
+        },
+        "position": [
+          20,
+          0,
+          15
+        ],
+        "highlight": true
+      }
+    ],
+    "camera": {
+      "direction": [
+        1,
+        -1,
+        0.82
+      ],
+      "fit": true
+    }
+  }
+}

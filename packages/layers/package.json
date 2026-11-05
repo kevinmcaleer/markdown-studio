@@ -27,7 +27,10 @@
     "dev": "vite demo",
     "build": "vite build && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "eval": "vitest run -c vitest.evals.config.ts",
+    "eval:update": "EVAL_UPDATE=1 vitest run -c vitest.evals.config.ts",
+    "eval:pictures": "node evals/pictures.mjs"
   },
   "dependencies": {
     "fabric": "6.9.1",
@@ -38,6 +41,7 @@
     "@types/node": "26.6.5",
     "@types/three": "0.187.0",
     "happy-dom": "20.14.5",
+    "playwright": "1.63.0",
     "typescript": "7.0.2",
     "vite": "8.3.5",
     "vitest": "5.0.5"

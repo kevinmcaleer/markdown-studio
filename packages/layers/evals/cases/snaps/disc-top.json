@@ -1,0 +1,32 @@
+{
+  "title": "Top of a disc",
+  "why": "A round flat face: its middle is the one point a person aims for.",
+  "input": {
+    "shape": {
+      "cylinder": [
+        15,
+        5
+      ]
+    },
+    "click": {
+      "at": [
+        4,
+        3,
+        5
+      ]
+    }
+  },
+  "expect": {
+    "curved": false,
+    "snaps": [
+      {
+        "role": "centre",
+        "p": [
+          0,
+          0,
+          5
+        ]
+      }
+    ]
+  }
+}

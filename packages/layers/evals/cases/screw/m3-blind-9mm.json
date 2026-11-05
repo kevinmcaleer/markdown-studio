@@ -1,0 +1,35 @@
+{
+  "title": "M3 blind hole 9 mm deep",
+  "why": "A blind hole takes the longest screw that fits: 8 mm in a 9 mm hole.",
+  "input": {
+    "shape": {
+      "plate": [
+        20,
+        20,
+        12
+      ],
+      "holes": [
+        {
+          "at": [
+            0,
+            0
+          ],
+          "r": 1.5,
+          "depth": 9
+        }
+      ]
+    },
+    "click": {
+      "at": [
+        0,
+        -2.0,
+        12
+      ]
+    }
+  },
+  "expect": {
+    "d": 3,
+    "length": 8,
+    "through": false
+  }
+}

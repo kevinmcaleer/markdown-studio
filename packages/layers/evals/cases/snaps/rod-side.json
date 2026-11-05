@@ -1,0 +1,47 @@
+{
+  "title": "Side of a rod",
+  "why": "A round side has no middle to aim at; its two end circles (rims) are what a wheel or bearing lines up with.",
+  "input": {
+    "shape": {
+      "cylinder": [
+        5,
+        30
+      ]
+    },
+    "click": {
+      "at": [
+        5,
+        0,
+        12
+      ],
+      "looking": [
+        -1,
+        0,
+        0
+      ]
+    }
+  },
+  "expect": {
+    "curved": true,
+    "snaps": [
+      {
+        "role": "rim",
+        "p": [
+          0,
+          0,
+          30
+        ],
+        "radius": 5
+      },
+      {
+        "role": "rim",
+        "p": [
+          0,
+          0,
+          0
+        ],
+        "radius": 5
+      }
+    ]
+  }
+}

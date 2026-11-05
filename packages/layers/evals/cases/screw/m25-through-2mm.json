@@ -1,0 +1,34 @@
+{
+  "title": "M2.5 hole through a 2 mm plate",
+  "why": "A 2.7 mm hole is too small for M3, so M2.5. 2 + 3.75 = 5.75, so 6 mm.",
+  "input": {
+    "shape": {
+      "plate": [
+        30,
+        20,
+        2
+      ],
+      "holes": [
+        {
+          "at": [
+            5,
+            0
+          ],
+          "r": 1.35
+        }
+      ]
+    },
+    "click": {
+      "at": [
+        5,
+        -1.85,
+        2
+      ]
+    }
+  },
+  "expect": {
+    "d": 2.5,
+    "length": 6,
+    "through": true
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "title": "A tall tower in a wide picture",
+  "why": "Height is what limits a tall part in a 16:9 picture: top to bottom should fill it.",
+  "input": {
+    "parts": [
+      {
+        "shape": {
+          "box": [
+            10,
+            10,
+            200
+          ]
+        }
+      }
+    ],
+    "camera": {
+      "direction": [
+        0,
+        -1,
+        0
+      ]
+    },
+    "aspect": 1.7778
+  },
+  "expect": {
+    "fill": 0.9
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "title": "New part from the same CAD assembly",
+  "why": "Its file spot is right next to the cube without touching it: parts exported from one assembly land where they belong.",
+  "input": {
+    "existing": [
+      {
+        "min": [
+          -10,
+          -10,
+          0
+        ],
+        "max": [
+          10,
+          10,
+          20
+        ]
+      }
+    ],
+    "at": [
+      25,
+      0,
+      10
+    ],
+    "size": [
+      10,
+      10,
+      20
+    ]
+  },
+  "expect": {
+    "keepsOwnSpot": true
+  }
+}

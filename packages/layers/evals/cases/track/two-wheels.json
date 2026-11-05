@@ -1,0 +1,29 @@
+{
+  "title": "Track round two equal wheels",
+  "why": "The belt round two 20 mm wheels 100 mm apart is 200 + 2\u03c0\u00b720 = 325.7 mm, so about 32.5 pieces of 10 mm (a little under, as straight pieces cut the corners).",
+  "input": {
+    "wheels": [
+      {
+        "centre": [
+          0,
+          0,
+          0
+        ],
+        "radius": 20
+      },
+      {
+        "centre": [
+          100,
+          0,
+          0
+        ],
+        "radius": 20
+      }
+    ],
+    "pitch": 10,
+    "count": 32
+  },
+  "expect": {
+    "fits": 32.4
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "title": "Tank track over three wheels",
+  "why": "Two road wheels and a raised idler: every piece must join the next and none may cut into a wheel.",
+  "input": {
+    "wheels": [
+      {
+        "centre": [
+          0,
+          0,
+          0
+        ],
+        "radius": 20
+      },
+      {
+        "centre": [
+          120,
+          0,
+          0
+        ],
+        "radius": 20
+      },
+      {
+        "centre": [
+          60,
+          0,
+          50
+        ],
+        "radius": 15
+      }
+    ],
+    "pitch": 8,
+    "count": 45,
+    "lift": 1
+  },
+  "expect": {}
+}

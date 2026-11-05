@@ -1,0 +1,27 @@
+{
+  "title": "A long rod seen from the front, in a 4:3 picture",
+  "why": "The rod is far wider than tall: its width should fill the picture.",
+  "input": {
+    "parts": [
+      {
+        "shape": {
+          "box": [
+            200,
+            10,
+            10
+          ]
+        }
+      }
+    ],
+    "camera": {
+      "direction": [
+        0,
+        -1,
+        0
+      ]
+    }
+  },
+  "expect": {
+    "fill": 0.9
+  }
+}

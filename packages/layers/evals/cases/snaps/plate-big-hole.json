@@ -1,0 +1,50 @@
+{
+  "title": "Plate with a big hole off to one side",
+  "why": "A person lining parts up on the plate's middle means the middle of its outline (0, 0), wherever the holes are.",
+  "input": {
+    "shape": {
+      "plate": [
+        40,
+        20,
+        4
+      ],
+      "holes": [
+        {
+          "at": [
+            10,
+            0
+          ],
+          "r": 6
+        }
+      ]
+    },
+    "click": {
+      "at": [
+        -10,
+        -5,
+        4
+      ]
+    }
+  },
+  "expect": {
+    "snaps": [
+      {
+        "role": "centre",
+        "p": [
+          0,
+          0,
+          4
+        ]
+      },
+      {
+        "role": "hole",
+        "p": [
+          10,
+          0,
+          4
+        ],
+        "radius": 6
+      }
+    ]
+  }
+}
