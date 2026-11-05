@@ -28,6 +28,8 @@ export type LayersOpenHow = {
   update?: boolean;
   /** Start a new graphic after this one, as its next assembly step. */
   nextStep?: boolean;
+  /** Start a new graphic after this one as an exact copy of it, its step number one on. */
+  duplicate?: boolean;
 };
 
 export type LayersOpener = {

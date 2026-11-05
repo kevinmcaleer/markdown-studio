@@ -200,6 +200,20 @@ export function nextStepDoc(doc: LayersDoc): LayersDoc {
       }
     }
   }
+  return bumpStep(out);
+}
+
+/**
+ * A copy of the step `doc` to go straight after it: the same 3D scenes and
+ * drawing, untouched (its own copy, so changing it changes nothing else),
+ * with its step numbers one on.
+ */
+export function duplicateStepDoc(doc: LayersDoc): LayersDoc {
+  return bumpStep(structuredClone(doc));
+}
+
+/** Puts `out`'s step numbers (badges, and a title that ends in a number) up by one, in place. */
+function bumpStep(out: LayersDoc): LayersDoc {
   const bump = (objects: Record<string, unknown>[]) => {
     for (const o of objects) {
       if (typeof o.badge === "number" && o.badge > 0 && Array.isArray(o.objects)) {

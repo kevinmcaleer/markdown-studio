@@ -324,6 +324,23 @@ class ImageWidget extends WidgetType {
             });
             tools.prepend(next);
           }
+          if (st.scene && !tools.querySelector("[data-duplicate-step]")) {
+            const dup = document.createElement("button");
+            dup.type = "button";
+            dup.className = "cm-md-image-layers";
+            dup.dataset.duplicateStep = "";
+            dup.textContent = "Duplicate step";
+            dup.title = "A copy of this step after it, to change on its own: the steps before and after stay as they are, and the ones after are numbered on";
+            dup.addEventListener("mousedown", (e) => e.preventDefault());
+            dup.addEventListener("click", (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              layers.open(view, view.posAtDOM(wrap), undefined, { duplicate: true });
+            });
+            const next = tools.querySelector("[data-next-step]");
+            if (next) next.after(dup);
+            else tools.prepend(dup);
+          }
           if (st.stale || st.step) {
             // "Update" draws it again and saves it in one press; "Update all"
             // does that for every out-of-date graphic in the write-up.

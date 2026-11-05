@@ -22,6 +22,8 @@ export type LayersApi = {
   readDoc(url: string, fetchImage?: (url: string) => Promise<Blob>): Promise<unknown | null>;
   /** The next assembly step after a graphic (Layers 3D scenes). */
   nextStepDoc?(doc: unknown): unknown;
+  /** A copy of a step to go straight after it, its step number one on (Layers 3D scenes). */
+  duplicateStepDoc?(doc: unknown): unknown;
   staleScenes?(doc: unknown, stamp: number): number;
   hasScene?(doc: unknown): boolean;
   stepBadge?(doc: unknown): { last: number; auto: number | null } | null;
@@ -271,17 +273,17 @@ const updating = new WeakMap<EditorView, Map<string, Promise<void>>>();
  * pictures drawn again from the project's model and its step number put
  * right, saves the new picture and points the text at it, as Save would.
  */
-export function updateGraphic(view: EditorView, host: LayersHost, url: string): Promise<void> {
+export function updateGraphic(view: EditorView, host: LayersHost, url: string, stepOnly = false): Promise<void> {
   let runs = updating.get(view);
   if (!runs) updating.set(view, (runs = new Map()));
   const running = runs.get(url);
   if (running) return running;
-  const run = redraw(view, host, url).finally(() => runs!.delete(url));
+  const run = redraw(view, host, url, stepOnly).finally(() => runs!.delete(url));
   runs.set(url, run);
   return run;
 }
 
-async function redraw(view: EditorView, host: LayersHost, url: string): Promise<void> {
+async function redraw(view: EditorView, host: LayersHost, url: string, stepOnly = false): Promise<void> {
   if (view.state.readOnly) return;
   const api = await loadLayers(host.load);
   const fetchImage = host.fetchImage ?? defaultFetch;
@@ -289,6 +291,8 @@ async function redraw(view: EditorView, host: LayersHost, url: string): Promise<
   if (!doc) throw new Error("its layers couldn't be read");
   const text = view.state.doc.toString();
   const st = await graphicStatus(host, url, text);
+  // Step only: its number put right; a 3D picture behind the model stays marked so.
+  const redrawScenes = !!st?.stale && !stepOnly;
   const g = graphicsIn(text).find(g => g.url === url);
   const stepNumber = g ? await stepAt(api, host, text, g.at).catch(() => undefined) : undefined;
   const box = document.createElement("div");
@@ -306,7 +310,7 @@ async function redraw(view: EditorView, host: LayersHost, url: string): Promise<
       listModels: host.listModels,
       fetchModel: host.fetchModel ?? (async (u: string) => (await defaultFetch(u)).arrayBuffer()),
       ...(host.loadModel && host.saveModel ? { loadModel: () => projectModel(host), saveModel: host.saveModel } : {}),
-      updateScenes: !!st?.stale,
+      updateScenes: redrawScenes,
       stepNumber,
       onDone: () => {},
       onCancel: () => {},
@@ -314,7 +318,7 @@ async function redraw(view: EditorView, host: LayersHost, url: string): Promise<
     if (!editor.ready || !editor.exportResult) throw new Error("this version of Layers can't update a graphic without opening it");
     await editor.ready();
     // A picture that couldn't be drawn again stays out of date, rather than saved as if it were done.
-    const model = st?.stale ? await projectModel(host) : null;
+    const model = redrawScenes ? await projectModel(host) : null;
     if (model && api.staleScenes && editor.getDoc && api.staleScenes(editor.getDoc(), model.stamp)) {
       throw new Error("its 3D picture couldn't be drawn again; open it with Edit graphic to see why");
     }
@@ -341,6 +345,41 @@ async function pendingGraphics(host: LayersHost, text: string): Promise<string[]
     if (st && (st.stale || st.step)) out.push(url);
   }
   return out;
+}
+
+/**
+ * After a step is put in between (Next step, Duplicate step), the graphics
+ * below the one at `url` that number themselves from their place get their
+ * new numbers, top to bottom, one at a time. Only their numbers change.
+ */
+export async function renumberAfter(view: EditorView, host: LayersHost, url: string): Promise<number> {
+  let done = 0;
+  const failed: string[] = [];
+  for (;;) {
+    const text = view.state.doc.toString();
+    const list = graphicsIn(text);
+    const i = list.findIndex(g => g.url === url);
+    if (i < 0) break;
+    let next: string | null = null;
+    for (const g of list.slice(i + 1)) {
+      if (failed.includes(g.url)) continue;
+      const st = await graphicStatus(host, g.url, text).catch(() => null);
+      if (st?.step) {
+        next = g.url;
+        break;
+      }
+    }
+    if (!next || view.state.readOnly) break;
+    try {
+      await updateGraphic(view, host, next, true);
+      // Still there under its old link: it wasn't saved, so it isn't tried again.
+      if (graphicsIn(view.state.doc.toString()).some(g => g.url === next)) failed.push(next);
+      else done++;
+    } catch {
+      failed.push(next);
+    }
+  }
+  return done;
 }
 
 const allRuns = new WeakMap<EditorView, LayersUpdateProgress>();
@@ -385,9 +424,10 @@ export function openLayers(view: EditorView, host: LayersHost, pos: number, mode
   if (view.state.readOnly) return;
   if (sessions.has(view)) closeSession(view);
   const at = imageAt(view.state, pos);
-  // "Next step" starts a new graphic after this one, from a copy of it.
-  const image = how.nextStep ? null : at;
-  const from = how.nextStep ? at : image;
+  // "Next step" and "Duplicate step" start a new graphic after this one, from a copy of it.
+  const after = !!(how.nextStep || how.duplicate);
+  const image = after ? null : at;
+  const from = after ? at : image;
   const id = nextId++;
   const container = document.createElement("div");
   container.className = "cm-layers-block";
@@ -403,9 +443,13 @@ export function openLayers(view: EditorView, host: LayersHost, pos: number, mode
       const api = await loadLayers(host.load);
       let doc = from && isLayersUrl(from.url) ? await api.readDoc(from.url, fetchImage) : null;
       if (how.nextStep && doc && api.nextStepDoc) doc = api.nextStepDoc(doc);
+      else if (how.duplicate && doc) {
+        if (!api.duplicateStepDoc) throw new Error("this version of Layers can't duplicate a step");
+        doc = api.duplicateStepDoc(doc);
+      }
       // Its step number from its place: after the graphic it's the next step of, or where it is.
       const text = view.state.doc.toString();
-      const stepNumber = await stepAt(api, host, text, how.nextStep && from ? from.to : image ? image.from : pos).catch(() => undefined);
+      const stepNumber = await stepAt(api, host, text, after && from ? from.to : image ? image.from : pos).catch(() => undefined);
       if (session.closed) return;
       container.innerHTML = "";
       session.editor = api.mount(container, {
@@ -449,6 +493,8 @@ export function openLayers(view: EditorView, host: LayersHost, pos: number, mode
           }
           view.focus();
           if (oldUrl && oldUrl !== url) host.onReplace?.(oldUrl, url);
+          // A step put in between: the steps after it count on from it.
+          if (after) void renumberAfter(view, host, url).catch(() => {});
         },
         onCancel: () => {
           closeSession(view);

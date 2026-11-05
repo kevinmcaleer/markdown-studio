@@ -922,7 +922,11 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
   function numberStep(): boolean {
     const b = autoBadge();
     if (!b || !opts.stepNumber || b.badge === opts.stepNumber) return false;
+    const was = b.badge;
     setBadge(b, opts.stepNumber, false);
+    // A title that ends in the old number follows it: "Step 3" → "Step 4".
+    const m = /(\d+)(\D*)$/.exec(titleInput.value);
+    if (m && Number(m[1]) === was) titleInput.value = titleInput.value.slice(0, m.index) + opts.stepNumber + m[2];
     return true;
   }
 
