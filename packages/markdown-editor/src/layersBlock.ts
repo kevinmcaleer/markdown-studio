@@ -1,7 +1,7 @@
 import { StateEffect, StateField, type EditorState, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { imageAt, imageMarkdown } from "./imagePopover";
-import { isLayersUrl, LAYERS_MODEL_EVENT, layersOpener, layersUrl, type LayersOpenHow } from "./layersFacet";
+import { isLayersUrl, LAYERS_MODEL_EVENT, LAYERS_UPDATE_EVENT, layersOpener, layersUrl, type LayersOpenHow, type LayersUpdateProgress } from "./layersFacet";
 import type { SlashCommand } from "./slashMenu";
 
 // Layers graphics in the text (the `layers` option). A graphic is an ordinary
@@ -34,6 +34,10 @@ export type LayersEditor = {
   mode(): "inline" | "full";
   destroy(): void;
   focus(): void;
+  /** Resolves once it has opened (layers loaded, 3D pictures drawn again with `updateScenes`). */
+  ready?(): Promise<void>;
+  getDoc?(): unknown;
+  exportResult?(): Promise<LayersResult>;
   /** Draws an assembly guide from the project's model, a page at a time (Layers 3D scenes). */
   assemblyGuide?(guide: { title?: string; each(result: LayersResult, index: number, total: number): void | Promise<void> }): Promise<number>;
 };
@@ -250,6 +254,131 @@ async function graphicStatus(host: LayersHost, url: string, text = ""): Promise<
     if (want !== badge.auto) step = want;
   }
   return { scene: scene && !!(host.loadModel && host.saveModel), stale, ...(step ? { step } : {}) };
+}
+
+// ------------------------------------------------------------ updating in one press
+
+/** Where the graphic at `url` is in the text now, if it's still there. */
+function graphicAt(view: EditorView, url: string) {
+  const g = graphicsIn(view.state.doc.toString()).find(g => g.url === url);
+  return g ? imageAt(view.state, g.at) : null;
+}
+
+const updating = new WeakMap<EditorView, Map<string, Promise<void>>>();
+
+/**
+ * "Update" on an out-of-date graphic: opens it out of sight with its 3D
+ * pictures drawn again from the project's model and its step number put
+ * right, saves the new picture and points the text at it, as Save would.
+ */
+export function updateGraphic(view: EditorView, host: LayersHost, url: string): Promise<void> {
+  let runs = updating.get(view);
+  if (!runs) updating.set(view, (runs = new Map()));
+  const running = runs.get(url);
+  if (running) return running;
+  const run = redraw(view, host, url).finally(() => runs!.delete(url));
+  runs.set(url, run);
+  return run;
+}
+
+async function redraw(view: EditorView, host: LayersHost, url: string): Promise<void> {
+  if (view.state.readOnly) return;
+  const api = await loadLayers(host.load);
+  const fetchImage = host.fetchImage ?? defaultFetch;
+  const doc = await api.readDoc(url, fetchImage);
+  if (!doc) throw new Error("its layers couldn't be read");
+  const text = view.state.doc.toString();
+  const st = await graphicStatus(host, url, text);
+  const g = graphicsIn(text).find(g => g.url === url);
+  const stepNumber = g ? await stepAt(api, host, text, g.at).catch(() => undefined) : undefined;
+  const box = document.createElement("div");
+  box.className = "cm-layers-hidden";
+  box.style.cssText = "position:fixed;left:-40000px;top:0;width:1200px;height:800px;overflow:hidden;pointer-events:none";
+  document.body.appendChild(box);
+  let editor: LayersEditor | null = null;
+  try {
+    editor = api.mount(box, {
+      doc,
+      mode: "inline",
+      allowInline: true,
+      fetchImage,
+      listImages: host.listImages,
+      listModels: host.listModels,
+      fetchModel: host.fetchModel ?? (async (u: string) => (await defaultFetch(u)).arrayBuffer()),
+      ...(host.loadModel && host.saveModel ? { loadModel: () => projectModel(host), saveModel: host.saveModel } : {}),
+      updateScenes: !!st?.stale,
+      stepNumber,
+      onDone: () => {},
+      onCancel: () => {},
+    });
+    if (!editor.ready || !editor.exportResult) throw new Error("this version of Layers can't update a graphic without opening it");
+    await editor.ready();
+    // A picture that couldn't be drawn again stays out of date, rather than saved as if it were done.
+    const model = st?.stale ? await projectModel(host) : null;
+    if (model && api.staleScenes && editor.getDoc && api.staleScenes(editor.getDoc(), model.stamp)) {
+      throw new Error("its 3D picture couldn't be drawn again; open it with Edit graphic to see why");
+    }
+    const result = await editor.exportResult();
+    const file = new File([result.png], graphicFileName(result.title), { type: "image/png" });
+    const newUrl = layersUrl(await host.uploadImage(file));
+    const current = graphicAt(view, url);
+    if (!current) return;
+    const insert = imageMarkdown({ alt: result.title || current.alt || "Graphic", url: newUrl, title: current.title });
+    view.dispatch({ changes: { from: current.from, to: current.to, insert }, userEvent: "input.layers" });
+    if (newUrl !== url) host.onReplace?.(url, newUrl);
+  } finally {
+    editor?.destroy();
+    box.remove();
+  }
+}
+
+/** The graphics in `text` that are out of date (behind the model, or numbered out of place). */
+async function pendingGraphics(host: LayersHost, text: string): Promise<string[]> {
+  const out: string[] = [];
+  for (const { url } of graphicsIn(text)) {
+    if (out.includes(url)) continue;
+    const st = await graphicStatus(host, url, text).catch(() => null);
+    if (st && (st.stale || st.step)) out.push(url);
+  }
+  return out;
+}
+
+const allRuns = new WeakMap<EditorView, LayersUpdateProgress>();
+function sayProgress(view: EditorView, p: LayersUpdateProgress): void {
+  if (p) allRuns.set(view, p);
+  else allRuns.delete(view);
+  dispatchEvent(new CustomEvent(LAYERS_UPDATE_EVENT, { detail: p }));
+}
+
+/**
+ * "Update all": every out-of-date graphic, top to bottom, one at a time.
+ * Each is checked again as its turn comes (an earlier one's new step
+ * number can put a later one right). Says how many it saved.
+ */
+export async function updateAllGraphics(view: EditorView, host: LayersHost): Promise<number> {
+  if (allRuns.get(view) || view.state.readOnly) return 0;
+  const first = await pendingGraphics(host, view.state.doc.toString());
+  let done = 0;
+  const failed: string[] = [];
+  sayProgress(view, { done, total: first.length });
+  try {
+    for (;;) {
+      const text = view.state.doc.toString();
+      const todo = (await pendingGraphics(host, text)).filter(u => !failed.includes(u));
+      if (!todo.length) break;
+      sayProgress(view, { done, total: done + todo.length });
+      try {
+        await updateGraphic(view, host, todo[0]);
+        done++;
+      } catch {
+        failed.push(todo[0]);
+      }
+    }
+  } finally {
+    sayProgress(view, null);
+  }
+  if (failed.length) throw new Error(`${failed.length === 1 ? "One graphic" : `${failed.length} graphics`} couldn't be updated; open ${failed.length === 1 ? "it" : "them"} with Edit graphic to see why.`);
+  return done;
 }
 
 export function openLayers(view: EditorView, host: LayersHost, pos: number, mode: "inline" | "full" = "inline", how: LayersOpenHow = {}): void {
@@ -495,10 +624,8 @@ const theme = EditorView.theme({
     boxShadow: "0 2px 8px rgb(0 0 0 / 0.2)",
   },
   ".cm-md-image-wrap:hover .cm-md-image-layers, .cm-md-image-layers:focus-visible": { opacity: "1" },
+  ".cm-md-image-stale-bar": { position: "absolute", bottom: "6px", left: "6px", display: "inline-flex", flexWrap: "wrap", gap: "6px" },
   ".cm-md-image-stale": {
-    position: "absolute",
-    bottom: "6px",
-    left: "6px",
     padding: "5px 10px",
     border: "0",
     borderRadius: "8px",
@@ -508,7 +635,8 @@ const theme = EditorView.theme({
     cursor: "pointer",
     boxShadow: "0 2px 8px rgb(0 0 0 / 0.2)",
   },
-  ".cm-md-image-stale:hover": { background: "#b45309" },
+  ".cm-md-image-stale:hover:not(:disabled)": { background: "#b45309" },
+  ".cm-md-image-stale:disabled": { cursor: "progress", opacity: "0.85" },
   ".cm-md-image-layers:hover": { background: "rgb(109 40 217)" },
 });
 
@@ -521,6 +649,10 @@ export function layersBlocks(host: LayersHost): Extension {
     layersOpener.of({
       open: (view, pos, mode, how) => openLayers(view, host, pos, mode ?? "inline", how),
       status: (url: string, text?: string) => graphicStatus(host, url, text),
+      update: (view, url) => updateGraphic(view, host, url),
+      pending: async (text) => (await pendingGraphics(host, text)).length,
+      updateAll: (view) => updateAllGraphics(view, host),
+      progress: (view) => allRuns.get(view) ?? null,
     }),
     ViewPlugin.define((view) => ({
       // Graphics moved, added or saved: each checks its step number again.

@@ -108,6 +108,12 @@ export interface LayersHandle {
   isDirty(): boolean;
   exportResult(): Promise<LayersResult>;
   /**
+   * Resolves once the graphic has opened: its layers loaded, its step
+   * number set and, with `updateScenes`, its 3D pictures drawn again. A
+   * host can then export it out of sight ("Update" in one press).
+   */
+  ready(): Promise<void>;
+  /**
    * Draws an assembly guide from the project's model on this editor's page,
    * one page at a time (cover, Before you start, Parts list, then a step
    * for each part), handing each finished page to `each`. Meant for an
@@ -3500,6 +3506,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     getDoc,
     isDirty,
     exportResult,
+    ready: () => opened,
     assemblyGuide,
     focus: () => root.focus({ preventScroll: true }),
     destroy,
@@ -3507,7 +3514,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
 
   root.dataset.mode = "";
   syncHistoryButtons();
-  void (async () => {
+  const opened = (async () => {
     if (start.objects.length) await load(start);
     else if (opts.picture) await startFromPicture(opts.picture);
     if (destroyed) return;
