@@ -400,7 +400,10 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     orbit.addEventListener("start", stopGlide);
     orbit.addEventListener("change", () => {
       if (glide) return;
+      const was = structuredClone(scene.camera);
       readCamera();
+      // Zoomed or slid across by hand: the view stays put while exploding, till Fit.
+      if (Math.abs(scene.camera.size - was.size) > 1e-3 || scene.camera.target.some((v, i) => Math.abs(v - was.target[i]) > 1e-3)) keepFitted = false;
       draw();
     });
     orbit.addEventListener("end", () => commit());
@@ -478,6 +481,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       }
       if (!looked && !kept) return status("Join parts first: then Smart explode points each one the clear way.", true);
       follow();
+      refit();
       commit();
       renderList();
       renderProps();
@@ -850,8 +854,38 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
 
     // ------------------------------------------------------------ views
 
+    /**
+     * The view follows the parts as they explode (Kev, 2026-11-06: always
+     * centred, filling the picture), as Fit does, until it's zoomed or slid
+     * across by hand. Fit or a view (Iso, Front...) has it follow again;
+     * turning round keeps it.
+     */
+    let keepFitted = true;
+    /**
+     * Does a saved scene open following the parts? Yes, unless its view is
+     * zoomed in closer than Fit (a close-up someone chose, kept as it is).
+     */
+    function opensFitted(): boolean {
+      return scene.camera.size >= 0.8 * fitCamera(scene.camera).size;
+    }
+    let fitHinted = false;
+    /** Fits the view to the parts where they are now, when it follows them (as they explode). */
+    function refit(): void {
+      if (!keepFitted && !fitHinted && loaded().length) {
+        fitHinted = true;
+        status("The view stays as you zoomed it: press Fit (F) and it follows the parts as they explode again.");
+      }
+      if (!keepFitted || !loaded().length) return;
+      const to = fitCamera(scene.camera);
+      stopGlide();
+      scene.camera = to;
+      applyCamera();
+      draw();
+    }
+
     /** Frames all the parts; `smooth` glides there and saves the step for undo. */
     function fitView(smooth = false): void {
+      keepFitted = true;
       art.scene.updateMatrixWorld(true);
       const to = fitCamera(scene.camera);
       if (smooth) return glideTo(to, commit);
@@ -871,6 +905,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     /** Turns the camera to show `box` (zooming in or out), keeping the direction it looks from. */
     function frameOn(box: Bounds): void {
       if (box.isEmpty()) return;
+      keepFitted = false;
       glideTo(frame(scene.camera, box, aspect, 1.35), commit);
     }
     /** Where a part is drawn now, as a box. */
@@ -914,6 +949,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const v = VIEWS.find(x => x.id === id);
       if (!v) return;
       art.scene.updateMatrixWorld(true);
+      keepFitted = true;
       glideTo(fitCamera({ ...scene.camera, direction: [...v.direction] }), commit);
     }
 
@@ -1135,6 +1171,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         if (p.explode === 0) delete p.explode;
         else p.explode = 0;
         follow();
+        refit();
         commit();
         renderList();
         status(p.explode === 0 ? `${p.name} stays assembled in this scene.` : `${p.name} explodes with the slider again.`);
@@ -1147,6 +1184,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         if (ps.length) {
           ps.forEach(x => delete x.explode);
           follow();
+          refit();
           commit();
           renderList();
           list.querySelector<HTMLInputElement>("[data-joint-explode-num]")?.focus();
@@ -1176,6 +1214,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         syncExplode();
       }
       follow();
+      refit();
       commit();
       renderList();
       status(`Only ${set.size === 1 ? "this joint explodes" : `these ${set.size} joints explode`}: the rest stay assembled.`);
@@ -1222,6 +1261,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         }
       }
       follow();
+      refit();
     });
     list.addEventListener("change", e => {
       const t = e.target as HTMLInputElement;
@@ -4418,6 +4458,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           syncExplode();
         }
         follow();
+        refit();
         renderJointDialog();
         return;
       }
@@ -5115,6 +5156,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       scene.explode = Math.max(0, Math.min(1, Number(explodeInput.value) / 100));
       explodeNum.value = explodeInput.value;
       follow();
+      refit();
       syncJointExplode();
     });
     explodeInput.addEventListener("change", () => commit());
@@ -5124,6 +5166,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       scene.explode = Math.max(0, Math.min(100, Math.round(v))) / 100;
       explodeInput.value = String(Math.round(scene.explode * 100));
       follow();
+      refit();
       syncJointExplode();
     });
     explodeNum.addEventListener("change", () => {
@@ -5467,6 +5510,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         if (p.explode === 0) delete p.explode;
         else p.explode = 0;
         follow();
+        refit();
         commit();
         renderList();
         renderProps();
@@ -5945,6 +5989,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           const own = scene.parts.filter(p => p.explode !== undefined);
           own.forEach(p => delete p.explode);
           follow();
+          refit();
           commit();
           renderList();
           status(`${own.length} joint${own.length === 1 ? " follows" : "s follow"} the Explode slider again.`);
@@ -6205,6 +6250,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         scene.arrows = true;
         rebuild();
         renderStrip();
+        // Each step fills the picture, drawn apart (as it plays, too).
+        if (keepFitted && loaded().length) glideTo(fitCamera(scene.camera));
       } else rebuild();
       renderList();
       renderProps();
@@ -6807,6 +6854,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         if ($(".lyr-status").textContent === "Loading the models…") status("");
         rebuild();
         applyCamera();
+        keepFitted = opensFitted();
       });
     } else {
       void openMenu();
