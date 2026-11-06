@@ -57,6 +57,8 @@ export type LayersEditor = {
   screwInventory?(): Promise<boolean>;
   /** The project's wire list as a Markdown table, "" with no wires (Layers 3D scenes). */
   wireList?(): Promise<string>;
+  /** The project's model as a looping animated GIF: assembled, apart, once round, together again (Layers 3D scenes). */
+  animatedModel?(options?: { width?: number; height?: number; progress?(done: number, total: number): void }): Promise<{ gif: Blob; width: number; height: number; stamp: number }>;
 };
 export type LayersResult = { png: Blob; title: string; width: number; height: number };
 
@@ -484,7 +486,9 @@ export function openLayers(view: EditorView, host: LayersHost, pos: number, mode
       // The model saved (its parts, steps or the guide's tools changed): the assembly guide follows once this graphic is done.
       let modelSaved = false;
       const followGuide = () => {
-        if (modelSaved) void refreshAssemblyGuide(view, host).catch(() => {});
+        if (!modelSaved) return;
+        void refreshAssemblyGuide(view, host).catch(() => {});
+        void refreshAnimatedModels(view, host).catch(() => {});
       };
       if (session.closed) return;
       container.innerHTML = "";
@@ -915,6 +919,163 @@ export function wireListCommand(host: LayersHost): SlashCommand {
     icon: "M2 12c3 0 3-4 6-4s3-4 6-4M2 10.5v3M14 2.5v3",
     block: true,
     run: (view) => void makeWireList(view, host),
+  };
+}
+
+// ------------------------------------------------------------ the animated model
+
+/** An animated model's link ends in #animated-model=<key>: the model (and view) it was drawn from. */
+const ANIMATION_MARK = /#animated-model(?:=([0-9a-z]*))?$/i;
+const ANIMATION_BUSY = /^\*Making the animated model[^\n]*\*$/m;
+
+export function isAnimationUrl(url: string): boolean {
+  return ANIMATION_MARK.test(url.trim());
+}
+
+/** What an animated model is drawn from, as a short key: the model's version and the view it's seen from. */
+export function animationKey(model: LayersProjectModel): string {
+  const view = model.defaultView ? (model.views as { id?: string; camera?: { direction?: unknown } }[] | undefined)?.find(v => v?.id === model.defaultView) : undefined;
+  return hashKey(JSON.stringify([model.stamp, view?.camera?.direction ?? null]));
+}
+
+function hashKey(text: string): string {
+  let a = 0x811c9dc5;
+  let b = 0x01000193;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    a = Math.imul(a ^ c, 0x01000193) >>> 0;
+    b = Math.imul(b ^ c, 0x811c9dc5) >>> 0;
+  }
+  return a.toString(36) + b.toString(36);
+}
+
+/** The animated models in the text: each one's link, its key and where its Markdown starts. */
+export function animationsIn(text: string): { url: string; key: string; at: number }[] {
+  const out: { url: string; key: string; at: number }[] = [];
+  for (const m of text.matchAll(/!\[[^\]\n]*\]\(\s*<?([^)\s>]+)/g)) {
+    const k = ANIMATION_MARK.exec(m[1]);
+    if (k) out.push({ url: m[1], key: k[1] || "", at: m.index! });
+  }
+  return out;
+}
+
+const animationRuns = new WeakSet<EditorView>();
+
+/** Draws the animation out of sight and uploads it: its link, marked with the model's key. */
+async function drawAnimation(host: LayersHost, progress: (done: number, total: number) => void, replaces?: string): Promise<string> {
+  const box = document.createElement("div");
+  box.className = "cm-layers-hidden";
+  box.style.cssText = "position:fixed;left:-40000px;top:0;width:1200px;height:800px;overflow:hidden;pointer-events:none";
+  document.body.appendChild(box);
+  let editor: LayersEditor | null = null;
+  try {
+    const api = await loadLayers(host.load);
+    const model = await projectModel(host);
+    if (!model || !model.parts.length) throw new Error("the project has no 3D model yet. Make one in a 3D scene (/Graphic, then 3D scene) first");
+    editor = api.mount(box, {
+      doc: null,
+      mode: "inline",
+      allowInline: true,
+      fetchImage: host.fetchImage ?? defaultFetch,
+      listModels: host.listModels,
+      fetchModel: host.fetchModel ?? (async (url: string) => (await defaultFetch(url)).arrayBuffer()),
+      loadModel: () => projectModel(host),
+      saveModel: async (m: LayersProjectModel) => {
+        await host.saveModel!(m);
+        modelCache.set(host, { at: Date.now(), model: Promise.resolve(m) });
+      },
+      onDone: () => {},
+      onCancel: () => {},
+    });
+    if (!editor.animatedModel) throw new Error("this version of Layers can't animate the model");
+    const made = await editor.animatedModel({ progress });
+    const file = new File([made.gif], "animated-model.gif", { type: "image/gif" });
+    const url = await host.uploadImage(file, replaces ? { replaces: replaces.replace(/#.*$/, "") } : undefined);
+    return `${url.trim().replace(/#.*$/, "")}#animated-model=${animationKey(model)}`;
+  } finally {
+    editor?.destroy();
+    box.remove();
+  }
+}
+
+/**
+ * "/Animated model": the project's 3D model as a looping animation (fully
+ * assembled, coming apart, turning once round, going back together), an
+ * animated GIF put in where the cursor is. A line says how it's going.
+ */
+export async function makeAnimatedModel(view: EditorView, host: LayersHost): Promise<void> {
+  if (view.state.readOnly || !host.loadModel || !host.saveModel) return;
+  const pos = view.state.selection.main.head;
+  const mark = (s: string) => `*Making the animated model${s}…*`;
+  const change = newGraphicInsert(view.state.doc.toString(), pos, mark(""));
+  view.dispatch({ changes: change, userEvent: "input.layers", selection: { anchor: change.from + change.insert.length } });
+  const setMark = (replacement: string) => {
+    const m = ANIMATION_BUSY.exec(view.state.doc.toString());
+    if (!m) return false;
+    view.dispatch({ changes: { from: m.index, to: m.index + m[0].length, insert: replacement }, userEvent: "input.layers" });
+    return true;
+  };
+  let shown = -1;
+  try {
+    const url = await drawAnimation(host, (done, total) => {
+      // Every tenth or so, so the text isn't rewritten each frame.
+      const pct = Math.floor((done / total) * 10) * 10;
+      if (pct !== shown) {
+        shown = pct;
+        setMark(mark(`: ${pct}%`));
+      }
+    });
+    setMark(imageMarkdown({ alt: "Animated model", url }));
+  } catch (e) {
+    const msg = e instanceof Error && e.message ? e.message : String(e);
+    setMark(`*The animated model couldn't be made: ${msg.replace(/\*/g, "")}.*`);
+  }
+}
+
+/**
+ * Draws the text's animated models again when the project's model (or the
+ * view they're seen from) has moved on from the one they were drawn from.
+ * Says how many it redrew.
+ */
+export async function refreshAnimatedModels(view: EditorView, host: LayersHost): Promise<number> {
+  if (view.state.readOnly || !host.loadModel || !host.saveModel || animationRuns.has(view)) return 0;
+  const model = await projectModel(host);
+  if (!model) return 0;
+  const key = animationKey(model);
+  const behind = animationsIn(view.state.doc.toString()).filter(a => a.key !== key);
+  if (!behind.length) return 0;
+  animationRuns.add(view);
+  let done = 0;
+  try {
+    // Drawn once, then every one behind points at it.
+    const url = await drawAnimation(host, () => {}, behind[0].url);
+    for (const old of [...new Set(behind.map(b => b.url))]) {
+      // Each place it's used (the same picture can be in twice).
+      const changes = animationsIn(view.state.doc.toString())
+        .filter(a => a.url === old)
+        .map(a => imageAt(view.state, a.at))
+        .flatMap(c => (c ? [{ from: c.from, to: c.to, insert: imageMarkdown({ alt: c.alt || "Animated model", url, title: c.title }) }] : []));
+      if (!changes.length) continue;
+      view.dispatch({ changes, userEvent: "input.layers" });
+      host.onReplace?.(old, url);
+      done++;
+    }
+  } finally {
+    animationRuns.delete(view);
+  }
+  return done;
+}
+
+/** "/Animated model": the project's model coming apart, turning round and going back together, on a loop. */
+export function animatedModelCommand(host: LayersHost): SlashCommand {
+  return {
+    id: "animated-model",
+    label: "Animated model",
+    keywords: ["animation", "animated", "explode", "exploded", "spin", "turntable", "rotate", "gif", "model", "3d"],
+    group: "inline",
+    icon: "M8 2.5 12.5 5v5L8 12.5 3.5 10V5zM3.5 5 8 7.5 12.5 5M8 7.5v5M1.5 8.5a6.5 3 0 0 0 13 0",
+    block: true,
+    run: (view) => void makeAnimatedModel(view, host),
   };
 }
 
