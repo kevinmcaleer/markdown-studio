@@ -22,6 +22,7 @@ import {
 import { connectorFile, connectorMesh, connectorOf, CONNECTOR_FAMILIES, DEFAULT_CONNECTOR, plugLift } from "./connectors";
 import { cableRadius, MIN_BEND, tightestBend, wireLength, wireRoute, wireTriangles } from "./wire";
 import { mirrorPartner, mirrorPlane, mirrorPoint } from "./wireMirror";
+import { guessedSockets, guessPins, fitsPicture } from "./pinGuess";
 import { cableBetween, catalogSocketsFor, coloursFromDiagram, connectionsFor, diagramLabels, freePort, linkByName, missingWires, partsNotInScene, portById, portPlacements, routedCount, type DiagramEnd, type PortPlacement, type WiringPart, type WiringHost, type WiringInfo } from "./wiring2d";
 import { BARE_PIN, BUNDLE_TWIST, cableColours, coresOf, isBarePin, loomsOf, newSocketId, nextWireColour, WIRE_COLOURS, WIRE_DEFAULTS, WIRE_LIMITS, wireColourName, type PartSocket, type WireCore, type WireEnd, type WireSpec, type WireWaypoint } from "./wireSpec";
 import { applyJoint } from "./joint";
@@ -2094,7 +2095,9 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         // over empty space) stays catchable.
         if (hover) placeSnaps();
         if (hover && hover.snap < 0) clearHover();
-        else draw();
+        // Wiring, a pin or socket near the pointer is caught off the part too.
+        if (wiringOn && !hover) placeSnaps();
+        draw();
         return;
       }
       const mesh = hit.object as Mesh;
@@ -2188,10 +2191,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       // Wiring: every socket on the view, and the one near the pointer taken over the face's snaps.
       socketHover = null;
       if (wiringOn) {
-        let best = 14;
+        // A pin or socket is a magnet: it takes the pointer from 20 px, on the part or just off it.
+        let best = 20;
         for (const so of socketsOnView()) {
           const d = Math.hypot(so.x - pointer.x, so.y - pointer.y);
-          if (hover && d < best && !pinPick) {
+          if (d < best && !pinPick) {
             best = d;
             socketHover = { part: so.part, socket: so.socket };
           }
@@ -2794,8 +2798,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       }
       const placed = portPlacements(w, p.sockets).find(x => x.port.id === portId);
       const names = port.pins.map(q => q.name);
-      // One pin: just it; else every pin, from the first one not placed yet.
-      const pins = pin ? [pin] : names;
+      // One pin: it, then the port's others not placed yet (one placed: just it); else every pin, from the first one not placed yet.
+      const pins = pin ? (placed?.pins.has(pin) ? [pin] : [pin, ...names.filter(n => n !== pin && !placed?.pins.has(n))]) : names;
       const at = pin ? 0 : Math.max(0, names.findIndex(n => !placed?.pins.has(n)));
       startWires();
       pinPick = { part: p.id, port: portId, plug: plug ? plugForPort(port.pins.length, placed?.plug?.connector) : null, pins, at };
@@ -2921,7 +2925,48 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           </div>
         </div>`;
       }).join("");
-      return `<div class="lyr-pins"><div class="lyr-pins-head">Pins on the model</div>${rows}</div>`;
+      const model = models.get(p.id);
+      const mapped = list.flatMap(x => x.port.pins).filter(q => q.x !== undefined && q.y !== undefined);
+      const unplaced = list.flatMap(x => (x.plug ? [] : x.port.pins.filter(q => !x.pins.has(q.name))));
+      const fits = model && !(model instanceof Error) && fitsPicture(model.size as Vec3, w);
+      const find = mapped.length && unplaced.length
+        ? fits
+          ? `<button type="button" class="lyr-wide-btn" data-act="pins-find" title="Place each pin not placed yet from where it is on ${esc(w.name)}'s picture">${icon("wand", 14)} Find ${unplaced.length === 1 ? "its pin" : `its ${unplaced.length} pins`} on the model</button>`
+          : `<p class="lyr-note">Its model isn't drawn the way its picture is, so its pins can't be found for you: click a pin on the picture, then where it is on the model.</p>`
+        : "";
+      return `<div class="lyr-pins"><div class="lyr-pins-head">Pins on the model</div>${pinMap(p, w, list)}${find}${rows}</div>`;
+    }
+
+    /**
+     * The part's 2D picture with its pins on it: green placed, hollow not
+     * yet, the one being placed ringed. Clicking one places it on the model
+     * (then the rest not placed, in turn).
+     */
+    /** The least distance between any two points (Infinity for fewer than two). */
+    function minGap(pts: number[][]): number {
+      let best = Infinity;
+      for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) best = Math.min(best, Math.hypot(pts[i][0] - pts[j][0], pts[i][1] - pts[j][1]));
+      return best;
+    }
+
+    function pinMap(p: ScenePart, w: WiringPart, list: PortPlacement[]): string {
+      const dots = list.flatMap(x => x.port.pins.filter(q => q.x !== undefined && q.y !== undefined).map(q => ({ port: x.port.id, pin: q, on: !!x.plug || x.pins.has(q.name) })));
+      if (!dots.length) return "";
+      const [wd, ht] = w.size && w.size[0] > 0 && w.size[1] > 0 ? w.size : [1, 1];
+      // Fits the panel's width, at most 180 px tall.
+      const vw = 100, vh = Math.min(180, Math.max(40, (vw * ht) / wd));
+      const sx = Math.min(vw, (vh * wd) / ht);
+      const ox = (vw - sx) / 2;
+      // The map is drawn about a pixel a unit: dots big enough to click, smaller when they're close together.
+      const r = Math.max(2.5, Math.min(4.5, minGap(dots.map(d => [ox + d.pin.x! * sx, d.pin.y! * vh])) / 2.4));
+      const picking = pinPick?.part === p.id && !pinPick.plug ? pinPick.pins[pinPick.at] : "";
+      const marks = dots.map(d => {
+        const cx = ox + d.pin.x! * sx, cy = d.pin.y! * vh;
+        const name = d.pin.label || d.pin.name;
+        return `<g class="lyr-pin-dot${d.on ? " lyr-on" : ""}${d.pin.name === picking ? " lyr-picking" : ""}" data-act="pin-one" data-port="${esc(d.port)}" data-pin="${esc(d.pin.name)}" role="button" tabindex="0" aria-label="${esc(`Pin ${name}${d.on ? ", placed" : ""}`)}"><title>${esc(`${name}: ${d.on ? "placed, click to place it again" : "click, then click where it is on the model"}`)}</title><circle cx="${cx}" cy="${cy}" r="${r * 1.8}" class="lyr-pin-hit"/><circle cx="${cx}" cy="${cy}" r="${r}" class="lyr-pin-mark"/>${dots.length <= 12 ? `<text x="${cx}" y="${cy - r - 2}" text-anchor="middle">${esc(name)}</text>` : ""}</g>`;
+      }).join("");
+      const pic = w.image ? `<image href="${esc(w.image)}" x="${ox}" y="0" width="${sx}" height="${vh}" preserveAspectRatio="none"/>` : `<rect x="${ox}" y="0" width="${sx}" height="${vh}" rx="2" class="lyr-pin-board"/>`;
+      return `<svg class="lyr-pin-map" viewBox="0 0 ${vw} ${vh}" style="aspect-ratio:${vw}/${vh}" aria-label="${esc(w.name)}'s pins">${pic}${marks}</svg>`;
     }
 
     /** Each connector's model, packed to carry, made once. */
@@ -3634,6 +3679,40 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       }
     }
 
+    /**
+     * "Wire it up": links the parts whose names match the diagram's, puts
+     * each linked part's pins on its model (the catalog's, else found from
+     * its picture), then adds every wire of the diagram with its pins placed
+     * at both ends. Pins it can't find are left for Pins on the model.
+     */
+    async function wireItUp(): Promise<void> {
+      if (!diagram || wireBusy) return;
+      const had = new Map(scene.parts.map(p => [p.id, p.sockets?.length || 0]));
+      for (const l of linkByName(diagram, scene.parts)) setWiringPart(partById(l.part)!, l.wiringPart, false);
+      let pins = 0;
+      for (const p of scene.parts) {
+        if (!p.wiringPart || isWiring(p)) continue;
+        const before = p.sockets?.length || 0;
+        if (!before) setWiringPart(p, p.wiringPart, false);
+        if (!p.sockets?.length || before) findPins(p);
+        pins += (p.sockets?.length || 0) - (had.get(p.id) || 0);
+      }
+      const { wires, skipped } = missingWires(diagram, scene.parts);
+      if (wires.length) await addMissingWires();
+      else {
+        rebuild();
+        commit();
+        renderList();
+        renderProps();
+      }
+      const said: string[] = [];
+      if (pins) said.push(`${pins} pin${pins === 1 ? "" : "s"} placed`);
+      if (wires.length) said.push(`${wires.length} wire${wires.length === 1 ? "" : "s"} added`);
+      status(said.length
+        ? `${said.join(", ")}.${skipped ? ` ${skipped} more wire${skipped === 1 ? "" : "s"} need${skipped === 1 ? "s" : ""} pins placed by hand: pick the part, then click its pins under Pins on the model.` : " Pick a wire and Shift-click parts to route it."}`
+        : skipped ? `${skipped} wire${skipped === 1 ? "" : "s"} need${skipped === 1 ? "s" : ""} pins placed by hand: pick the part, then click its pins under Pins on the model.` : "Every wire in the diagram is in the model.", !said.length && !!skipped);
+    }
+
     /** Links each part whose name matches one in the diagram. */
     function linkPartsByName(): void {
       if (!diagram) return;
@@ -3657,8 +3736,33 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           p.sockets = got;
           if (say) status(`${got.length} socket${got.length === 1 ? "" : "s"} from the catalog's ${w.name}.`);
           draw();
+          return;
         }
+        // Not in the catalog: its pins found from its 2D pinout.
+        const found = findPins(p);
+        if (found && say) status(`${found} pin${found === 1 ? "" : "s"} found on ${p.name} from the wiring diagram's picture of it: check them under Pins on the model.`);
       }
+    }
+
+    /**
+     * Places the linked part's pins not on its model yet from where they are
+     * on its 2D picture (pinGuess.ts): the number placed, or 0 when its model
+     * isn't drawn the picture's way round (they're then placed by hand).
+     */
+    function findPins(p: ScenePart): number {
+      const w = diagram?.parts.find(x => x.id === p.wiringPart);
+      const model = models.get(p.id);
+      if (!w || !model || model instanceof Error) return 0;
+      const pos = model.geometry.getAttribute("position")?.array;
+      if (!pos) return 0;
+      const placed = new Set((p.sockets || []).filter(s => isBarePin(s) && s.pin).map(s => s.pin!));
+      // Pins of a port with a plug socket go with the plug.
+      for (const x of portPlacements(w, p.sockets)) if (x.plug) x.port.pins.forEach(q => placed.add(q.name));
+      const got = guessPins(w, pos, model.centre as Vec3, model.size as Vec3, placed);
+      if (!got?.length) return 0;
+      p.sockets = guessedSockets(got, p.sockets, pin => pinLabel(w, pin));
+      draw();
+      return got.length;
     }
 
     /** Keeps the part's sockets on its catalog part (through the diagram's link), for every project. */
@@ -3728,6 +3832,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const byName = linkByName(d, scene.parts).length;
       const away = partsNotInScene(d, scene.parts);
       return `<section class="lyr-scene-section">${head}
+        ${routed < total ? `<button type="button" class="lyr-wide-btn lyr-primary-btn" data-act="wire-it-up" title="Link parts by name, put their pins on the models (from the catalog, or from each part's picture), and add every wire of the diagram">${icon("wand", 14)} Wire it up</button>` : ""}
         ${mine}
         ${away.withModel.length || away.noModel.length ? `<p class="lyr-note">Not in this scene yet: ${esc(listNames([...away.withModel, ...away.noModel].map(w => w.name)))}.</p>` : ""}
         ${away.withModel.length ? `<button type="button" class="lyr-wide-btn" data-act="diagram-parts" title="Each from its catalog part's 3D model, linked to the diagram">${icon("plus", 14)} Add ${away.withModel.length === 1 ? esc(away.withModel[0].name) : `the diagram's ${away.withModel.length} parts`}</button>` : ""}
@@ -5192,8 +5297,16 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     props.addEventListener("keyup", e => {
       if (e.key === "ArrowUp" || e.key === "ArrowDown") commit();
     });
+    props.addEventListener("keydown", e => {
+      const dot = (e.target as Element).closest?.(".lyr-pin-dot");
+      if (dot && (e.key === "Enter" || e.key === " ")) {
+        e.preventDefault();
+        dot.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      }
+    });
     props.addEventListener("click", e => {
-      const b = (e.target as HTMLElement).closest("button");
+      // Buttons, and the pins on a part's picture (Pins on the model).
+      const b = (e.target as Element).closest<HTMLElement>("button, .lyr-pin-dot");
       if (!b) return;
       if (b.dataset.pjShow) {
         // Show the joint, but keep this part in the inspector so its other joints stay to hand.
@@ -5267,6 +5380,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           renderList();
           renderProps();
         }
+      } else if (b.dataset.act === "wire-it-up") {
+        void wireItUp();
       } else if (b.dataset.act === "diagram-missing") {
         void addMissingWires();
       } else if (b.dataset.act === "diagram-parts") {
@@ -5283,6 +5398,14 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       } else if (b.dataset.act === "pin-plug" || b.dataset.act === "pin-bare" || b.dataset.act === "pin-one") {
         const p = partById(selectedId);
         if (p && b.dataset.port) startPinPick(p, b.dataset.port, b.dataset.act === "pin-plug", b.dataset.act === "pin-one" ? b.dataset.pin : undefined);
+      } else if (b.dataset.act === "pins-find") {
+        const p = partById(selectedId);
+        if (p) {
+          const n = findPins(p);
+          commit();
+          renderProps();
+          status(n ? `${n} pin${n === 1 ? "" : "s"} placed on ${p.name} from its picture. Wrong one? Click it on the picture, then where it really is.` : "No pins could be found from its picture.", !n);
+        }
       } else if (b.dataset.act === "pin-clear") {
         const p = partById(selectedId);
         const w = diagram?.parts.find(x => x.id === p?.wiringPart);

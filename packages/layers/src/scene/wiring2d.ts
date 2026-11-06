@@ -21,6 +21,9 @@ export interface WiringPin {
   name: string;
   /** What's printed by it ("D"). */
   label?: string;
+  /** Where it is on the part's 2D picture (its top view): fractions of the width, from the left, and height, from the top. */
+  x?: number;
+  y?: number;
 }
 
 /** A group of a part's pins a plug goes on: a header group, or a connector. */
@@ -39,6 +42,10 @@ export interface WiringPart {
   /** Its catalog part, when it's one. */
   slug?: string;
   ports: WiringPort[];
+  /** The part's footprint in mm (width, height): its 2D picture's size, for finding its pins on its model. */
+  size?: [number, number];
+  /** The part's 2D picture (a URL), drawn under its pins in "Pins on the model". */
+  image?: string;
   /** Sockets the catalog part keeps for its model (see {@link CatalogSockets}). */
   sockets?: CatalogSockets | null;
   /**
