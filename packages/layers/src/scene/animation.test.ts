@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { animationCameras, animationFrames, animationParts, animationStyle, fitPoints, turnDirection } from "./animation";
+import { ANIMATION_BACKGROUND, animationCameras, animationFrames, animationParts, animationStyle, fitPoints, turnDirection } from "./animation";
 import type { ScenePart } from "./model";
 
 describe("animationFrames", () => {
@@ -116,6 +116,11 @@ describe("animationParts", () => {
       { id: "right", name: "Track", position: [0, 0, 0], rotation: [0, 0, 0], parent: "chassis", track: { link: "piece2" } as ScenePart["track"] },
     ];
     expect(animationParts({ parts }).map(p => p.id)).toEqual(["chassis", "left", "right"]);
+  });
+
+  it("sits on the Assembly step template's grey", async () => {
+    const { TEMPLATES } = await import("../elements");
+    expect(ANIMATION_BACKGROUND).toBe(TEMPLATES.find(t => t.id === "assembly")!.background);
   });
 
   it("draws without draft lines", () => {
