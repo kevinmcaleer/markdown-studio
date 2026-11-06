@@ -25,7 +25,8 @@ import { mirrorPartner, mirrorPlane, mirrorPoint } from "./wireMirror";
 import { cableBetween, catalogSocketsFor, coloursFromDiagram, connectionsFor, diagramLabels, freePort, linkByName, missingWires, partsNotInScene, routedCount, type DiagramEnd, type WiringHost, type WiringInfo } from "./wiring2d";
 import { BUNDLE_TWIST, cableColours, coresOf, loomsOf, newSocketId, nextWireColour, WIRE_COLOURS, WIRE_DEFAULTS, WIRE_LIMITS, wireColourName, type PartSocket, type WireCore, type WireEnd, type WireSpec, type WireWaypoint } from "./wireSpec";
 import { applyJoint } from "./joint";
-import { emptyModel, frame, frameTight, LineArt, modelFromPositions, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
+import { sitDelta } from "./sit";
+import { emptyModel, frame, frameTight, LineArt, modelFromPositions, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, localMatrix, worldMatrices, type FetchModel, type Model } from "./render";
 import { MAX_EMBED, parseStl, stlFaces, toBinaryStl, tooBigToCarry } from "./stl";
 import { isPacked, packMesh, packParts } from "./mesh";
 import { isStepFile, mergeBodies, readStep, type StepBody } from "./step";
@@ -3785,6 +3786,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
             </div>
             <div class="lyr-scene-quick">
               <button type="button" class="lyr-btn" data-act="joint-flip" title="Turn the part over, so it sits on the other side of the face">${icon("flipV", 16)}<span>Flip</span></button>
+              <button type="button" class="lyr-btn" data-act="joint-sit" title="Slide it along the joint until it rests on ${esc(partById(draft.parentId)?.name || "the part")} beneath it">${icon("sit", 16)}<span>Sit on part</span></button>
               <button type="button" class="lyr-btn" data-act="joint-unjoin" title="Stand on its own again, where it is now">Remove joint</button>
             </div>`
           : `<p class="lyr-note">Pick a face on each part. They meet face to face, and you can then set how the joint moves.</p>`}
@@ -3914,6 +3916,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         showJoint(p.id);
         renderProps();
         renderJointDialog();
+      } else if (d.act === "joint-sit" && p?.joint?.point) {
+        sitOnParent(p);
       } else if (d.act === "joint-unjoin" && p) {
         unjoin(p);
         closeJointDialog();
@@ -3931,6 +3935,40 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         status("");
       }
     });
+
+    /**
+     * Slides a joined part along its joint (its Gap) until it rests on the
+     * part it's joined to: touching, not sunk into it or floating over it.
+     */
+    function sitOnParent(p: ScenePart): void {
+      const j = p.joint;
+      const parent = p.parent ? partById(p.parent) : undefined;
+      const pm = parent && models.get(parent.id);
+      const cm = models.get(p.id);
+      if (!j?.point || !parent || !pm || pm instanceof Error || !cm || cm instanceof Error) {
+        status("Both parts' models need to be loaded first.", true);
+        return;
+      }
+      const m = localMatrix(p);
+      // Which side of the face the part is on: Flip turns it to the other.
+      const middle = new Vector3().setFromMatrixPosition(m).sub(new Vector3(...j.point));
+      const side = middle.dot(new Vector3(...j.normal)) < 0 ? -1 : 1;
+      const down = j.normal.map(v => v * side) as Vec3;
+      const move = sitDelta(pm.geometry.getAttribute("position").array, cm.geometry.getAttribute("position").array, m, down);
+      if (move === null) {
+        status(`Nothing of “${parent.name}” is beneath “${p.name}” along the joint.`, true);
+        return;
+      }
+      if (Math.abs(move) < 0.01) {
+        status(`“${p.name}” already sits on “${parent.name}”.`);
+        return;
+      }
+      setField("gap", (j.gap || 0) + move * side);
+      syncJointFields();
+      showJoint(p.id);
+      renderProps();
+      status(`“${p.name}” sits on “${parent.name}” (moved ${round(Math.abs(move), 2)} mm ${move > 0 ? "out" : "in"}).`);
+    }
 
     // ------------------------------------------------------------ the track dialog
 
