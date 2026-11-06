@@ -138,6 +138,12 @@ export interface LayersHandle {
    * are none).
    */
   wireList?(): Promise<string>;
+  /**
+   * The project's model as a looping animated GIF: fully assembled, coming
+   * apart (each part along its joint's "Comes off" way), turning once
+   * round, then going back together. Seen from the project's chosen view.
+   */
+  animatedModel?(options?: AnimatedModelOptions): Promise<AnimatedModel>;
   focus(): void;
   destroy(): void;
 }
@@ -147,6 +153,21 @@ export interface GuideOptions {
   title?: string;
   /** Called with each page as it is finished (upload it, say), with its place and how many there will be. */
   each(result: LayersResult, index: number, total: number): void | Promise<void>;
+}
+
+export interface AnimatedModelOptions {
+  width?: number;
+  height?: number;
+  /** Says how far it has got, a frame at a time. */
+  progress?(done: number, total: number): void;
+}
+
+export interface AnimatedModel {
+  gif: Blob;
+  width: number;
+  height: number;
+  /** The model's version it was drawn from. */
+  stamp: number;
 }
 
 const MAX_PICTURE = 2000;
@@ -3728,6 +3749,19 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       if (!parts.some(p => p.wire)) return "";
       const { wireListOf, wireListMarkdown } = await import("./scene/wireList");
       return wireListMarkdown(wireListOf(parts));
+    },
+    animatedModel: async (o: AnimatedModelOptions = {}) => {
+      await opened;
+      const model = await getProjectModel();
+      if (!model?.parts.some(p => !p.hidden)) throw new Error("No project model yet: add a 3D scene with the project's parts first.");
+      const [t, a] = await Promise.all([sceneTools(), import("./scene/animation")]);
+      const view = model.defaultView ? model.views?.find(v => v.id === model.defaultView) : undefined;
+      const direction = (view ? view.camera : blankScene().camera).direction;
+      const draw = (width?: number, height?: number) => a.renderAnimation(model, t.store, direction, { width, height, progress: o.progress, cancelled: () => destroyed });
+      let made = await draw(o.width, o.height);
+      // A very detailed model: smaller, so it stays a picture a page can carry.
+      if (made.gif.size > a.MAX_GIF_BYTES) made = await draw(Math.round(made.width * 0.7), Math.round(made.height * 0.7));
+      return { gif: made.gif, width: made.width, height: made.height, stamp: model.stamp };
     },
     focus: () => root.focus({ preventScroll: true }),
     destroy,
