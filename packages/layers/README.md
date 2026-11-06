@@ -189,7 +189,10 @@ const editor = mount(el, {
   The diagram's parts not in the scene yet are listed in its Wiring diagram
   settings and under **From the wiring diagram** in Add a part: one whose
   catalog part has a 3D model (`WiringPart.model`, STL or STEP) is added
-  from it, linked to the diagram with the catalog's sockets.
+  from it, linked to the diagram with the catalog's sockets. Models the host
+  marks `group: "parts"` (its parts list's catalog parts, with their `slug`)
+  are offered under **From the parts list**; each added one links to the
+  next of the diagram's parts of that slug.
 - **Showing the wiring**: wires go in in the model's order (Goes in i of n
   in a wire's settings). **Assemble n wires** plays them in one by one, each
   growing along its route from its first plug (1×/2×/4×, Skip, Esc stops).
