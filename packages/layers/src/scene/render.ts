@@ -11,6 +11,11 @@
 //
 // The finished picture is drawn at twice the size and shrunk, so lines are smooth.
 //
+// The see-through view (look.seeThrough) draws the printed parts as glass:
+// a faint tinted fill that hides nothing, faint fold lines, and their own
+// outline pass in the ghost colour, kept out of the main ID pass, so the
+// electronics behind them keep their bold outlines.
+//
 // A section view cuts every part on one side of a plane (see setSection):
 // each cut face is filled (a cap, found with the stencil buffer) and hatched.
 
@@ -30,6 +35,7 @@ import type { SceneCamera, SceneData, ScenePart, SceneStyle, SectionPlane, Vec3 
 import { explodeVector } from "./explode";
 import { explodeOf, highlightedParts, lookOf, sectionKeeps, sectionOrigin, shownAs, type SceneLook } from "./model";
 import { wireMesh } from "./wire";
+import { seeThroughParts } from "./seeThrough";
 import { coresOf, loomsOf, type Looms } from "./wireSpec";
 import { readStep, isStepFile, mergeBodies, type StepBody } from "./step";
 import { bounds, fromBase64, parseStl, stlFaces } from "./stl";
@@ -38,6 +44,10 @@ import { roundEdges } from "./rounds";
 import { movePieceLines, movePieces, trackOpener, trackOpening, type TrackOpener } from "./trackOpen";
 
 const DEG = Math.PI / 180;
+
+/** The see-through view's glass: a cool tint, faint enough that what's behind it reads. */
+export const GLASS_TINT = "#a9c3db";
+export const GLASS_OPACITY = 0.22;
 
 // ------------------------------------------------------------ models
 
@@ -139,9 +149,9 @@ export function emptyModel(): Model {
 }
 
 /** A wire's tube in the world, for parts placed by `world`. */
-function wireGeometry(part: ScenePart, world: Map<string, Matrix4>, upto = 1, looms?: Looms): BufferGeometry {
+function wireGeometry(part: ScenePart, world: Map<string, Matrix4>, upto = 1, looms?: Looms, fromTo = false): BufferGeometry {
   const g = new BufferGeometry();
-  const m = wireMesh(part, world, upto, looms);
+  const m = wireMesh(part, world, upto, looms, fromTo);
   g.setAttribute("position", new BufferAttribute(m.positions, 3));
   g.setAttribute("color", new BufferAttribute(m.colors, 3));
   g.computeBoundingBox();
@@ -359,6 +369,12 @@ export class LineArt {
   /** Drawn last, over the picture and without its style: the workspace's handles. */
   readonly overlay = new Scene();
   private idScene = new Scene();
+  /** The see-through view's glass parts' IDs, outlined in the ghost colour against the solid parts' depth. */
+  private glassScene = new Scene();
+  private glassTarget: WebGLRenderTarget | null = null;
+  private depthOnly: MeshBasicMaterial | null = null;
+  /** The parts drawn as glass now (the see-through view's printed parts). */
+  private glass = new Set<string>();
   private quadScene = new Scene();
   private quadCamera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private outline: ShaderMaterial;
@@ -430,13 +446,15 @@ export class LineArt {
     const world = worldMatrices(list.map(x => x.part), explode);
     const lit = highlightedParts(list.map(x => x.part));
     const looms = loomsOf(list.map(x => x.part));
+    this.glass = this.look.seeThrough ? seeThroughParts(list.map(x => x.part)) : new Set();
     list.forEach(({ part: own, model }, i) => {
       // As the wiring settings show it (ghosted in the wiring view, say); kept as it is.
       const part = shownAs(own, this.look);
       const fillColour = this.fillOf(part, lit);
       const tube = own.wire ? wireGeometry(own, world, 1, looms) : undefined;
       const geometry = tube || model.geometry;
-      const fill = new Mesh(geometry, new MeshBasicMaterial({ color: fillColour, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1, clippingPlanes: this.clip, side: this.section ? DoubleSide : FrontSide }));
+      const glass = this.glass.has(own.id);
+      const fill = new Mesh(geometry, new MeshBasicMaterial({ color: fillColour, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1, clippingPlanes: this.clip, side: this.section ? DoubleSide : FrontSide, ...(glass ? { transparent: true, opacity: GLASS_OPACITY, depthWrite: false } : {}) }));
       fill.userData.partId = part.id;
       const group = new Group();
       group.add(fill);
@@ -444,19 +462,19 @@ export class LineArt {
       const edges = own.wire ? null : edgesOf(model, style.crease, style.rounds !== false);
       let lines: LineSegments2 | null = null;
       if (edges && style.lineWidth > 0) {
-        lines = new LineSegments2(edges, this.lineMaterial(part.ghost ? style.ghost : style.line));
+        lines = new LineSegments2(edges, glass ? this.glassLineMaterial(style.ghost) : this.lineMaterial(part.ghost ? style.ghost : style.line));
         lines.raycast = () => {};
         group.add(lines);
       }
       const idGroup = new Group();
       // Each part's ID colour; 0 (black) is the empty background.
       // Written as is (no blending), so a ghost part's alpha marks it for the outline pass.
-      idGroup.add(new Mesh(geometry, new MeshBasicMaterial({ color: new Color().setHex(idColour(i + 1)), transparent: true, opacity: part.ghost ? 0.5 : 1, blending: NoBlending, clippingPlanes: this.clip })));
+      idGroup.add(new Mesh(geometry, new MeshBasicMaterial({ color: new Color().setHex(idColour(i + 1)), transparent: true, opacity: part.ghost || glass ? 0.5 : 1, blending: NoBlending, clippingPlanes: this.clip })));
       place(group, world.get(part.id)!);
       place(idGroup, world.get(part.id)!);
       group.visible = idGroup.visible = !part.hidden;
       this.scene.add(group);
-      this.idScene.add(idGroup);
+      (glass ? this.glassScene : this.idScene).add(idGroup);
       const o: PartObjects = { part: own, model, group, fill, lines, idGroup, tube };
       this.objects.push(o);
       if (own.wire) this.paint(o, lit);
@@ -752,6 +770,7 @@ export class LineArt {
       return part.ghost ? style.fill : part.wire.color;
     }
     if (part.id === this.selected) return selectedFill(style.highlight);
+    if (this.glass.has(part.id)) return lit.has(part.id) ? style.highlight : GLASS_TINT;
     return part.ghost ? style.fill : lit.has(part.id) ? style.highlight : style.fill;
   }
 
@@ -1030,11 +1049,15 @@ export class LineArt {
     }
   }
 
-  /** Lays a wire only `upto` (0 to 1) of the way along: growing, as it's put in. */
-  growWire(part: ScenePart, parts: ScenePart[], explode: number, upto: number): void {
+  /**
+   * Lays a wire only `upto` (0 to 1) of the way along: growing, as it's put
+   * in, from its `from` end or, `fromTo`, its `to` end. `world` saves
+   * working out where the parts are again.
+   */
+  growWire(part: ScenePart, parts: ScenePart[], explode: number, upto: number, fromTo = false, world?: Map<string, Matrix4>): void {
     const o = this.objects.find(x => x.part.id === part.id);
     if (!o || !part.wire) return;
-    this.setTube(o, wireGeometry(part, worldMatrices(parts, explode), upto, loomsOf(parts)));
+    this.setTube(o, wireGeometry(part, world || worldMatrices(parts, explode), upto, loomsOf(parts), fromTo));
     this.paint(o, highlightedParts(this.objects.map(x => x.part)));
   }
 
@@ -1042,6 +1065,11 @@ export class LineArt {
   setShown(id: string, shown: boolean): void {
     const o = this.objects.find(x => x.part.id === id);
     if (o) o.group.visible = o.idGroup.visible = shown;
+  }
+
+  /** Whether a part is drawn as glass now (the see-through view's printed parts). */
+  isGlass(id: string): boolean {
+    return this.glass.has(id);
   }
 
   /** A part's place in the world as drawn now. */
@@ -1083,6 +1111,18 @@ export class LineArt {
       box.expandByObject(o.fill);
     });
     return box;
+  }
+
+  /** A glass part's fold lines: faint, hiding nothing, hidden by the solid parts in front. */
+  private glassLineMaterial(colour: string): LineMaterial {
+    const key = `glass:${colour}`;
+    let m = this.lineMaterials.get(key);
+    if (!m) {
+      m = new LineMaterial({ color: new Color(colour).getHex(), linewidth: 1, worldUnits: false, transparent: true, opacity: 0.7, depthWrite: false });
+      m.clippingPlanes = this.clip;
+      this.lineMaterials.set(key, m);
+    }
+    return m;
   }
 
   private lineMaterial(colour: string): LineMaterial {
@@ -1156,6 +1196,7 @@ export class LineArt {
     }
     r.setRenderTarget(null);
     r.render(this.scene, camera);
+    if (style.outline > 0 && this.objects.some(o => o.idGroup.parent === this.glassScene && o.idGroup.visible)) this.drawGlassOutline(camera, pw, ph, ratio);
     if (style.outline > 0) {
       const u = this.outline.uniforms;
       u.tId.value = this.target.texture;
@@ -1182,6 +1223,40 @@ export class LineArt {
       r.render(this.overlay, camera);
       r.autoClear = true;
     }
+  }
+
+  /**
+   * The glass parts' outlines, in the ghost colour and thinner: their IDs
+   * drawn against the solid parts' depth (so a glass part behind a board
+   * isn't outlined over it), then the outline shader over the picture.
+   */
+  private drawGlassOutline(camera: OrthographicCamera, pw: number, ph: number, ratio: number): void {
+    const r = this.renderer;
+    const style = this.style!;
+    if (!this.glassTarget || this.glassTarget.width !== pw || this.glassTarget.height !== ph) {
+      this.glassTarget?.dispose();
+      this.glassTarget = new WebGLRenderTarget(pw, ph, { minFilter: NearestFilter, magFilter: NearestFilter });
+    }
+    this.depthOnly ??= new MeshBasicMaterial({ colorWrite: false });
+    this.depthOnly.clippingPlanes = this.clip;
+    r.setRenderTarget(this.glassTarget);
+    r.setClearColor(0x000000, 0);
+    r.autoClear = true;
+    r.clear();
+    r.autoClear = false;
+    this.idScene.overrideMaterial = this.depthOnly;
+    r.render(this.idScene, camera);
+    this.idScene.overrideMaterial = null;
+    r.render(this.glassScene, camera);
+    r.setRenderTarget(null);
+    const u = this.outline.uniforms;
+    u.tId.value = this.glassTarget.texture;
+    (u.px.value as Vector2).set(1 / pw, 1 / ph);
+    u.width.value = Math.max(0.5, (style.outline * 0.6 * ratio) / 2);
+    (u.colour.value as Color).set(style.ghost);
+    (u.ghost.value as Color).set(style.ghost);
+    r.render(this.quadScene, this.quadCamera);
+    r.autoClear = true;
   }
 
   /** Paints the fills alone back over each cut: a capsule from its spot back along its tail. */
@@ -1235,9 +1310,10 @@ export class LineArt {
       (o.fill.material as MeshBasicMaterial).dispose();
       ((o.idGroup.children[0] as Mesh).material as MeshBasicMaterial).dispose();
       this.scene.remove(o.group);
-      this.idScene.remove(o.idGroup);
+      o.idGroup.removeFromParent();
     }
     this.objects = [];
+    this.glass = new Set();
   }
 
   dispose(): void {
@@ -1254,6 +1330,8 @@ export class LineArt {
     this.arrowSelMaterial?.dispose();
     this.arrowSelMesh?.geometry.dispose();
     this.lineMaterials.forEach(m => m.dispose());
+    this.glassTarget?.dispose();
+    this.depthOnly?.dispose();
     this.outline.dispose();
     this.target?.dispose();
     this.renderer.dispose();

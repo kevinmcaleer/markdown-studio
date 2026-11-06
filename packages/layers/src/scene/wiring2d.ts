@@ -86,6 +86,8 @@ export interface WiringHost {
   load(): Promise<WiringInfo | null>;
   /** Adds these connections to the diagram (and saves it); resolves with them as saved, ids and all. */
   addConnections?(connections: Omit<WiringConnection, "id">[]): Promise<WiringConnection[]>;
+  /** Moves these connections' ends to other pins (and saves the diagram); resolves with them as saved. */
+  updateConnections?(changes: ConnectionChange[]): Promise<WiringConnection[]>;
   /** Opens the diagram (over the scene), at this connection when there's one; resolves when it's closed. */
   open?(connection?: string): void | Promise<void>;
   /** Keeps a model's sockets on its catalog part, for every project that uses it. */
@@ -323,6 +325,40 @@ export function cableBetween(info: WiringInfo, a: DiagramEnd, b: DiagramEnd): Di
     if (same(c.from, b) && same(c.to, a)) return { from: c.to, to: c.from, connections: c.connections };
   }
   return null;
+}
+
+/** A connection's end moved to another pin: its new `from` or `to`. */
+export interface ConnectionChange {
+  id: string;
+  from?: string;
+  to?: string;
+}
+
+/**
+ * A 3D wire's end moved from one diagram end to another: its connections'
+ * ends on the old one moved to the same places (pin 1 to pin 1, and so on)
+ * on the new one; `at`, for a wire of a plug's one pin, the new pin's place.
+ * Null when they don't fit (the new port has too few pins) or one isn't in
+ * the diagram.
+ */
+export function movedConnections(info: WiringInfo, ids: string[], from: DiagramEnd, to: DiagramEnd, at?: number): ConnectionChange[] | null {
+  const parts = new Map(info.parts.map(p => [p.id, p]));
+  const oldPart = parts.get(from.part);
+  const pins = portById(parts.get(to.part), to.port)?.pins || [];
+  if (!pins.length) return null;
+  const out: ConnectionChange[] = [];
+  for (const id of ids) {
+    const c = info.connections.find(x => x.id === id);
+    if (!c) return null;
+    const side = (["from", "to"] as const).find(k => endHasPin(oldPart, from, splitPin(c[k])));
+    if (!side) return null;
+    const pin = splitPin(c[side]).pin;
+    const k = at ?? (from.port.startsWith("pin:") ? 0 : portOfPin(oldPart, pin)?.index ?? -1);
+    if (k < 0 || k >= pins.length) return null;
+    const ref = `${to.part}.${pins[k].name}`;
+    if (ref !== c[side]) out.push({ id, [side]: ref });
+  }
+  return out;
 }
 
 /** The net a pin's label suggests: power, ground or signal. */

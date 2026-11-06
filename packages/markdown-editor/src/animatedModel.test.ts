@@ -4,7 +4,7 @@ import { EditorSelection, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { describe, expect, it } from "vitest";
 import { isAnimationVideoUrl } from "./layersFacet";
-import { animatedModelCommand, animationKey, animationStyleOf, droppingModelCommand, animationsIn, isAnimationUrl, makeAnimatedModel, refreshAnimatedModels, type LayersHost, type LayersProjectModel } from "./layersBlock";
+import { animatedModelCommand, animationKey, animationStyleOf, droppingModelCommand, wiringShowcaseCommand, animationsIn, isAnimationUrl, makeAnimatedModel, refreshAnimatedModels, type LayersHost, type LayersProjectModel } from "./layersBlock";
 
 const viewOf = (doc: string, at = doc.length) => new EditorView({ state: EditorState.create({ doc, selection: EditorSelection.cursor(at), extensions: [markdown({ base: markdownLanguage })] }) });
 
@@ -163,5 +163,31 @@ describe("/Dropping model", () => {
     expect(made.uploads.map(u => u.replaces)).toEqual(["/projects/1/images/4/view", "/projects/1/images/5/view"]);
     expect(v.state.doc.toString()).toBe(`![Animated model](/projects/1/images/1/view#animated-model=${animationKey(now)})\n\n![Dropping model](/projects/1/images/2/view#animated-model=${animationKey(now, "drop")})\n`);
     expect(await refreshAnimatedModels(v, host)).toBe(0);
+  });
+});
+
+describe("/Wiring showcase", () => {
+  it("is its own block command, found by the words people use", () => {
+    const cmd = wiringShowcaseCommand(hostWith(model(1), { uploads: [], drawn: 0 }));
+    expect(cmd.label).toBe("Wiring showcase");
+    expect(cmd.block).toBe(true);
+    expect(cmd.keywords).toEqual(expect.arrayContaining(["wiring", "see-through", "transparent"]));
+  });
+
+  it("has its own key and style", () => {
+    const m = model(3);
+    const key = animationKey(m, "wires");
+    expect(animationStyleOf(key)).toBe("wires");
+    expect(key).not.toBe(animationKey(m));
+    expect(key).not.toBe(animationKey(m, "drop"));
+  });
+
+  it("draws the wires style and puts it in where the cursor is", async () => {
+    const made: Made = { uploads: [], drawn: 0, styles: [] };
+    const v = viewOf("");
+    await makeAnimatedModel(v, hostWith(model(5), made, { video: true }), "wires");
+    expect(made.styles).toEqual(["wires"]);
+    expect(made.uploads).toEqual([{ name: "wiring-showcase.mp4", type: "video/mp4" }]);
+    expect(v.state.doc.toString()).toBe(`![Wiring showcase](/projects/1/images/1/view#animated-video=${animationKey(model(5), "wires")})\n`);
   });
 });
