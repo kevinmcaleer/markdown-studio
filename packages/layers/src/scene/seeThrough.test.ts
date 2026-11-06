@@ -31,6 +31,17 @@ describe("see-through view", () => {
     expect([...glass].sort()).toEqual(["board", "chassis", "forced", "lid", "mount"]);
   });
 
+  it("turns a part named like electronics to glass when the real one is joined under it", () => {
+    const parts = [
+      part("front", [0, 0, 0], { name: "Ultrasonic sensor" }),
+      part("inner", [0, 0, 0], { name: "ultrasonic", parent: "front" }),
+      part("hc", [0, 0, 0], { name: "HC-SR04", parent: "inner", wiringPart: "us1" }),
+      part("motor", [0, 0, 0], { name: "N20 motor" }),
+      part("deck", [0, 0, 0], { name: "holding board" }),
+    ];
+    expect([...seeThroughParts(parts)].sort()).toEqual(["deck", "front", "inner"]);
+  });
+
   it("knows electronics by name, but not the printed parts that hold them", () => {
     expect(electronicName("STS3215 servo")).toBe(true);
     expect(electronicName("n20_motor")).toBe(true);
