@@ -14,7 +14,8 @@ import type { ProjectModel, ScenePart } from "./model";
 import { trackPieces } from "./trackSpec";
 import { newStepId, type BuildStep } from "./stepsSpec";
 
-export { normalizeSteps, newStepId, tidySteps, normalizeGuide, guideTools, GUIDE_TOOLS, DEFAULT_GUIDE_TOOLS, MAX_GUIDE_TOOLS, MAX_TOOL_LENGTH, type BuildStep, type GuideSettings } from "./stepsSpec";
+export { normalizeSteps, newStepId, tidySteps, normalizeGuide, MAX_GUIDE_TOOLS, MAX_TOOL_LENGTH, type BuildStep, type GuideSettings } from "./stepsSpec";
+export { guideTools } from "../tools";
 
 /** Which step (its index) each part was put in by hand. */
 export function stepIndex(steps: BuildStep[]): Map<string, number> {

@@ -142,8 +142,13 @@ const editor = mount(el, {
   and the scene's own picture is left as it was unless *Use this step for
   this picture* is pressed. Hover between two step cards for a **+** that
   puts a new step there. The Step panel's *Tools for the guide* picks what
-  the guide's Before you start page lists (`model.guide.tools`: symbol ids
-  such as `soldering-iron`, or any tool's name, drawn as words). The
+  the guide's Before you start page lists from a catalogue of about 40
+  tools in groups (`src/tools.ts`: screwdrivers and keys, cutting, holding,
+  electronics, measuring, glue and tape, machines, safety), each with its
+  own symbol and, where it has them, its sizes. It is saved as
+  `model.guide.tools`: an id (`calipers`), an id and size
+  (`allen-key:2.5 mm`), or any other tool's name, drawn as words. The same
+  symbols are tiles under Elements. The
   Markdown editor draws its `## Assembly guide` again by itself after a
   graphic saves a model whose steps, tools, views or parts moved on from
   the one it was drawn from (a hidden `<!-- assembly guide: key -->` says
