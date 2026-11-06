@@ -1,0 +1,99 @@
+{
+  "title": "Board inside a tub, its joint pointing at a wall, lifts out",
+  "why": "The board (40 x 25 x 2) lies on the floor of an open tub (60 x 40 x 20, 2 mm walls and floor), inside it, so it doesn't plainly sit on one side. Its joint points -x, at the wall. Down is the floor; up is clear: +z.",
+  "input": {
+    "parts": [
+      {
+        "id": "tub",
+        "shape": {
+          "parts": [
+            {
+              "box": [
+                60,
+                40,
+                2
+              ]
+            },
+            {
+              "box": [
+                2,
+                40,
+                20
+              ],
+              "at": [
+                -29,
+                0,
+                0
+              ]
+            },
+            {
+              "box": [
+                2,
+                40,
+                20
+              ],
+              "at": [
+                29,
+                0,
+                0
+              ]
+            },
+            {
+              "box": [
+                60,
+                2,
+                20
+              ],
+              "at": [
+                0,
+                -19,
+                0
+              ]
+            },
+            {
+              "box": [
+                60,
+                2,
+                20
+              ],
+              "at": [
+                0,
+                19,
+                0
+              ]
+            }
+          ]
+        },
+        "position": [
+          0,
+          0,
+          10
+        ]
+      },
+      {
+        "id": "board",
+        "box": [
+          40,
+          25,
+          2
+        ],
+        "position": [
+          0,
+          0,
+          -7
+        ],
+        "parent": "tub",
+        "normal": [
+          -1,
+          0,
+          0
+        ],
+        "distance": 30
+      }
+    ],
+    "part": "board"
+  },
+  "expect": {
+    "dir": "+z"
+  }
+}

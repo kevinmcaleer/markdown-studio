@@ -1,0 +1,12 @@
+{
+  "title": "Wheel on a chassis side keeps coming off along its axle",
+  "why": "The wheel is joined to the chassis's +x side face, and nothing is beyond it, so sliding out along its joint is already clear. Smart explode must leave it alone.",
+  "input": {
+    "parts": [
+      { "id": "chassis", "box": [60, 40, 30], "position": [0, 0, 15] },
+      { "id": "wheel", "box": [10, 30, 30], "position": [35, 0, 0], "parent": "chassis", "normal": [1, 0, 0], "distance": 25 }
+    ],
+    "part": "wheel"
+  },
+  "expect": { "dir": "joint" }
+}

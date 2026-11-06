@@ -1,0 +1,119 @@
+{
+  "title": "Shield joined by a side face lifts out of the chassis tub",
+  "why": "The chassis is an open tub, 60 x 40 x 30 with 2 mm walls and floor. The UNO lies on its floor (z 2 to 4) and the shield sits on the UNO (z 5 to 15), but it was joined by a side face, so its joint points +y. Slid 40 mm along y it runs into the tub's wall; along x the same; down, the floor. Straight up nothing is in the way, so a person lifts it: +z.",
+  "input": {
+    "parts": [
+      {
+        "id": "chassis",
+        "shape": {
+          "parts": [
+            {
+              "box": [
+                60,
+                40,
+                2
+              ]
+            },
+            {
+              "box": [
+                2,
+                40,
+                30
+              ],
+              "at": [
+                -29.0,
+                0,
+                0
+              ]
+            },
+            {
+              "box": [
+                2,
+                40,
+                30
+              ],
+              "at": [
+                29.0,
+                0,
+                0
+              ]
+            },
+            {
+              "box": [
+                60,
+                2,
+                30
+              ],
+              "at": [
+                0,
+                -19.0,
+                0
+              ]
+            },
+            {
+              "box": [
+                60,
+                2,
+                30
+              ],
+              "at": [
+                0,
+                19.0,
+                0
+              ]
+            }
+          ]
+        },
+        "position": [
+          0,
+          0,
+          15
+        ]
+      },
+      {
+        "id": "uno",
+        "box": [
+          50,
+          30,
+          2
+        ],
+        "position": [
+          0,
+          0,
+          -12
+        ],
+        "parent": "chassis",
+        "normal": [
+          0,
+          0,
+          1
+        ],
+        "distance": 20
+      },
+      {
+        "id": "shield",
+        "box": [
+          50,
+          30,
+          10
+        ],
+        "position": [
+          0,
+          0,
+          7
+        ],
+        "parent": "uno",
+        "normal": [
+          0,
+          1,
+          0
+        ],
+        "distance": 40
+      }
+    ],
+    "part": "shield"
+  },
+  "expect": {
+    "dir": "+z"
+  }
+}

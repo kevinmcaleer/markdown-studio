@@ -1,0 +1,99 @@
+{
+  "title": "Motor in a tub, joined so it points along the tub, lifts out",
+  "why": "The tub is open, 60 x 40 x 20 with 2 mm walls and floor. The motor (30 x 12 x 10) lies on its floor at x -20 to 10, but its joint points +x, along the tub, so slid 30 mm that way it runs into the +x wall. Down is the floor. Lifted straight up nothing is in the way: +z.",
+  "input": {
+    "parts": [
+      {
+        "id": "tub",
+        "shape": {
+          "parts": [
+            {
+              "box": [
+                60,
+                40,
+                2
+              ]
+            },
+            {
+              "box": [
+                2,
+                40,
+                20
+              ],
+              "at": [
+                -29.0,
+                0,
+                0
+              ]
+            },
+            {
+              "box": [
+                2,
+                40,
+                20
+              ],
+              "at": [
+                29.0,
+                0,
+                0
+              ]
+            },
+            {
+              "box": [
+                60,
+                2,
+                20
+              ],
+              "at": [
+                0,
+                -19.0,
+                0
+              ]
+            },
+            {
+              "box": [
+                60,
+                2,
+                20
+              ],
+              "at": [
+                0,
+                19.0,
+                0
+              ]
+            }
+          ]
+        },
+        "position": [
+          0,
+          0,
+          10
+        ]
+      },
+      {
+        "id": "motor",
+        "box": [
+          30,
+          12,
+          10
+        ],
+        "position": [
+          -5,
+          0,
+          -3
+        ],
+        "parent": "tub",
+        "normal": [
+          1,
+          0,
+          0
+        ],
+        "distance": 30
+      }
+    ],
+    "part": "motor"
+  },
+  "expect": {
+    "dir": "+z"
+  }
+}

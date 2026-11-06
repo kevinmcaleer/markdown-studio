@@ -18,6 +18,7 @@ They cover the parts of 3D scenes that rely on guesses:
 | `cases/fit/` | Fit fills the picture with the parts and cuts none off |
 | `cases/arrow/` | An assembly arrow's head is always in sight, and the arrow is no shorter than it needs to be |
 | `cases/sit/` | Sit on part slides a joined part along its joint until it rests on the part beneath: on a well's floor rather than its walls, on a wall's top when it's over one, and not at all when nothing is beneath |
+| `cases/explode/` | Smart explode sends a joined part off the way a person would take it apart: a shield lifted off its board even when it was joined by its edge, a board lifted out of a tub rather than through its wall or floor, and a wheel still off along its axle |
 | `cases/track/` | Make track's pieces join up all the way round, and none cuts into a wheel |
 | `cases/wire/` | A wire leaves each plug straight out, lies on the faces it's routed over (not in them), takes up its slack, sags or bows the right way, and its ends stay on their parts when exploded; a cable's wires meet each plug at its pins, lie touching (flat or round) and never run through each other |
 | `cases/mirror/` | Mirror a wire finds each part's partner across the middle of the model (not x 0), and puts each point where the mirror does, its face turned the mirror's way |

@@ -724,6 +724,8 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 .lyr-joint-offset .lyr-scene-field:nth-child(2) > span { color: #2f8a3b; }
 .lyr-joint-offset .lyr-scene-field:nth-child(3) > span { color: #2c63c7; }
 .lyr-joint-half select { width: 100%; padding: 6px 8px; border: 1px solid var(--lyr-line); border-radius: 6px; font: inherit; background: #fff; }
+.lyr-joint-way { grid-column: span 2; }
+.lyr-joint-way select { width: 100%; height: 30px; padding: 0 6px; border: 1px solid var(--lyr-line); border-radius: 6px; font: inherit; font-size: 12px; background: #fff; }
 .lyr-joint-face { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
 .lyr-joint-face .lyr-wide-btn { flex: 1; min-width: 0; }
 .lyr-joint-face .lyr-wide-btn.lyr-on { border-color: var(--lyr-accent); background: var(--lyr-accent-soft); color: var(--lyr-accent); }

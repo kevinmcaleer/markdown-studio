@@ -1,0 +1,12 @@
+{
+  "title": "Shield joined by a side face, on an open board, lifts off upwards",
+  "why": "The shield (50 x 30 x 10) sits on the UNO (50 x 30 x 2, z 0 to 2) at z 3 to 13, but was joined by a side face, so its joint points +y. Nothing is in the way sideways, but a person takes a shield off its board by lifting it: +z. Sliding it off sideways is the bug in Kev's SMARS picture.",
+  "input": {
+    "parts": [
+      { "id": "uno", "box": [50, 30, 2], "position": [0, 0, 1] },
+      { "id": "shield", "box": [50, 30, 10], "position": [0, 0, 7], "parent": "uno", "normal": [0, 1, 0], "distance": 30 }
+    ],
+    "part": "shield"
+  },
+  "expect": { "dir": "+z" }
+}

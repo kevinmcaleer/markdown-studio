@@ -1,0 +1,12 @@
+{
+  "title": "Board whose joint points down into its base comes off upwards",
+  "why": "The board sits on top of the base, but its joint points -z (an underside picked), so along the joint it would sink through the base. Up is clear: either +z or the other way along the joint (also up) is right.",
+  "input": {
+    "parts": [
+      { "id": "base", "box": [60, 40, 10], "position": [0, 0, 5] },
+      { "id": "board", "box": [50, 30, 2], "position": [0, 0, 6], "parent": "base", "normal": [0, 0, -1], "distance": 20 }
+    ],
+    "part": "board"
+  },
+  "expect": { "dir": ["+z", "reverse"] }
+}
