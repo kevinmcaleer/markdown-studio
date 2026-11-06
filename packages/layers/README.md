@@ -149,7 +149,7 @@ const editor = mount(el, {
   `model.guide.tools`: an id (`calipers`), an id and size
   (`allen-key:2.5 mm`), or any other tool's name, drawn as words. The same
   symbols are tiles under Elements. The
-  Markdown editor draws its `## Assembly guide` again by itself after a
+  Markdown editor draws its `# Assembly guide` section again by itself after a
   graphic saves a model whose steps, tools, views or parts moved on from
   the one it was drawn from (a hidden `<!-- assembly guide: key -->` says
   which).

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isLayersUrl, layersUrl } from "./layersFacet";
-import { graphicFileName, graphicsIn, guideKey, guideKeyIn, guideSection, inventorySpot, isGuideMarker, newGraphicInsert } from "./layersBlock";
+import { GUIDE_HEADING, graphicFileName, graphicsIn, guideKey, guideKeyIn, guideSection, inventorySpot, isGuideMarker, newGraphicInsert } from "./layersBlock";
 
 describe("layers links", () => {
   it("marks and recognises a graphic's link", () => {
@@ -43,13 +43,21 @@ describe("guideSection", () => {
     expect(guideSection(text)).toEqual({ from: text.length, to: text.length, heading: true });
   });
   it("replaces the body of an existing section, up to the next heading of its level", () => {
-    const text = "# Robot\n\n## Assembly guide\n\n![Old](/o.png#layers)\n\n### Note\n\nkept\n\n## Links\n\n- a\n";
+    const text = "# Robot\n\n# Assembly guide\n\n![Old](/o.png#layers)\n\n## Note\n\nkept\n\n# Links\n\n- a\n";
     const s = guideSection(text);
     expect(s.heading).toBe(false);
+    expect(s.level).toBe(1);
+    expect(text.slice(s.from, s.to)).toBe("\n![Old](/o.png#layers)\n\n## Note\n\nkept\n\n");
+  });
+  it("finds a guide from when it sat under a heading two, to be made a heading one", () => {
+    const text = "# Robot\n\n## Assembly guide\n\n![Old](/o.png#layers)\n\n### Note\n\nkept\n\n## Links\n\n- a\n";
+    const s = guideSection(text);
+    expect(s.level).toBe(2);
+    expect(text.slice(s.headingAt!.from, s.headingAt!.to)).toBe("## Assembly guide");
     expect(text.slice(s.from, s.to)).toBe("\n![Old](/o.png#layers)\n\n### Note\n\nkept\n\n");
   });
   it("takes a section at the end to the end", () => {
-    const text = "## Assembly guide\n\n![Old](/o.png#layers)";
+    const text = "# Assembly guide\n\n![Old](/o.png#layers)";
     const s = guideSection(text);
     expect(text.slice(s.from, s.to)).toBe("\n![Old](/o.png#layers)");
   });
@@ -91,5 +99,11 @@ describe("assembly guide key", () => {
   it("hides its marker in the live view", () => {
     expect(isGuideMarker("<!-- assembly guide: abc12 -->")).toBe(true);
     expect(isGuideMarker("<!-- a note -->")).toBe(false);
+  });
+});
+
+describe("assembly guide heading", () => {
+  it("is a section of its own", () => {
+    expect(GUIDE_HEADING).toBe("# Assembly guide");
   });
 });
