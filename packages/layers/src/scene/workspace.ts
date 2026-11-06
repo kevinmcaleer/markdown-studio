@@ -7243,7 +7243,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       showStep();
       stepPlay = { frame: 0, at: 0, t0: performance.now() };
       renderStrip();
-      const HOLD = 600, MOVE = 900, REST = 400;
+      const HOLD = 600, MOVE = 900, REST = 400, FADE = 500;
       const tick = (now: number) => {
         if (!stepPlay || closed) return;
         const t = now - stepPlay.t0;
@@ -7252,6 +7252,12 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         const at = stepsAt();
         for (const p of scene.parts) if (at.get(p.id) === stepPlay.at) p.explode = e;
         art.move(scene.parts, scene.explode);
+        // The last step's parts fade from the highlight back to white as this step comes on (as the saved movie shows it).
+        if (stepPlay.at > 0 && t < FADE + 100) {
+          const k = Math.min(1, t / FADE);
+          const g = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+          for (const p of scene.parts) if (at.get(p.id) === stepPlay.at - 1) art.fadeFill(p.id, scene.style.highlight, g);
+        }
         draw();
         if (t > HOLD + MOVE + REST) {
           if (stepPlay.at >= steps.length - 1) {
