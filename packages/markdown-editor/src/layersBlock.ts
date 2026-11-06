@@ -58,6 +58,8 @@ export type LayersEditor = {
   /** The project's wire list as a Markdown table, "" with no wires (Layers 3D scenes). */
   wireList?(): Promise<string>;
   /** The project's model as a looping MP4 (or GIF where the browser can't make one): assembled, apart, once round, together again (Layers 3D scenes). */
+  /** Opens the project's model on its own, full screen: true when Done saved it (Layers 3D scenes). */
+  editModel?(): Promise<boolean>;
   animatedModel?(options?: { width?: number; height?: number; progress?(done: number, total: number): void; format?: "auto" | "gif"; style?: AnimationStyle }): Promise<{ blob: Blob; type: "video/mp4" | "image/gif"; width: number; height: number; stamp: number }>;
 };
 export type LayersResult = { png: Blob; title: string; width: number; height: number };
@@ -1121,6 +1123,75 @@ export function droppingModelCommand(host: LayersHost): SlashCommand {
     icon: "M8 1.5v4M6 3.8 8 5.8l2-2M8 8.5 12.5 11 8 13.5 3.5 11zM1.5 15h13",
     block: true,
     run: (view) => void makeAnimatedModel(view, host, "drop"),
+  };
+}
+
+const modelRuns = new WeakSet<EditorView>();
+
+/**
+ * "/Model": the project's 3D model, full screen, with nothing put in the
+ * page: the 3D workspace in Model mode (and Steps) without a graphic round
+ * it. Once it's saved, the page's 3D pictures say they're behind, and the
+ * assembly guide and animated models follow, as after a graphic's scene.
+ */
+export async function openModel(view: EditorView, host: LayersHost): Promise<void> {
+  if (view.state.readOnly || !host.loadModel || !host.saveModel || modelRuns.has(view)) return;
+  modelRuns.add(view);
+  const box = document.createElement("div");
+  box.className = "cm-layers-hidden";
+  box.style.cssText = "position:fixed;left:-40000px;top:0;width:1200px;height:800px;overflow:hidden;pointer-events:none";
+  document.body.appendChild(box);
+  let editor: LayersEditor | null = null;
+  let saved = false;
+  try {
+    const api = await loadLayers(host.load);
+    editor = api.mount(box, {
+      doc: null,
+      mode: "inline",
+      allowInline: true,
+      fetchImage: host.fetchImage ?? defaultFetch,
+      listModels: host.listModels,
+      wiring: host.wiring,
+      fetchModel: host.fetchModel ?? (async (url: string) => (await defaultFetch(url)).arrayBuffer()),
+      loadModel: () => projectModel(host),
+      saveModel: async (m: LayersProjectModel) => {
+        await host.saveModel!(m);
+        modelCache.set(host, { at: Date.now(), model: Promise.resolve(m) });
+        saved = true;
+      },
+      onDone: () => {},
+      onCancel: () => {},
+    });
+    if (!editor.editModel) throw new Error("this version of Layers can't open the model on its own");
+    await editor.editModel();
+  } catch (e) {
+    const msg = e instanceof Error && e.message ? e.message : String(e);
+    const pos = view.state.selection.main.head;
+    const change = newGraphicInsert(view.state.doc.toString(), pos, `*The model couldn't be opened: ${msg.replace(/\*/g, "")}.*`);
+    view.dispatch({ changes: change, userEvent: "input.layers" });
+  } finally {
+    editor?.destroy();
+    box.remove();
+    modelRuns.delete(view);
+  }
+  view.focus();
+  if (!saved) return;
+  // Other graphics on the page check whether they're now behind; the guide and animations follow.
+  dispatchEvent(new CustomEvent(LAYERS_MODEL_EVENT));
+  void refreshAssemblyGuide(view, host).catch(() => {});
+  void refreshAnimatedModels(view, host).catch(() => {});
+}
+
+/** "/Model": the project's 3D model, opened straight away, full screen. */
+export function modelCommand(host: LayersHost): SlashCommand {
+  return {
+    id: "model",
+    label: "Model",
+    keywords: ["model", "3d", "robot", "parts", "joints", "assembly", "build", "cad", "stl", "step", "urdf", "edit model"],
+    group: "inline",
+    icon: "M8 1.5 14 4.8v6.4L8 14.5 2 11.2V4.8zM2 4.8 8 8.1l6-3.3M8 8.1v6.4",
+    block: true,
+    run: (view) => void openModel(view, host),
   };
 }
 

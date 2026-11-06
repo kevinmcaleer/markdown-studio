@@ -146,6 +146,12 @@ export interface LayersHandle {
    * project's chosen view.
    */
   animatedModel?(options?: AnimatedModelOptions): Promise<AnimatedModel>;
+  /**
+   * Opens the project's model on its own, full screen ("/Model"): the 3D
+   * workspace with every part, in Model mode, with no picture to make.
+   * Resolves once it's closed: true when Done saved it, false on Cancel.
+   */
+  editModel?(): Promise<boolean>;
   focus(): void;
   destroy(): void;
 }
@@ -3774,6 +3780,34 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       // Even sizes, as H.264 wants.
       if (made.blob.size > a.MAX_ANIMATION_BYTES) made = await draw(Math.round(made.width * 0.35) * 2, Math.round(made.height * 0.35) * 2);
       return { blob: made.blob, type: made.type, width: made.width, height: made.height, stamp: model.stamp };
+    },
+    editModel: async () => {
+      await opened;
+      if (!opts.loadModel || !opts.saveModel) throw new Error("This page doesn't keep a project model.");
+      if (sceneOpen) return false;
+      sceneOpen = true;
+      try {
+        const [t, model] = await Promise.all([sceneTools(), getProjectModel()]);
+        const result = await t.openWorkspace({
+          scene: blankScene(),
+          width: 1200,
+          height: 800,
+          scale: 1,
+          background: "#ececec",
+          store: t.store,
+          listModels: opts.listModels,
+          wiring: opts.wiring,
+          modelOnly: true,
+          model,
+          saveModel: async (m: ProjectModel) => {
+            await opts.saveModel!(packModel(m));
+            projectModel = m;
+          },
+        });
+        return !!result;
+      } finally {
+        sceneOpen = false;
+      }
     },
     focus: () => root.focus({ preventScroll: true }),
     destroy,

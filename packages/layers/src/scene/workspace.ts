@@ -86,6 +86,11 @@ export interface WorkspaceOptions {
   saveModel?(model: ProjectModel): Promise<void>;
   /** The project's 2D wiring diagram, which wires link to (see wiring2d.ts). */
   wiring?: WiringHost;
+  /**
+   * Just the project's model ("/Model"), not a picture: titled Model, Done
+   * saves the model and draws no picture (the result's picture is empty).
+   */
+  modelOnly?: boolean;
 }
 
 export interface WorkspaceResult {
@@ -120,6 +125,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     // with all of it; a scene before there was one becomes it. A scene with
     // its own parts, in a project that has a model, keeps them until asked.
     const shared = !!opts.saveModel;
+    const modelOnly = shared && !!opts.modelOnly;
+    const heading = modelOnly ? "Model" : "3D scene";
     const projectModel = opts.model?.parts.length ? opts.model : null;
     if (shared) {
       if (projectModel && (scene.model || !scene.parts.length)) scene = followModel(scene, projectModel);
@@ -161,11 +168,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     overlay.className = "lyr-overlay lyr-scene-overlay";
     overlay.setAttribute("role", "dialog");
     overlay.setAttribute("aria-modal", "true");
-    overlay.setAttribute("aria-label", "3D scene");
+    overlay.setAttribute("aria-label", heading);
     overlay.innerHTML = `
       <div class="lyr lyr-scene" tabindex="-1">
         <div class="lyr-top">
-          <strong class="lyr-scene-title">${icon("cube", 18)}<span>3D scene</span></strong>
+          <strong class="lyr-scene-title">${icon("cube", 18)}<span>${heading}</span></strong>
           <span class="lyr-sep"></span>
           <button type="button" class="lyr-btn" data-act="undo" title="Undo (Ctrl+Z)" aria-label="Undo">${icon("undo")}</button>
           <button type="button" class="lyr-btn" data-act="redo" title="Redo (Ctrl+Shift+Z)" aria-label="Redo">${icon("redo")}</button>
@@ -1128,7 +1135,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       if (linked()) {
         const shown = scene.parts.filter(p => !p.hidden).length;
         title.textContent = "Project model";
-        modelNote.innerHTML = `<p class="lyr-note">${scene.parts.length ? `Parts and joints are shared by every scene in this project. This scene shows ${shown} of ${scene.parts.length}: the eye picks which.` : "The parts you add here are the project's model: every scene can show them."}</p>`;
+        modelNote.innerHTML = `<p class="lyr-note">${modelOnly ? "The project's parts and how they join. Every 3D scene in the project picks its parts from here." : scene.parts.length ? `Parts and joints are shared by every scene in this project. This scene shows ${shown} of ${scene.parts.length}: the eye picks which.` : "The parts you add here are the project's model: every scene can show them."}</p>`;
       } else {
         title.textContent = "Parts";
         modelNote.innerHTML = `<div class="lyr-scene-banner"><p>This scene has its own parts. The project has a model of ${projectModel?.parts.length || 0} part${projectModel?.parts.length === 1 ? "" : "s"}.</p>
@@ -5256,7 +5263,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           : `<p class="lyr-note">${scene.parts.length ? "Click a part, in the view or the list, to place it." : "Add a part to start."}</p>`}
         </section>
         ${diagramSection(p)}
-        <section class="lyr-scene-section">
+        <section class="lyr-scene-section"${modelOnly ? " hidden" : ""}>
           <div class="lyr-panel-title">Style</div>
           <div class="lyr-scene-presets">
             ${STYLE_PRESETS.map(s => `<button type="button" class="lyr-scene-preset" data-preset="${s.id}" title="${esc(s.detail)}">${esc(s.label)}</button>`).join("")}
@@ -6682,7 +6689,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           ${!own.length && !follow.length ? `<li class="lyr-bad">Nothing in it: the guide leaves it out.</li>` : ""}
           ${!warns.length && !blocked.length && (own.length || follow.length) ? `<li class="lyr-ok">${icon("check", 12)} Every part goes onto one already fitted, and comes off clear.</li>` : ""}
         </ul>
-        <button type="button" class="lyr-wide-btn" data-steps="use" title="This picture shows this step when Steps mode ends">${icon("camera", 16)} Use this step for this picture</button>
+        <button type="button" class="lyr-wide-btn" data-steps="use"${modelOnly ? " hidden" : ""} title="This picture shows this step when Steps mode ends">${icon("camera", 16)} Use this step for this picture</button>
         <p class="lyr-note">The project's /Assembly guide draws a page for each step, in this order.</p>
       </section>${toolsPanel()}`;
     }
@@ -6943,7 +6950,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     function cancel(): void {
       commit();
       if (stepsOn) setMode(false);
-      if ((JSON.stringify(scene) !== start || stepsChanged()) && !window.confirm("Leave the 3D scene without keeping your changes?")) return;
+      if ((JSON.stringify(scene) !== start || stepsChanged()) && !window.confirm(modelOnly ? "Leave the model without keeping your changes?" : "Leave the 3D scene without keeping your changes?")) return;
       close(null);
     }
 
@@ -6961,7 +6968,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       commit();
       const btn = $<HTMLButtonElement>("[data-act=done]");
       btn.disabled = true;
-      status("Drawing the picture…", false, true);
+      status(modelOnly ? "Saving the project's model…" : "Drawing the picture…", false, true);
       try {
         const out = clone(scene);
         // Models carried from before they were packed small are packed now
@@ -6990,6 +6997,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           const base = repack ? { ...was, parts: modelOf(out, was.stamp).parts } : was;
           await opts.saveModel({ ...base, ...viewsOut(), ...stepsOut() });
         }
+        // Just the model: no picture to draw.
+        if (modelOnly) return close({ scene: out, picture: document.createElement("canvas") });
         status("Drawing the picture…", false, true);
         const picture = await renderPicture(out, opts.store, opts.width, opts.height, opts.scale);
         close({ scene: out, picture });
