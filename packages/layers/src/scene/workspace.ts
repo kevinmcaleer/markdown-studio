@@ -23,7 +23,7 @@ import { connectorFile, connectorMesh, connectorOf, CONNECTOR_FAMILIES, DEFAULT_
 import { cableRadius, MIN_BEND, tightestBend, wireLength, wireRoute, wireTriangles } from "./wire";
 import { mirrorPartner, mirrorPlane, mirrorPoint } from "./wireMirror";
 import { guessedSockets, guessPins, fitsPicture } from "./pinGuess";
-import { cableBetween, catalogSocketsFor, coloursFromDiagram, connectionsFor, diagramLabels, freePort, linkByName, missingWires, partsNotInScene, portById, portPlacements, routedCount, type DiagramEnd, type PortPlacement, type WiringPart, type WiringHost, type WiringInfo } from "./wiring2d";
+import { cableBetween, catalogSocketsFor, coloursFromDiagram, connectionsFor, diagramLabels, freePort, linkByName, missingWires, movedConnections, partsNotInScene, portById, portPlacements, routedCount, type DiagramEnd, type PortPlacement, type WiringPart, type WiringHost, type WiringInfo } from "./wiring2d";
 import { BARE_PIN, BUNDLE_TWIST, cableColours, connectionsOf, coresOf, isBarePin, loomsOf, newSocketId, nextWireColour, WIRE_COLOURS, WIRE_DEFAULTS, WIRE_LIMITS, wireColourName, type PartSocket, type WireCore, type WireEnd, type WireSpec, type WireWaypoint } from "./wireSpec";
 import { applyJoint } from "./joint";
 import { EXPLODE_DIRS, explodeChooser, explodeDirLabel, explodeVector, type ExplodeChoice, type ExplodeShape } from "./explode";
@@ -3036,13 +3036,16 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       try {
         const oldName = wireName(p.wire, endHost(p.wire.from)?.name || "", endHost(p.wire.to)?.name || "");
         const oldPlug = partById(old.part)?.plug ? partById(old.part) : undefined;
+        // Where it was in the 2D wiring diagram (before its plug goes).
+        const wasOn = diagramEnd(old);
         let index = endPinIndex(old);
         const ways = isBarePin(t.socket) ? 1 : connectorOf(t.socket.connector)?.ways || 1;
         if (index !== undefined) index = Math.max(0, Math.min(ways - 1, index));
         const moved = await wireEndAt(t, index);
         if (closed) return;
         p.wire = { ...p.wire, [c.end]: moved };
-        const unlinked = afterEndMoved(p);
+        const unlinked = await afterEndMoved(p, wasOn, moved);
+        if (closed) return;
         if (p.name === oldName) p.name = wireName(p.wire, endHost(p.wire.from)?.name || "", endHost(p.wire.to)?.name || "");
         // The plug it left goes, when no other wire is in it.
         if (oldPlug && oldPlug.id !== moved.part && !scene.parts.some(w => w.wire && (w.wire.from.part === oldPlug.id || w.wire.to.part === oldPlug.id))) {
@@ -3069,14 +3072,33 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
      * have them (the diagram's cable between its ports, if there is one).
      * Says what changed, or "".
      */
-    function afterEndMoved(p: ScenePart): string {
+    async function afterEndMoved(p: ScenePart, wasOn: DiagramEnd | null, moved: WireEnd): Promise<string> {
       if (!p.wire) return "";
       const had = connectionsOf(p.wire);
+      // Linked to the diagram: its connections move to the new pins there too.
+      const nowOn = diagramEnd(moved);
+      let failed = "";
+      if (had.length && diagram && wasOn && nowOn) {
+        if (wasOn.part === nowOn.part && wasOn.port === nowOn.port) return "";
+        const changes = movedConnections(diagram, had, wasOn, nowOn, endPinIndex(moved));
+        if (changes && wiringHost?.updateConnections) {
+          if (!changes.length) return "";
+          try {
+            const saved = await wiringHost.updateConnections(changes);
+            const byId = new Map(saved.map(x => [x.id, x]));
+            diagram = { ...diagram, connections: diagram.connections.map(x => byId.get(x.id) || x) };
+            return ` The wiring diagram has it on ${portName(nowOn)} now too.`;
+          } catch (err) {
+            failed = ` Couldn't change the wiring diagram (${(err as Error).message || err}).`;
+          }
+        }
+      }
       const plain = withCoreList(p.wire, coresOf(p.wire).map(k => ({ color: k.color })));
       p.wire = plain;
       const linked = linkToDiagram(p);
-      if (linked) return ` It's the wiring diagram's ${linked} now.`;
-      return had.length ? " It's no longer linked to the wiring diagram: its ends don't match a connection there." : "";
+      if (linked) return `${failed} It's the wiring diagram's ${linked} now.`;
+      if (!had.length) return failed;
+      return `${failed} It's no longer linked to the wiring diagram, which is unchanged: ${nowOn ? "its pins there don't fit" : "it isn't on one of the diagram's pins now"}.`;
     }
 
     /** The carried end's wire drawn to the pointer (or as it was, off the parts). */
