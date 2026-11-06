@@ -823,6 +823,26 @@ export class LineArt {
   }
 
   /**
+   * Shifts each part up (world Z) from where it is now by `lifts`' mm, or
+   * hides it (null): the drop-in animation's parts, falling. A part not in
+   * `lifts` stays where it is. Only for scenes drawn without draft lines or
+   * arrows (they would stay behind), and parts that aren't wires.
+   */
+  lift(world: Map<string, Matrix4>, lifts: Map<string, number | null>): void {
+    for (const o of this.objects) {
+      const m = world.get(o.part.id);
+      if (!m) continue;
+      const dz = lifts.get(o.part.id);
+      const show = !o.part.hidden && dz !== null;
+      o.group.visible = o.idGroup.visible = show;
+      const at = dz ? new Matrix4().makeTranslation(0, 0, dz).multiply(m) : m;
+      place(o.group, at);
+      place(o.idGroup, at);
+    }
+    this.placeCaps();
+  }
+
+  /**
    * Solid arrows along the gaps, as on a flat-pack sheet: each a flat
    * shape facing the camera, drawn in the picture against the parts'
    * depth, so an arrow passes behind a part rather than over it, and a

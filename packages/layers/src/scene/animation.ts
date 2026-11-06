@@ -213,7 +213,7 @@ export function animationStyle(): SceneStyle {
 }
 
 /** Up to `max` of the meshes' points, where they're drawn now (an even spread, for framing). */
-function samplePoints(art: LineArt, max = 40000): Float32Array {
+export function samplePoints(art: LineArt, max = 40000): Float32Array {
   const { meshes, points } = art.placed();
   let total = 0;
   for (const m of meshes) total += m.geometry.getAttribute("position")?.count || 0;
@@ -281,49 +281,62 @@ export async function renderAnimation(model: Pick<ProjectModel, "parts">, store:
       ctx.fillRect(0, 0, width, height);
       ctx.drawImage(art.renderer.domElement, 0, 0, width, height);
     };
-    const pixels = (i: number) => {
-      draw(i);
-      return ctx.getImageData(0, 0, width, height).data;
-    };
-    const step = async (i: number) => {
-      options.progress?.(i + 1, frames.length);
-      // Let the page breathe between frames.
-      if (i % 4 === 3) await new Promise(r => setTimeout(r, 0));
-    };
-    const format = options.format ?? "auto";
-    const config = format === "gif" ? null : await mp4Config(width, height, options.fps ?? 15);
-    if (format === "mp4" && !config) throw new Error("This browser can't make an MP4 video.");
-    if (config) {
-      const mp4 = new Mp4Writer(config);
-      try {
-        for (let i = 0; i < frames.length; i++) {
-          if (options.cancelled?.()) throw new Error("Stopped.");
-          draw(i);
-          await mp4.add(out, frames[i].delay);
-          await step(i);
-        }
-        return { blob: await mp4.finish(), type: "video/mp4", width, height, frames: frames.length };
-      } catch (e) {
-        mp4.close();
-        // The encoder gave up part way (a GPU hiccup, say): a GIF still works, unless an MP4 was asked for.
-        if (format === "mp4" || options.cancelled?.()) throw e;
-      }
-    }
-    const rgb = hexRgb(bg);
-    // One palette from a few telling frames: assembled, apart, part way round.
+    // One palette (for a GIF) from a few telling frames: assembled, apart, part way round.
     const samples = [0, frames.findIndex(f => f.phase === "pause"), ...[0.25, 0.5, 0.75].map(t => frames.findIndex(f => f.phase === "turn" && f.turn >= t))].filter(i => i >= 0);
-    const palette = paletteFor(samples.map(i => pixels(i).slice()), rgb);
-    const gif = new GifWriter(width, height, palette);
-    for (let i = 0; i < frames.length; i++) {
-      if (options.cancelled?.()) throw new Error("Stopped.");
-      gif.add({ indices: indexFrame(pixels(i), palette, rgb), delay: frames[i].delay });
-      await step(i);
-    }
-    const bytes = gif.finish();
-    return { blob: new Blob([bytes as BlobPart], { type: "image/gif" }), type: "image/gif", width, height, frames: frames.length };
+    return await encodeFrames(out, frames.map(f => f.delay), draw, samples, options);
   } finally {
     art.dispose();
   }
+}
+
+/**
+ * Encodes frames drawn on `canvas` (`draw(i)` draws frame i there; it
+ * shows for `delays[i]` ms): an MP4 (H.264) where the browser can encode
+ * one, else a GIF whose one palette comes from the `samples` frames.
+ */
+export async function encodeFrames(canvas: HTMLCanvasElement, delays: number[], draw: (i: number) => void, samples: number[], options: AnimationOptions = {}): Promise<Animation> {
+  const { width, height } = canvas;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+  const bg = options.background || ANIMATION_BACKGROUND;
+  const n = delays.length;
+  const pixels = (i: number) => {
+    draw(i);
+    return ctx.getImageData(0, 0, width, height).data;
+  };
+  const step = async (i: number) => {
+    options.progress?.(i + 1, n);
+    // Let the page breathe between frames.
+    if (i % 4 === 3) await new Promise(r => setTimeout(r, 0));
+  };
+  const format = options.format ?? "auto";
+  const config = format === "gif" ? null : await mp4Config(width, height, options.fps ?? 15);
+  if (format === "mp4" && !config) throw new Error("This browser can't make an MP4 video.");
+  if (config) {
+    const mp4 = new Mp4Writer(config);
+    try {
+      for (let i = 0; i < n; i++) {
+        if (options.cancelled?.()) throw new Error("Stopped.");
+        draw(i);
+        await mp4.add(canvas, delays[i]);
+        await step(i);
+      }
+      return { blob: await mp4.finish(), type: "video/mp4", width, height, frames: n };
+    } catch (e) {
+      mp4.close();
+      // The encoder gave up part way (a GPU hiccup, say): a GIF still works, unless an MP4 was asked for.
+      if (format === "mp4" || options.cancelled?.()) throw e;
+    }
+  }
+  const rgb = hexRgb(bg);
+  const palette = paletteFor(samples.filter(i => i >= 0 && i < n).map(i => pixels(i).slice()), rgb);
+  const gif = new GifWriter(width, height, palette);
+  for (let i = 0; i < n; i++) {
+    if (options.cancelled?.()) throw new Error("Stopped.");
+    gif.add({ indices: indexFrame(pixels(i), palette, rgb), delay: delays[i] });
+    await step(i);
+  }
+  const bytes = gif.finish();
+  return { blob: new Blob([bytes as BlobPart], { type: "image/gif" }), type: "image/gif", width, height, frames: n };
 }
 
 function hexRgb(hex: string): [number, number, number] {
