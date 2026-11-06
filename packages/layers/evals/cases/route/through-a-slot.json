@@ -1,0 +1,89 @@
+{
+  "title": "A wire takes the slot in a wall rather than climbing over its top",
+  "why": "A 6 mm wall 50 mm high stands across a 200 mm plate, with a 4 mm slot up its middle. Pins 25 mm either side of the wall and 20 mm along from the slot point up. Over the top is about 120 mm; through the slot (snug for a 1.6 mm wire, but it fits) is about 65. An autorouter that only takes roomy gaps climbs the wall; a person threads the slot.",
+  "input": {
+    "parts": [
+      {
+        "id": "base",
+        "shape": {
+          "box": [
+            120,
+            200,
+            5
+          ]
+        },
+        "position": [
+          0,
+          0,
+          -2.5
+        ]
+      },
+      {
+        "id": "wallL",
+        "shape": {
+          "box": [
+            6,
+            98,
+            50
+          ]
+        },
+        "position": [
+          0,
+          -51,
+          25
+        ]
+      },
+      {
+        "id": "wallR",
+        "shape": {
+          "box": [
+            6,
+            98,
+            50
+          ]
+        },
+        "position": [
+          0,
+          51,
+          25
+        ]
+      }
+    ],
+    "wire": {
+      "from": {
+        "part": "base",
+        "point": [
+          -25,
+          -20,
+          2.5
+        ],
+        "normal": [
+          0,
+          0,
+          1
+        ]
+      },
+      "to": {
+        "part": "base",
+        "point": [
+          25,
+          -20,
+          2.5
+        ],
+        "normal": [
+          0,
+          0,
+          1
+        ]
+      },
+      "waypoints": [],
+      "color": "#d22",
+      "diameter": 1.6,
+      "slack": 5
+    }
+  },
+  "expect": {
+    "hitsBefore": true,
+    "maxLength": 85
+  }
+}

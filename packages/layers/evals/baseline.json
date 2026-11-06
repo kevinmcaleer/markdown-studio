@@ -35,6 +35,8 @@
   "route/board-to-motor-under-plate": 1,
   "route/keeps-hand-waypoint": 1,
   "route/over-a-wall": 1,
+  "route/through-a-hole-in-the-deck": 1,
+  "route/through-a-slot": 1,
   "screw/m25-through-2mm": 1,
   "screw/m3-blind-9mm": 1,
   "screw/m3-hole-by-edge": 1,
