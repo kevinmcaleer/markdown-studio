@@ -22,8 +22,8 @@ import {
 import { connectorFile, connectorMesh, connectorOf, CONNECTOR_FAMILIES, DEFAULT_CONNECTOR, plugLift } from "./connectors";
 import { cableRadius, MIN_BEND, tightestBend, wireLength, wireRoute, wireTriangles } from "./wire";
 import { mirrorPartner, mirrorPlane, mirrorPoint } from "./wireMirror";
-import { cableBetween, catalogSocketsFor, coloursFromDiagram, connectionsFor, diagramLabels, freePort, linkByName, missingWires, partsNotInScene, routedCount, type DiagramEnd, type WiringHost, type WiringInfo } from "./wiring2d";
-import { BUNDLE_TWIST, cableColours, coresOf, loomsOf, newSocketId, nextWireColour, WIRE_COLOURS, WIRE_DEFAULTS, WIRE_LIMITS, wireColourName, type PartSocket, type WireCore, type WireEnd, type WireSpec, type WireWaypoint } from "./wireSpec";
+import { cableBetween, catalogSocketsFor, coloursFromDiagram, connectionsFor, diagramLabels, freePort, linkByName, missingWires, partsNotInScene, portById, portPlacements, routedCount, type DiagramEnd, type PortPlacement, type WiringPart, type WiringHost, type WiringInfo } from "./wiring2d";
+import { BARE_PIN, BUNDLE_TWIST, cableColours, coresOf, isBarePin, loomsOf, newSocketId, nextWireColour, WIRE_COLOURS, WIRE_DEFAULTS, WIRE_LIMITS, wireColourName, type PartSocket, type WireCore, type WireEnd, type WireSpec, type WireWaypoint } from "./wireSpec";
 import { applyJoint } from "./joint";
 import { emptyModel, frame, frameTight, LineArt, modelFromPositions, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
 import { MAX_EMBED, parseStl, stlFaces, toBinaryStl, tooBigToCarry } from "./stl";
@@ -1979,7 +1979,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       if (screwing) return art.meshes().filter(m => !partById(String(m.userData.partId || ""))?.screw);
       if (wiringOn) return art.meshes().filter(m => {
         const q = partById(String(m.userData.partId || ""));
-        return q && !isWiring(q);
+        return q && !isWiring(q) && (!pinPick || q.id === pinPick.part);
       });
       if (trackPick && trackDraft) {
         const d = trackDraft;
@@ -2123,7 +2123,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         let best = 14;
         for (const so of socketsOnView()) {
           const d = Math.hypot(so.x - pointer.x, so.y - pointer.y);
-          if (hover && d < best) {
+          if (hover && d < best && !pinPick) {
             best = d;
             socketHover = { part: so.part, socket: so.socket };
           }
@@ -2134,7 +2134,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           if (on) {
             const c = connectorOf(so.socket.connector);
             const busy = plugIn(so.part, so.socket.id);
-            marks.push(`<span class="lyr-snap-label" style="left:${so.x}px;top:${so.y}px">${esc(`${so.socket.name || "Socket"}${c ? ` · ${c.family.label} ${c.ways}-way` : ""}${busy ? " · has a plug" : ""}`)}</span>`);
+            marks.push(`<span class="lyr-snap-label" style="left:${so.x}px;top:${so.y}px">${esc(isBarePin(so.socket) ? `Pin ${so.socket.name || so.socket.pin || ""} · bare, no plug` : `${so.socket.name || "Socket"}${c ? ` · ${c.family.label} ${c.ways}-way` : ""}${busy ? " · has a plug" : ""}`)}</span>`);
           }
         }
         if (wireDraft) {
@@ -2171,7 +2171,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         }
         if (on) {
           const p = screen[hover.snap];
-          const text = wiringOn ? `${wireDraft ? (shiftDown ? "End the wire here" : "Waypoint") : "First plug"} · ${ROLE_LABEL[on.role]}` : screwing ? screwHint(hover.id, on) : trackPick === "wheel" && on.radius ? `Ø${round(on.radius * 2, 1)} mm circle` : `${ROLE_LABEL[on.role]}${faceHeld ? " · face held" : ""}`;
+          const text = pinPick ? `${pinPickLabel(pinPick)} · ${ROLE_LABEL[on.role]}` : wiringOn ? `${wireDraft ? (shiftDown ? "End the wire here" : "Waypoint") : "First plug"} · ${ROLE_LABEL[on.role]}` : screwing ? screwHint(hover.id, on) : trackPick === "wheel" && on.radius ? `Ø${round(on.radius * 2, 1)} mm circle` : `${ROLE_LABEL[on.role]}${faceHeld ? " · face held" : ""}`;
           marks.push(`<span class="lyr-snap-label" style="left:${p.x}px;top:${p.y}px">${esc(text)}</span>`);
         }
         if (on?.radius && (on.role === "hole" || on.role === "rim" || on.role === "centre")) {
@@ -2484,7 +2484,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
             color: typeof v.color === "string" && (v.color === "auto" || /^#[0-9a-f]{6}$/i.test(v.color)) ? v.color : "auto",
             diameter: Number.isFinite(v.diameter) ? Math.max(WIRE_LIMITS.diameter[0], Math.min(WIRE_LIMITS.diameter[1], Number(v.diameter))) : WIRE_DEFAULTS.diameter,
             slack: Number.isFinite(v.slack) ? Math.max(0, Math.min(WIRE_LIMITS.slack[1], Number(v.slack))) : WIRE_DEFAULTS.slack,
-            connector: connectorOf(String(v.connector || "")) ? String(v.connector) : DEFAULT_CONNECTOR,
+            connector: v.connector === BARE_PIN || connectorOf(String(v.connector || "")) ? String(v.connector) : DEFAULT_CONNECTOR,
             cores: Number.isInteger(v.cores) ? Math.max(1, Math.min(WIRE_LIMITS.cores, Number(v.cores))) : 1,
           };
         }
@@ -2496,6 +2496,13 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     let wireChoice = readWireChoice();
     /** Armed while true. */
     let wiringOn = false;
+    /**
+     * Placing a linked part's port on its model (its Pins, under Wiring
+     * diagram), with the wire tool's picking: `plug` set, the socket a plug
+     * of that connector goes in (one click); null, its pins one by one, from
+     * `pins[at]` (each a bare pin: a tab, a terminal, a battery snap).
+     */
+    let pinPick: { part: string; port: string; plug: string | null; pins: string[]; at: number } | null = null;
     /** One end of a wire being made: a socket on a part (one already there, or one to add). */
     interface DraftEnd { part: string; socket: PartSocket; fresh: boolean }
     let wireDraft: { from: DraftEnd; waypoints: WireWaypoint[] } | null = null;
@@ -2508,6 +2515,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     }).join("")}</optgroup>`).join("");
 
     function renderWireBar(): void {
+      if (pinPick) return renderPinBar(pinPick);
       const used = scene.parts.flatMap(p => (p.wire ? [p.wire.color] : []));
       const auto = nextWireColour(used);
       wireBar.innerHTML = `
@@ -2516,14 +2524,15 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         <label title="How many wires: more than one makes a cable, its wires side by side from each plug (a servo lead is 3)"><span>Wires</span><input type="number" min="1" max="${WIRE_LIMITS.cores}" step="1" data-wire="cores" value="${wireChoice.cores}"></label>
         <label title="Mm across (each wire's, in a cable)"><span>Ø</span><input type="number" min="${WIRE_LIMITS.diameter[0]}" max="${WIRE_LIMITS.diameter[1]}" step="0.1" data-wire="diameter" value="${wireChoice.diameter}"><span>mm</span></label>
         <label title="Mm of extra length: the wire bows out between the points it passes"><span>Slack</span><input type="number" min="0" max="${WIRE_LIMITS.slack[1]}" step="1" data-wire="slack" value="${wireChoice.slack}"><span>mm</span></label>
-        <label title="The plug a new socket takes (the STS3215 servo lead's is Molex Mini-SPOX 5264, 3 way)"><span>Plug</span><select data-wire="connector">${connectorOptions(wireChoice.connector)}</select></label>
+        <label title="The plug a new socket takes (the STS3215 servo lead's is Molex Mini-SPOX 5264, 3 way); None: the wire ends on a bare pin, tab or terminal"><span>Plug</span><select data-wire="connector"><option value="${BARE_PIN}"${wireChoice.connector === BARE_PIN ? " selected" : ""}>None (bare pin)</option>${connectorOptions(wireChoice.connector)}</select></label>
         <button type="button" class="lyr-btn lyr-icon-btn" data-act="wire-stop" title="Stop making wires (Esc)" aria-label="Stop">${icon("close", 16)}</button>`;
     }
     wireBar.addEventListener("change", e => {
       const el = e.target as HTMLInputElement | HTMLSelectElement;
       const key = el.dataset.wire;
       if (key === "color") wireChoice.color = el.value;
-      else if (key === "connector") wireChoice.connector = connectorOf(el.value) ? el.value : DEFAULT_CONNECTOR;
+      else if (key === "connector") wireChoice.connector = el.value === BARE_PIN || connectorOf(el.value) ? el.value : DEFAULT_CONNECTOR;
+      if (el.dataset.pinPlug !== undefined && pinPick) pinPick.plug = connectorOf(el.value) ? el.value : pinPick.plug;
       else if (key === "diameter") wireChoice.diameter = Math.max(WIRE_LIMITS.diameter[0], Math.min(WIRE_LIMITS.diameter[1], Number(el.value) || WIRE_DEFAULTS.diameter));
       else if (key === "slack") wireChoice.slack = Math.max(0, Math.min(WIRE_LIMITS.slack[1], Number(el.value) || 0));
       else if (key === "cores") wireChoice.cores = Math.max(1, Math.min(WIRE_LIMITS.cores, Math.round(Number(el.value) || 1)));
@@ -2565,6 +2574,10 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       wiringOn = false;
       wireDraft = null;
       socketHover = null;
+      if (pinPick) {
+        pinPick = null;
+        renderProps();
+      }
       wireBar.hidden = true;
       $("[data-act=wire]").classList.remove("lyr-on");
       canvasEl.classList.remove("lyr-scene-picking");
@@ -2615,6 +2628,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     let wireBusy = false;
     function wireClick(shift: boolean): void {
       if (wireBusy) return;
+      if (pinPick) return pinClick();
       if (!wireDraft) {
         const t = wireTarget();
         if (!t) {
@@ -2645,7 +2659,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
 
     /** Ends the wire being made at its last waypoint (Enter). */
     function endWireHere(): void {
-      if (!wireDraft) return;
+      if (!wireDraft || pinPick) return;
       const last = wireDraft.waypoints.pop();
       if (!last?.part || !last.point || !last.normal) {
         status("Click at least one point past the first plug, or click a socket to end the wire.", true);
@@ -2653,6 +2667,193 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       }
       const p = partById(last.part)!;
       void finishWire({ part: p.id, socket: { id: newSocketId(p.sockets), point: last.point, normal: last.normal, connector: wireChoice.connector }, fresh: true });
+    }
+
+    // ------------------------------------------------------------ the pins on a part's model
+
+    // A part linked to the 2D wiring diagram has its ports and pins from the
+    // diagram's pinout. Pins (under Wiring diagram) says where each is on
+    // its model: a port a plug goes in (JST, Molex, Dupont) as the plug's
+    // socket, its pins following the connector's pitch; or each pin on its
+    // own (a motor's tabs, a battery snap, a screw terminal), the wire ending
+    // right on it. Picking works as the joint picker's does: the face's
+    // natural points (hole and rim centres, middles, corners) snap. Wires
+    // then start where the pins are, and "Save pins to the catalog part"
+    // keeps them for every project.
+
+    /** The connector a plug for a port of `n` pins would be: the one there, else one that fits. */
+    function plugForPort(n: number, had?: string): string | null {
+      if (had && connectorOf(had)?.ways === n) return had;
+      const like = connectorOf(wireChoice.connector);
+      if (like && like.family.ways.includes(n)) return `${like.family.id}-${n}`;
+      const f = CONNECTOR_FAMILIES.find(x => x.ways.includes(n));
+      return f ? `${f.id}-${n}` : null;
+    }
+
+    const pinLabel = (w: WiringPart | undefined, pin: string) => {
+      const q = w?.ports.flatMap(x => x.pins).find(x => x.name === pin);
+      return q?.label && q.label !== pin ? `${pin} (${q.label})` : pin;
+    };
+
+    /** What's being placed now, for the pointer's label. */
+    function pinPickLabel(pp: NonNullable<typeof pinPick>): string {
+      const w = diagram?.parts.find(x => x.id === partById(pp.part)?.wiringPart);
+      const port = portById(w, pp.port);
+      if (pp.plug) return `${port?.name || "Port"} socket`;
+      return `Pin ${pinLabel(w, pp.pins[pp.at] || "")}`;
+    }
+
+    function renderPinBar(pp: NonNullable<typeof pinPick>): void {
+      const w = diagram?.parts.find(x => x.id === partById(pp.part)?.wiringPart);
+      const port = portById(w, pp.port);
+      const n = port?.pins.length || 1;
+      const plugs = CONNECTOR_FAMILIES.filter(f => f.ways.includes(n)).map(f => `${f.id}-${n}`);
+      wireBar.innerHTML = `
+        <span class="lyr-screw-bar-title">${icon("plug", 16)}<span>Pins</span></span>
+        <span class="lyr-play-name">${esc(`${w?.name || ""} ${port?.name || ""}`.trim())}${pp.plug ? "" : ` · pin ${Math.min(pp.at + 1, pp.pins.length)} of ${pp.pins.length}: ${esc(pinLabel(w, pp.pins[pp.at] || ""))}`}</span>
+        ${pp.plug ? `<label title="The plug that goes in this port"><span>Plug</span><select data-pin-plug>${plugs.map(id => `<option value="${id}"${id === pp.plug ? " selected" : ""}>${esc(connectorOf(id)!.name)}</option>`).join("")}</select></label>` : ""}
+        <button type="button" class="lyr-btn lyr-icon-btn" data-act="wire-stop" title="Done (Esc)" aria-label="Done">${icon("close", 16)}</button>`;
+    }
+
+    /** Starts placing a port of the picked part: its plug's socket, or its pins from `pin` (the first not placed, else the first). */
+    function startPinPick(p: ScenePart, portId: string, plug: boolean, pin?: string): void {
+      const w = diagram?.parts.find(x => x.id === p.wiringPart);
+      const port = portById(w, portId);
+      if (!w || !port) return;
+      if (plug && !plugForPort(port.pins.length)) {
+        status(`No plug in the list has ${port.pins.length} ways: place its pins one by one.`, true);
+        return;
+      }
+      const placed = portPlacements(w, p.sockets).find(x => x.port.id === portId);
+      const names = port.pins.map(q => q.name);
+      // One pin: just it; else every pin, from the first one not placed yet.
+      const pins = pin ? [pin] : names;
+      const at = pin ? 0 : Math.max(0, names.findIndex(n => !placed?.pins.has(n)));
+      startWires();
+      pinPick = { part: p.id, port: portId, plug: plug ? plugForPort(port.pins.length, placed?.plug?.connector) : null, pins, at };
+      renderWireBar();
+      select(p.id);
+      status(plug ? `Click where ${port.name}'s socket is on ${p.name}: the face the plug goes in against (its middle, or a hole or rim). Esc when done.` : `Click pin ${pinLabel(w, pins[at])} on ${p.name}: the base of a tab or terminal, or a hole's centre. Esc when done.`, false, true);
+    }
+
+    function pinClick(): void {
+      const pp = pinPick;
+      if (!pp) return;
+      const pick = hoverPick();
+      const p = partById(pp.part);
+      if (!p) return stopWires();
+      if (!pick || pick.id !== p.id) {
+        status(`Click on ${p.name}: ${pinPickLabel(pp)} is on it.`, true, true);
+        return;
+      }
+      const w = diagram?.parts.find(x => x.id === p.wiringPart);
+      const port = portById(w, pp.port);
+      if (pp.plug) {
+        placePlugSocket(p, pp.port, port?.name || pp.port, pp.plug, pick.point, pick.normal);
+        commit();
+        stopWires(`${port?.name || "The port"}'s socket placed on ${p.name}: wires from the diagram plug in there.`);
+        return;
+      }
+      placePin(p, pp.port, pp.pins[pp.at], pinLabel(w, pp.pins[pp.at]), pick.point, pick.normal);
+      commit();
+      pp.at++;
+      if (pp.at >= pp.pins.length) {
+        stopWires(pp.pins.length === 1 ? `Pin ${pinLabel(w, pp.pins[0])} placed on ${p.name}.` : `${port?.name || "Port"}: all ${pp.pins.length} pins placed on ${p.name}.`);
+        return;
+      }
+      renderWireBar();
+      draw();
+      status(`Pin ${pinLabel(w, pp.pins[pp.at - 1])} placed. Now click pin ${pinLabel(w, pp.pins[pp.at])}.`, false, true);
+    }
+
+    /** Whether a wire ends on this point of a part (a bare pin there). */
+    const wiresAt = (part: string, point: Vec3) => scene.parts.filter(q => q.wire && [q.wire.from, q.wire.to].some(e => e.part === part && e.point.every((v, i) => Math.abs(v - point[i]) < 0.01)));
+
+    /** Puts a port's plug socket on the part here (moving the one there, and its plug), dropping its bare pins no wire is on. */
+    function placePlugSocket(p: ScenePart, portId: string, name: string, connector: string, point: Vec3, normal: Vec3): void {
+      const had = p.sockets?.find(s => s.port === portId && !isBarePin(s));
+      let sockets = (p.sockets || []).filter(s => !(isBarePin(s) && s.port === portId && !wiresAt(p.id, s.point).length));
+      if (had) {
+        sockets = sockets.map(s => (s.id === had.id ? { ...s, point, normal, connector } : s));
+      } else {
+        sockets.push({ id: newSocketId(p.sockets), point, normal, connector, port: portId, name });
+      }
+      p.sockets = sockets;
+      const plug = had ? plugIn(p.id, had.id) : undefined;
+      if (plug?.joint) {
+        plug.joint = { ...plug.joint, point: point.map(v => round(v, 3)) as Vec3, normal: normal.map(v => round(v, 5)) as Vec3 };
+        applyJoint(plug);
+        if (plug.plug?.connector !== connector) void setPlugConnector(plug, connector);
+        else {
+          rebuild();
+          renderProps();
+        }
+      } else {
+        draw();
+        renderProps();
+      }
+    }
+
+    /** Puts a bare pin on the part here (moving the one there, and the wires on it), dropping the port's empty plug socket. */
+    function placePin(p: ScenePart, portId: string, pin: string, name: string, point: Vec3, normal: Vec3): void {
+      const had = p.sockets?.find(s => isBarePin(s) && s.pin === pin);
+      let sockets = (p.sockets || []).filter(s => !(s.port === portId && !isBarePin(s) && !plugIn(p.id, s.id)));
+      if (had) {
+        for (const q of wiresAt(p.id, had.point)) {
+          const at = (e: WireEnd) => (e.part === p.id && e.point.every((v, i) => Math.abs(v - had.point[i]) < 0.01) ? { ...e, point: [...point] as Vec3, normal: [...normal] as Vec3 } : e);
+          q.wire = { ...q.wire!, from: at(q.wire!.from), to: at(q.wire!.to) };
+        }
+        sockets = sockets.map(s => (s.id === had.id ? { ...s, point, normal } : s));
+      } else {
+        const s: PartSocket = { id: newSocketId(p.sockets), point, normal, connector: BARE_PIN, pin, name };
+        if (!portId.startsWith("pin:")) s.port = portId;
+        sockets.push(s);
+      }
+      p.sockets = sockets;
+      rebuild();
+      renderProps();
+    }
+
+    /** Takes a port's pins or plug socket off the part (those no wire or plug is on). */
+    function clearPort(p: ScenePart, portId: string, pins: string[]): void {
+      const before = p.sockets?.length || 0;
+      p.sockets = (p.sockets || []).filter(s => {
+        const mine = isBarePin(s) ? !!s.pin && pins.includes(s.pin) : s.port === portId;
+        if (!mine) return true;
+        return isBarePin(s) ? wiresAt(p.id, s.point).length > 0 : !!plugIn(p.id, s.id);
+      });
+      const gone = before - p.sockets.length;
+      if (!p.sockets.length) delete p.sockets;
+      draw();
+      renderProps();
+      commit();
+      status(gone ? `Took ${gone === 1 ? "it" : `${gone} of them`} off ${p.name}.` : "Each has a wire or plug on it: take those off first.", !gone);
+    }
+
+    /** A linked part's ports, how far each is placed on its model, and the buttons to place them. */
+    function pinsPanel(p: ScenePart, w: WiringPart): string {
+      const list = portPlacements(w, p.sockets);
+      if (!list.length) return `<p class="lyr-note">${esc(w.name)} has no pins in the wiring diagram's pinout.</p>`;
+      const rows = list.map((x: PortPlacement) => {
+        const n = x.port.pins.length;
+        const c = x.plug ? connectorOf(x.plug.connector) : null;
+        const state = x.plug ? `${c ? `${c.family.label} ${c.ways}-way` : "Plug"} socket` : x.pins.size ? `${x.pins.size} of ${n} pin${n === 1 ? "" : "s"} placed` : "Not placed";
+        const pins = x.port.pins.map(q => {
+          const on = x.pins.has(q.name);
+          return `<button type="button" class="lyr-pin-chip${on ? " lyr-on" : ""}${x.plug ? " lyr-pin-plugged" : ""}" data-act="pin-one" data-port="${esc(x.port.id)}" data-pin="${esc(q.name)}" title="${on ? "Placed as a bare pin: click to place it again" : "Place this pin on its own"}">${esc(q.label || q.name)}</button>`;
+        }).join("");
+        const canPlug = !!plugForPort(n, x.plug?.connector);
+        return `<div class="lyr-pins-port">
+          <div class="lyr-pins-row"><span class="lyr-pins-name" title="${esc(x.port.id)}">${esc(x.port.name)}</span><span class="lyr-pins-state${x.plug || x.pins.size === n ? " lyr-pins-ok" : ""}">${esc(state)}</span></div>
+          <div class="lyr-pins-pins">${pins}</div>
+          <div class="lyr-pins-acts">
+            <button type="button" class="lyr-btn" data-act="pin-plug" data-port="${esc(x.port.id)}"${canPlug ? "" : " disabled"} title="A plug goes in here (JST, Molex, Dupont): click its socket's face on the model, and its pins follow the connector">${icon("plug", 14)}<span>${x.plug ? "Move socket" : "Plug"}</span></button>
+            <button type="button" class="lyr-btn" data-act="pin-bare" data-port="${esc(x.port.id)}" title="Wires end right on each pin (tabs, terminals, a battery snap): click each pin on the model in turn">${icon("wire", 14)}<span>${x.pins.size ? "Place pins again" : "Bare pins"}</span></button>
+            ${x.plug || x.pins.size ? `<button type="button" class="lyr-btn lyr-icon-btn" data-act="pin-clear" data-port="${esc(x.port.id)}" title="Take these off the model" aria-label="Take these off the model">${icon("close", 14)}</button>` : ""}
+          </div>
+        </div>`;
+      }).join("");
+      return `<div class="lyr-pins"><div class="lyr-pins-head">Pins on the model</div>${rows}</div>`;
     }
 
     /** Each connector's model, packed to carry, made once. */
@@ -2718,15 +2919,34 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       return { part: plug.id, point: m.exit, normal: m.exitNormal, row: [1, 0, 0], pitch: connectorOf(id)?.family.pitch || 2.54 };
     }
 
+    /**
+     * Where a wire ends at this socket: a bare pin's point (the wire soldered
+     * or screwed on there), else the back of the plug in it (put in when
+     * there's none). A pin of a plug's (`index`, pin 1 is 0) for a wire of
+     * its own: that pin's place along the plug's back.
+     */
+    async function wireEndAt(end: DraftEnd, index?: number): Promise<WireEnd> {
+      if (isBarePin(end.socket)) {
+        const host = partById(end.part)!;
+        if (end.fresh) host.sockets = [...(host.sockets || []), end.socket];
+        return { part: end.part, point: [...end.socket.point] as Vec3, normal: [...end.socket.normal] as Vec3 };
+      }
+      const exit = plugExit(await plugFor(end));
+      if (index === undefined) return exit;
+      const n = connectorOf(end.socket.connector)?.ways || 1;
+      const k = (index - (n - 1) / 2) * (exit.pitch || 2.54);
+      return { part: exit.part, point: exit.point.map((v, i) => round(v + (exit.row || [1, 0, 0])[i] * k, 3)) as Vec3, normal: exit.normal };
+    }
+
     async function finishWire(to: DraftEnd): Promise<void> {
       const draft = wireDraft;
       if (!draft || wireBusy) return;
       wireBusy = true;
       try {
-        const a = await plugFor(draft.from);
-        const b = await plugFor(to);
+        const a = await wireEndAt(draft.from);
+        const b = await wireEndAt(to);
         if (closed) return;
-        const spec = newWireSpec(plugExit(a), plugExit(b), draft.waypoints);
+        const spec = newWireSpec(a, b, draft.waypoints);
         const from = partById(draft.from.part)?.name || "";
         const toName = partById(to.part)?.name || "";
         const wire: ScenePart = {
@@ -3169,8 +3389,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       }
       wireBusy = true;
       try {
-        const from = isDraft(a) ? plugExit(await plugFor(a)) : a;
-        const to = isDraft(b) ? plugExit(await plugFor(b)) : b;
+        const from = isDraft(a) ? await wireEndAt(a) : a;
+        const to = isDraft(b) ? await wireEndAt(b) : b;
         if (closed) return;
         // Its cores aren't the 2D wiring's connections (the original's are).
         const spec: WireSpec = { ...w, from, to, waypoints: ways };
@@ -3250,6 +3470,12 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
 
     /** The diagram end a wire end is at: its plug's socket's port, on the part linked to the diagram. */
     function diagramEnd(e: WireEnd): DiagramEnd | null {
+      const on = partById(e.part);
+      if (on && !on.plug && on.wiringPart) {
+        // A bare pin: the one the end is on.
+        const pin = on.sockets?.find(s => isBarePin(s) && s.pin && s.point.every((v, i) => Math.abs(v - e.point[i]) < 0.01));
+        return pin ? { part: on.wiringPart, port: `pin:${pin.pin}` } : null;
+      }
       const plug = partById(e.part);
       const host = plug?.plug && plug.parent ? partById(plug.parent) : undefined;
       const socket = host?.sockets?.find(s => s.id === plug!.plug!.socket);
@@ -3273,7 +3499,13 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
 
     const portName = (e: DiagramEnd) => {
       const w = diagram?.parts.find(x => x.id === e.part);
-      return `${w?.name || e.part} ${w?.ports.find(x => x.id === e.port)?.name || e.port}`;
+      return `${w?.name || e.part} ${portById(w, e.port)?.name || e.port}`;
+    };
+    /** "Motor 1 M+": a pin ("m1.M+") by its part's name. */
+    const pinName = (ref: string) => {
+      const at = ref.indexOf(".");
+      const w = diagram?.parts.find(x => x.id === ref.slice(0, at));
+      return `${w?.name || ref.slice(0, at)} ${ref.slice(at + 1)}`;
     };
 
     /** Adds the picked wire to the diagram as new connections (pin to pin by label), and links them. */
@@ -3283,7 +3515,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const b = diagramEnd(p.wire.to);
       const want = a && b ? connectionsFor(diagram, a, b, coresOf(p.wire).map(c => c.color)) : null;
       if (!a || !b || !want) {
-        status("Its plugs' ports don't match up in the wiring diagram: each end needs a socket on a linked part, on ports with as many pins.", true);
+        status("Its ends don't match up in the wiring diagram: each needs a plug in a port's socket, or a placed pin, on a part linked to the diagram, with as many pins at each end.", true);
         return;
       }
       status("Adding it to the wiring diagram…", false, true);
@@ -3307,18 +3539,20 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       if (!diagram || wireBusy) return;
       const { wires, skipped } = missingWires(diagram, scene.parts);
       if (!wires.length) {
-        status(skipped ? `None can be added: ${skipped} of the diagram's cables need a socket at each end, on parts linked to the diagram.` : "Every wire in the diagram is in the model.", !!skipped);
+        status(skipped ? `None can be added: ${skipped} of the diagram's cables need their pins placed at each end, on parts linked to the diagram (pick a part, then Pins under Wiring diagram).` : "Every wire in the diagram is in the model.", !!skipped);
         return;
       }
       wireBusy = true;
       try {
         for (const m of wires) {
-          const a = await plugFor({ part: m.from.part, socket: m.from.socket, fresh: false });
-          const b = await plugFor({ part: m.to.part, socket: m.to.socket, fresh: false });
+          const a = await wireEndAt({ part: m.from.part, socket: m.from.socket, fresh: false }, m.fromIndex);
+          const b = await wireEndAt({ part: m.to.part, socket: m.to.socket, fresh: false }, m.toIndex);
           if (closed) return;
-          const spec = withCoreList(newWireSpec(plugExit(a), plugExit(b), []), m.cores);
+          const spec = withCoreList(newWireSpec(a, b, []), m.cores);
           if (m.cores.length > 1 && m.cores.length <= 4) spec.lay = "flat";
-          const made: ScenePart = { id: newPartId(scene.parts), name: `${portName(m.cable.from)} to ${portName(m.cable.to)}`.slice(0, 120), position: [0, 0, 0], rotation: [0, 0, 0], wire: spec };
+          const one = m.cable.connections.length === 1 && (m.fromIndex !== undefined || m.toIndex !== undefined || isBarePin(m.from.socket) || isBarePin(m.to.socket));
+          const label = one ? `${pinName(m.cable.connections[0].from)} to ${pinName(m.cable.connections[0].to)}` : `${portName(m.cable.from)} to ${portName(m.cable.to)}`;
+          const made: ScenePart = { id: newPartId(scene.parts), name: label.slice(0, 120), position: [0, 0, 0], rotation: [0, 0, 0], wire: spec };
           keepModel(made, emptyModel());
           scene.parts.push(made);
         }
@@ -3326,7 +3560,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         commit();
         renderList();
         renderProps();
-        status(`${wires.length} wire${wires.length === 1 ? "" : "s"} added from the wiring diagram, each by the shortest smooth run: pick one and Shift-click the parts to route it.${skipped ? ` ${skipped} more need sockets first.` : ""}`);
+        status(`${wires.length} wire${wires.length === 1 ? "" : "s"} added from the wiring diagram, each by the shortest smooth run: pick one and Shift-click the parts to route it.${skipped ? ` ${skipped} more need their pins placed first (a part's Pins, under Wiring diagram).` : ""}`);
       } finally {
         wireBusy = false;
       }
@@ -3414,16 +3648,12 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       } else if (p) {
         const w = p.wiringPart ? d.parts.find(x => x.id === p.wiringPart) : undefined;
         const taken = new Set(scene.parts.filter(q => q.id !== p.id && q.wiringPart).map(q => q.wiringPart));
-        const ports = w?.ports.map(x => {
-          const s = p.sockets?.find(q => q.port === x.id);
-          return `${esc(x.name)}: ${s ? "socket" : "no socket yet"}`;
-        });
         const model = models.get(p.id);
         const fits = w && model && !(model instanceof Error) ? catalogSocketsFor(w.sockets, model.size as Vec3) : null;
         mine = `<label class="lyr-scene-namebox">This part is <select data-wiring-part><option value="">Not in the diagram</option>${d.parts.map(x => `<option value="${esc(x.id)}"${x.id === p.wiringPart ? " selected" : ""}${taken.has(x.id) ? " disabled" : ""}>${esc(x.name)}${taken.has(x.id) ? " (linked)" : ""}</option>`).join("")}</select></label>
-          ${ports?.length ? `<p class="lyr-note">${ports.join("<br>")}</p>` : ""}
+          ${w ? pinsPanel(p, w) : ""}
           ${w && fits && !p.sockets?.length ? `<button type="button" class="lyr-wide-btn" data-act="sockets-from-catalog">${icon("plug", 14)} Use the catalog's ${fits.length} socket${fits.length === 1 ? "" : "s"}</button>` : ""}
-          ${w?.slug && p.sockets?.length && wiringHost?.saveSockets ? `<button type="button" class="lyr-wide-btn" data-act="sockets-to-catalog" title="Keep these sockets on the catalog part, so every project that uses ${esc(w.name)} gets them">${icon("plug", 14)} Save sockets to the catalog part</button>` : ""}`;
+          ${w?.slug && p.sockets?.length && wiringHost?.saveSockets ? `<button type="button" class="lyr-wide-btn" data-act="sockets-to-catalog" title="Keep where its pins and sockets are on the catalog part, so every project that uses ${esc(w.name)} gets them">${icon("plug", 14)} Save pins to the catalog part</button>` : ""}`;
       }
       const { routed, total } = routedCount(d, scene.parts);
       const missing = missingWires(d, scene.parts);
@@ -3434,7 +3664,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         ${away.withModel.length || away.noModel.length ? `<p class="lyr-note">Not in this scene yet: ${esc(listNames([...away.withModel, ...away.noModel].map(w => w.name)))}.</p>` : ""}
         ${away.withModel.length ? `<button type="button" class="lyr-wide-btn" data-act="diagram-parts" title="Each from its catalog part's 3D model, linked to the diagram">${icon("plus", 14)} Add ${away.withModel.length === 1 ? esc(away.withModel[0].name) : `the diagram's ${away.withModel.length} parts`}</button>` : ""}
         <p class="lyr-note">${routed} of ${total} wire${total === 1 ? "" : "s"} in the diagram routed here.</p>
-        ${missing.wires.length ? `<button type="button" class="lyr-wide-btn" data-act="diagram-missing" title="A cable for each of the diagram's with sockets at both ends, by the shortest smooth run">${icon("wire", 14)} Add missing wires (${missing.wires.length})</button>` : ""}
+        ${missing.wires.length ? `<button type="button" class="lyr-wide-btn" data-act="diagram-missing" title="A wire or cable for each of the diagram's with its pins placed at both ends, by the shortest smooth run">${icon("wire", 14)} Add missing wires (${missing.wires.length})</button>` : ""}
         ${byName ? `<button type="button" class="lyr-wide-btn" data-act="diagram-names" title="Link parts whose names match the diagram's">${icon("link", 14)} Link parts by name (${byName})</button>` : ""}
         ${!p?.wire && wiringHost?.open ? `<button type="button" class="lyr-wide-btn" data-act="diagram-open">${icon("wire", 14)} Open the wiring diagram</button>` : ""}
       </section>`;
@@ -4786,6 +5016,14 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           commit();
           renderProps();
         }
+      } else if (b.dataset.act === "pin-plug" || b.dataset.act === "pin-bare" || b.dataset.act === "pin-one") {
+        const p = partById(selectedId);
+        if (p && b.dataset.port) startPinPick(p, b.dataset.port, b.dataset.act === "pin-plug", b.dataset.act === "pin-one" ? b.dataset.pin : undefined);
+      } else if (b.dataset.act === "pin-clear") {
+        const p = partById(selectedId);
+        const w = diagram?.parts.find(x => x.id === p?.wiringPart);
+        const port = portById(w, b.dataset.port || "");
+        if (p && port) clearPort(p, port.id, port.pins.map(q => q.name));
       } else if (b.dataset.act === "sockets-to-catalog") {
         const p = partById(selectedId);
         if (p) void saveSocketsToCatalog(p);

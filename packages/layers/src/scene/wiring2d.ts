@@ -14,7 +14,7 @@
 // add its connections to the diagram.
 
 import type { ScenePart, Vec3 } from "./model";
-import { connectionsOf, coresOf, type PartSocket, type WireCore } from "./wireSpec";
+import { connectionsOf, coresOf, isBarePin, type PartSocket, type WireCore } from "./wireSpec";
 
 export interface WiringPin {
   /** The pin's name on its part ("D1"): what connections name. */
@@ -108,6 +108,27 @@ export function portOfPin(part: WiringPart | undefined, pin: string): { port: Wi
   return null;
 }
 
+/**
+ * A part's port by id; "pin:<name>" is one pin on its own (a lone pin, or a
+ * bare pin of a port wired by itself), as a port of that one pin.
+ */
+export function portById(part: WiringPart | undefined, id: string): WiringPort | null {
+  if (!part) return null;
+  if (id.startsWith("pin:")) {
+    const name = id.slice(4);
+    const pin = part.ports.flatMap(p => p.pins).find(p => p.name === name);
+    return { id, name: pin?.label && pin.label !== name ? `${name} (${pin.label})` : name, pins: [pin || { name }] };
+  }
+  return part.ports.find(p => p.id === id) || null;
+}
+
+/** Whether a pin is on this diagram end (its port, or the lone pin it is). */
+function endHasPin(part: WiringPart | undefined, end: DiagramEnd, ref: { part: string; pin: string }): boolean {
+  if (ref.part !== end.part) return false;
+  if (end.port === `pin:${ref.pin}`) return true;
+  return portOfPin(part, ref.pin)?.port.id === end.port;
+}
+
 /** One end of a cable in the diagram: a placed part's port (or a lone pin's). */
 export interface DiagramEnd {
   part: string;
@@ -169,48 +190,126 @@ export interface ModelEnd {
   socket: PartSocket;
 }
 
-/** The socket for a diagram end: on the model part linked to its placed part, for its port. */
+/** The socket for a diagram end: on the model part linked to its placed part, a plug's for its port. */
 export function socketFor(parts: ScenePart[], end: DiagramEnd): ModelEnd | null {
+  if (end.port.startsWith("pin:")) return pinSocketFor(parts, end.part, end.port.slice(4));
   for (const p of parts) {
     if (p.wiringPart !== end.part || !p.sockets) continue;
-    const s = p.sockets.find(x => x.port === end.port);
+    const s = p.sockets.find(x => x.port === end.port && !isBarePin(x));
     if (s) return { part: p.id, socket: s };
   }
   return null;
 }
 
-/** A 3D cable "Add missing wires" would make. */
+/** The bare pin a diagram pin is on the model, if it's been placed: on the model part linked to its placed part. */
+export function pinSocketFor(parts: ScenePart[], part: string, pin: string): ModelEnd | null {
+  for (const p of parts) {
+    if (p.wiringPart !== part || !p.sockets) continue;
+    const s = p.sockets.find(x => isBarePin(x) && x.pin === pin);
+    if (s) return { part: p.id, socket: s };
+  }
+  return null;
+}
+
+/** How far each of a port's pins is placed on a model part: by a plug's socket, or pin by pin. */
+export interface PortPlacement {
+  port: WiringPort;
+  /** The plug's socket for the port, when it has one. */
+  plug?: PartSocket;
+  /** Its pins placed as bare pins, by pin name. */
+  pins: Map<string, PartSocket>;
+}
+
+/** Each of a placed part's ports as a model part has them placed. */
+export function portPlacements(part: WiringPart | undefined, sockets: PartSocket[] | undefined): PortPlacement[] {
+  return (part?.ports || []).map(port => {
+    const pins = new Map<string, PartSocket>();
+    for (const s of sockets || []) if (isBarePin(s) && s.pin && port.pins.some(q => q.name === s.pin)) pins.set(s.pin, s);
+    const plug = (sockets || []).find(s => s.port === port.id && !isBarePin(s));
+    return plug ? { port, plug, pins } : { port, pins };
+  });
+}
+
+/**
+ * A 3D cable "Add missing wires" would make. A wire of one of the diagram's
+ * connections, when an end is a bare pin, ends on that pin; at a plug, on
+ * its pin `fromIndex`/`toIndex` along the plug (pin 1 is 0).
+ */
 export interface MissingWire {
   cable: DiagramCable;
   from: ModelEnd;
   to: ModelEnd;
   cores: WireCore[];
+  fromIndex?: number;
+  toIndex?: number;
 }
 
 /**
  * What "Add missing wires" makes: a 3D cable for each of the diagram's not
- * routed yet that has sockets at both ends. `skipped` counts those it
- * can't, for want of a linked part or a socket for the port.
+ * routed yet with a plug's socket for its port at both ends; where either
+ * end's pins are placed one by one (bare pins: a motor's tabs, a screw
+ * terminal), a wire for each of its connections instead, pin to pin (or to
+ * its pin's place on a plug). `skipped` counts the cables it can't, for
+ * want of a linked part, a socket for the port or a placed pin.
  */
 export function missingWires(info: WiringInfo, parts: ScenePart[]): { wires: MissingWire[]; skipped: number } {
   const routed = new Set(parts.flatMap(p => (p.wire ? connectionsOf(p.wire) : [])));
+  const placed = new Map(info.parts.map(p => [p.id, p]));
   const wires: MissingWire[] = [];
   let skipped = 0;
   for (const cable of diagramCables(info)) {
     if (cable.connections.some(c => routed.has(c.id))) continue;
     const from = socketFor(parts, cable.from);
     const to = socketFor(parts, cable.to);
-    if (!from || !to || (from.part === to.part && from.socket.id === to.socket.id)) {
-      skipped++;
+    if (from && to && !isBarePin(from.socket) && !isBarePin(to.socket)) {
+      if (from.part === to.part && from.socket.id === to.socket.id) {
+        skipped++;
+        continue;
+      }
+      wires.push({ cable, from, to, cores: cable.connections.map(c => ({ color: connectionColour(c), connection: c.id })) });
       continue;
     }
-    wires.push({ cable, from, to, cores: cable.connections.map(c => ({ color: connectionColour(c), connection: c.id })) });
+    // Pin by pin: each connection's ends, each on its bare pin or its place on the port's plug.
+    const one: MissingWire[] = [];
+    const endOf = (end: DiagramEnd, plug: ModelEnd | null, ref: { part: string; pin: string }): { at: ModelEnd; index?: number } | null => {
+      const bare = pinSocketFor(parts, ref.part, ref.pin);
+      if (bare) return { at: bare };
+      if (!plug || isBarePin(plug.socket)) return null;
+      const on = portOfPin(placed.get(ref.part), ref.pin);
+      return on && on.port.id === end.port ? { at: plug, index: on.index } : null;
+    };
+    for (const c of cable.connections) {
+      let a = splitPin(c.from);
+      let b = splitPin(c.to);
+      if (!endHasPin(placed.get(cable.from.part), cable.from, a)) [a, b] = [b, a];
+      const x = endOf(cable.from, from, a);
+      const y = endOf(cable.to, to, b);
+      if (!x || !y || (x.at.part === y.at.part && x.at.socket.id === y.at.socket.id && x.index === y.index)) break;
+      const w: MissingWire = { cable: { ...cable, connections: [c] }, from: x.at, to: y.at, cores: [{ color: connectionColour(c), connection: c.id }] };
+      if (x.index !== undefined) w.fromIndex = x.index;
+      if (y.index !== undefined) w.toIndex = y.index;
+      one.push(w);
+    }
+    if (one.length === cable.connections.length) wires.push(...one);
+    else skipped++;
   }
   return { wires, skipped };
 }
 
 /** The diagram's cable between these two ports (either way round), if it has one. */
 export function cableBetween(info: WiringInfo, a: DiagramEnd, b: DiagramEnd): DiagramCable | null {
+  if (a.port.startsWith("pin:") || b.port.startsWith("pin:")) {
+    // A bare pin's end: the connections between exactly these pins.
+    const placed = new Map(info.parts.map(p => [p.id, p]));
+    const connections = info.connections.flatMap(c => {
+      const x = splitPin(c.from);
+      const y = splitPin(c.to);
+      const fwd = endHasPin(placed.get(a.part), a, x) && endHasPin(placed.get(b.part), b, y);
+      const back = endHasPin(placed.get(a.part), a, y) && endHasPin(placed.get(b.part), b, x);
+      return fwd || back ? [c] : [];
+    });
+    return connections.length ? { from: a, to: b, connections } : null;
+  }
   const same = (x: DiagramEnd, y: DiagramEnd) => x.part === y.part && x.port === y.port;
   for (const c of diagramCables(info)) {
     if (same(c.from, a) && same(c.to, b)) return c;
@@ -234,8 +333,8 @@ export function netOfPin(pin: WiringPin): "vcc" | "gnd" | "signal" {
  * (a different number of pins).
  */
 export function connectionsFor(info: WiringInfo, a: DiagramEnd, b: DiagramEnd, colours?: string[]): Omit<WiringConnection, "id">[] | null {
-  const pa = info.parts.find(p => p.id === a.part)?.ports.find(p => p.id === a.port);
-  const pb = info.parts.find(p => p.id === b.part)?.ports.find(p => p.id === b.port);
+  const pa = portById(info.parts.find(p => p.id === a.part), a.port);
+  const pb = portById(info.parts.find(p => p.id === b.part), b.port);
   if (!pa || !pb || !pa.pins.length || pa.pins.length !== pb.pins.length) return null;
   const label = (p: WiringPin) => (p.label || p.name).toUpperCase();
   const byLabel = pa.pins.every(p => pb.pins.filter(q => label(q) === label(p)).length === 1);
@@ -305,7 +404,7 @@ export function partsNotInScene(info: WiringInfo, parts: ScenePart[]): { withMod
 
 /** The first of a placed part's ports with this many pins no socket has yet (for a new socket). */
 export function freePort(part: WiringPart | undefined, ways: number, sockets: PartSocket[] | undefined): string | undefined {
-  const used = new Set((sockets || []).map(s => s.port));
+  const used = new Set((sockets || []).filter(s => !isBarePin(s)).map(s => s.port));
   return (part?.ports.find(p => p.pins.length === ways && !used.has(p.id)) || part?.ports.find(p => !used.has(p.id) && p.pins.length >= ways))?.id;
 }
 

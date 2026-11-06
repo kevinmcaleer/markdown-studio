@@ -1,0 +1,376 @@
+{
+  "title": "Add missing wires: a motor's bare tabs to a driver's screw terminal, and to a JST socket",
+  "why": "Motor 1's tabs (M+, M-) are placed pin by pin, as are the driver's screw terminal pins A1 and A2: a motor lead is two wires soldered to the tabs, not a plugged cable, so each connection is a wire of its own, A1 to M+ then A2 to M- (in the driver's pin order, though drawn the other way round in the diagram). Motor 2's tabs go to the driver's Motor B port, which has a JST XH 2-way socket: each wire ends on its pin's place along the plug, B1 the plug's pin 1 (#0) and B2 its pin 2 (#1). Motor 3 has only M+ placed, so its pair waits.",
+  "input": {
+    "info": {
+      "parts": [
+        {
+          "id": "m1",
+          "name": "Motor 1",
+          "ports": [
+            {
+              "id": "tabs",
+              "name": "Tabs",
+              "pins": [
+                {
+                  "name": "M+",
+                  "label": "+"
+                },
+                {
+                  "name": "M-",
+                  "label": "-"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "m2",
+          "name": "Motor 2",
+          "ports": [
+            {
+              "id": "tabs",
+              "name": "Tabs",
+              "pins": [
+                {
+                  "name": "M+",
+                  "label": "+"
+                },
+                {
+                  "name": "M-",
+                  "label": "-"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "m3",
+          "name": "Motor 3",
+          "ports": [
+            {
+              "id": "tabs",
+              "name": "Tabs",
+              "pins": [
+                {
+                  "name": "M+",
+                  "label": "+"
+                },
+                {
+                  "name": "M-",
+                  "label": "-"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "drv",
+          "name": "Driver",
+          "ports": [
+            {
+              "id": "motor-a",
+              "name": "Motor A",
+              "pins": [
+                {
+                  "name": "A1"
+                },
+                {
+                  "name": "A2"
+                }
+              ]
+            },
+            {
+              "id": "motor-b",
+              "name": "Motor B",
+              "pins": [
+                {
+                  "name": "B1"
+                },
+                {
+                  "name": "B2"
+                }
+              ]
+            },
+            {
+              "id": "motor-c",
+              "name": "Motor C",
+              "pins": [
+                {
+                  "name": "C1"
+                },
+                {
+                  "name": "C2"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "connections": [
+        {
+          "id": "a2",
+          "from": "drv.A2",
+          "to": "m1.M-",
+          "net": "gnd",
+          "cable": "ma"
+        },
+        {
+          "id": "a1",
+          "from": "drv.A1",
+          "to": "m1.M+",
+          "net": "vcc",
+          "cable": "ma"
+        },
+        {
+          "id": "b1",
+          "from": "m2.M+",
+          "to": "drv.B1",
+          "net": "vcc",
+          "cable": "mb"
+        },
+        {
+          "id": "b2",
+          "from": "m2.M-",
+          "to": "drv.B2",
+          "net": "gnd",
+          "cable": "mb"
+        },
+        {
+          "id": "c1",
+          "from": "m3.M+",
+          "to": "drv.C1",
+          "cable": "mc"
+        },
+        {
+          "id": "c2",
+          "from": "m3.M-",
+          "to": "drv.C2",
+          "cable": "mc"
+        }
+      ]
+    },
+    "parts": [
+      {
+        "id": "mot1",
+        "position": [
+          0,
+          0,
+          0
+        ],
+        "wiringPart": "m1",
+        "sockets": [
+          {
+            "id": "m1p",
+            "point": [
+              -3,
+              0,
+              6
+            ],
+            "normal": [
+              0,
+              0,
+              1
+            ],
+            "connector": "pin",
+            "pin": "M+",
+            "port": "tabs"
+          },
+          {
+            "id": "m1n",
+            "point": [
+              3,
+              0,
+              6
+            ],
+            "normal": [
+              0,
+              0,
+              1
+            ],
+            "connector": "pin",
+            "pin": "M-",
+            "port": "tabs"
+          }
+        ]
+      },
+      {
+        "id": "mot2",
+        "position": [
+          0,
+          30,
+          0
+        ],
+        "wiringPart": "m2",
+        "sockets": [
+          {
+            "id": "m2p",
+            "point": [
+              -3,
+              0,
+              6
+            ],
+            "normal": [
+              0,
+              0,
+              1
+            ],
+            "connector": "pin",
+            "pin": "M+",
+            "port": "tabs"
+          },
+          {
+            "id": "m2n",
+            "point": [
+              3,
+              0,
+              6
+            ],
+            "normal": [
+              0,
+              0,
+              1
+            ],
+            "connector": "pin",
+            "pin": "M-",
+            "port": "tabs"
+          }
+        ]
+      },
+      {
+        "id": "mot3",
+        "position": [
+          0,
+          60,
+          0
+        ],
+        "wiringPart": "m3",
+        "sockets": [
+          {
+            "id": "m3p",
+            "point": [
+              -3,
+              0,
+              6
+            ],
+            "normal": [
+              0,
+              0,
+              1
+            ],
+            "connector": "pin",
+            "pin": "M+",
+            "port": "tabs"
+          }
+        ]
+      },
+      {
+        "id": "board",
+        "position": [
+          80,
+          0,
+          0
+        ],
+        "wiringPart": "drv",
+        "sockets": [
+          {
+            "id": "ta1",
+            "point": [
+              0,
+              -2.5,
+              8
+            ],
+            "normal": [
+              0,
+              0,
+              1
+            ],
+            "connector": "pin",
+            "pin": "A1",
+            "port": "motor-a"
+          },
+          {
+            "id": "ta2",
+            "point": [
+              0,
+              2.5,
+              8
+            ],
+            "normal": [
+              0,
+              0,
+              1
+            ],
+            "connector": "pin",
+            "pin": "A2",
+            "port": "motor-a"
+          },
+          {
+            "id": "jb",
+            "point": [
+              0,
+              20,
+              5
+            ],
+            "normal": [
+              -1,
+              0,
+              0
+            ],
+            "connector": "jst-xh-2",
+            "port": "motor-b"
+          }
+        ]
+      }
+    ]
+  },
+  "expect": {
+    "wires": [
+      [
+        "a1"
+      ],
+      [
+        "a2"
+      ],
+      [
+        "b1"
+      ],
+      [
+        "b2"
+      ]
+    ],
+    "colours": [
+      [
+        "#d33a2c"
+      ],
+      [
+        "#222222"
+      ],
+      [
+        "#d33a2c"
+      ],
+      [
+        "#222222"
+      ]
+    ],
+    "ends": [
+      [
+        "ta1",
+        "m1p"
+      ],
+      [
+        "ta2",
+        "m1n"
+      ],
+      [
+        "m2p",
+        "jb#0"
+      ],
+      [
+        "m2n",
+        "jb#1"
+      ]
+    ],
+    "skipped": 1
+  }
+}

@@ -889,3 +889,21 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 .lyr-scene-list-head { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding: 6px 4px 2px; border-top: 1px solid var(--lyr-line); color: var(--lyr-muted); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
 /* The play bar while the wires go in: which wire it is. */
 .lyr-play-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; color: var(--lyr-ink); }
+
+/* A linked part's pins on its model (Wiring diagram > Pins on the model). */
+.lyr-pins { margin: 8px 0; display: flex; flex-direction: column; gap: 6px; }
+.lyr-pins-head { font-size: 12px; font-weight: 600; color: var(--lyr-ink); }
+.lyr-pins-port { border: 1px solid var(--lyr-line); border-radius: 6px; padding: 6px; display: flex; flex-direction: column; gap: 5px; }
+.lyr-pins-row { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; font-size: 12px; }
+.lyr-pins-name { font-weight: 600; color: var(--lyr-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lyr-pins-state { color: var(--lyr-muted); white-space: nowrap; }
+.lyr-pins-state.lyr-pins-ok { color: #2e9e4f; }
+.lyr-pins-pins { display: flex; flex-wrap: wrap; gap: 3px; }
+.lyr-pin-chip { font: 11px/1 var(--lyr-mono, ui-monospace, monospace); padding: 3px 5px; border-radius: 3px; border: 1px solid var(--lyr-line); background: transparent; color: var(--lyr-ink); cursor: pointer; }
+.lyr-pin-chip:hover { border-color: #2e9e4f; }
+.lyr-pin-chip.lyr-on { background: #2e9e4f; border-color: #2e9e4f; color: #fff; }
+.lyr-pin-chip.lyr-pin-plugged:not(.lyr-on) { border-style: dashed; }
+.lyr-pins-acts { display: flex; gap: 4px; align-items: center; }
+.lyr-pins-acts .lyr-btn { display: inline-flex; align-items: center; justify-content: center; gap: 4px; font-size: 12px; }
+.lyr-pins-acts .lyr-btn svg { width: auto; flex: none; }
+.lyr-pins-acts .lyr-icon-btn { margin-left: auto; border: 0; background: transparent; }
