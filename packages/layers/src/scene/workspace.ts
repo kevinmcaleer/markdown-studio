@@ -132,6 +132,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     const aspect = opts.width / opts.height;
     const models = new Map<string, Model | Error>();
     let selectedId = "";
+    /** The part whose pins are being mapped: the rest are faded. */
+    let pinFocus = "";
     let tool: "translate" | "rotate" = "translate";
     let busy = false;
     let closed = false;
@@ -416,7 +418,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       // A track's piece stays out of the picture (Show all, a branch's eye...), but while its track is being made.
       hideTrackPieces(scene.parts, trackDraft?.linkId);
       art.setSection(scene.section);
-      art.look = lookOf(scene);
+      art.look = pinFocus && partById(pinFocus) ? { ...lookOf(scene), focus: pinFocus } : lookOf(scene);
       syncSectionButton();
       art.setParts(loaded(), scene.style, scene.explode);
       attachGizmo();
@@ -834,6 +836,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
 
     function select(id: string, keepJoint = false): void {
       selectedId = id;
+      // Picking another part (or none) ends pin mapping's fade.
+      if (pinFocus && id !== pinFocus) setPinFocus("");
       if (!keepJoint && shownJoint) {
         shownJoint = "";
         status("");
@@ -2854,6 +2858,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const pins = pin ? (placed?.pins.has(pin) ? [pin] : [pin, ...names.filter(n => n !== pin && !placed?.pins.has(n))]) : names;
       const at = pin ? 0 : Math.max(0, names.findIndex(n => !placed?.pins.has(n)));
       startWires();
+      setPinFocus(p.id);
       pinPick = { part: p.id, port: portId, plug: plug ? plugForPort(port.pins.length, placed?.plug?.connector) : null, pins, at };
       renderWireBar();
       select(p.id);
@@ -3765,9 +3770,20 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         : skipped ? `${skipped} wire${skipped === 1 ? "" : "s"} need${skipped === 1 ? "s" : ""} pins placed by hand: pick the part, then click its pins under Pins on the model.` : "Every wire in the diagram is in the model.", !said.length && !!skipped);
     }
 
+    /**
+     * Mapping a part's pins (Map pins, or placing them): the other parts fade
+     * so it stands out. Ends when another part (or none) is picked.
+     */
+    function setPinFocus(id: string): void {
+      if (pinFocus === id) return;
+      pinFocus = id;
+      rebuild();
+    }
+
     /** Picks a linked part and brings its Pins on the model (its picture with its pins) into view. */
     function showPins(id: string): void {
       select(id);
+      setPinFocus(id);
       const box = props.querySelector<HTMLElement>(".lyr-pins");
       box?.scrollIntoView({ block: "nearest", behavior: "smooth" });
       const p = partById(id);

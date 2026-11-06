@@ -605,6 +605,8 @@ export function isWiring(p: Pick<ScenePart, "wire" | "plug">): boolean {
  */
 export function shownAs(p: ScenePart, scene: SceneLook): ScenePart {
   if (scene.hideWiring && isWiring(p) && !p.hidden) return { ...p, hidden: true };
+  // Mapping a part's pins: every other part faded (its own plugs stay).
+  if (scene.focus) return p.id === scene.focus || p.parent === scene.focus || p.ghost ? p : { ...p, ghost: true };
   if (scene.step) {
     if (scene.step.hidden.has(p.id) && !p.hidden) return { ...p, hidden: true };
     if (scene.step.ghost.has(p.id) && !p.ghost) return { ...p, ghost: true };
@@ -617,6 +619,8 @@ export function shownAs(p: ScenePart, scene: SceneLook): ScenePart {
 /** How a scene's wiring settings show its parts: the flags, and a wiring step's parts worked out. */
 export interface SceneLook {
   wiring?: boolean;
+  /** The one part shown as it is, the rest ghosted (the workspace's pin mapping; never in the picture). */
+  focus?: string;
   hideWiring?: boolean;
   step?: { ghost: Set<string>; hidden: Set<string> };
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyPreset, blankScene, followModel, highlightedParts, newPartId, normalizeScene, partName, placeBeside, wrapAngle } from "./model";
+import { applyPreset, blankScene, followModel, highlightedParts, newPartId, normalizeScene, partName, placeBeside, shownAs, wrapAngle } from "./model";
 
 describe("normalizeScene", () => {
   it("gives a blank scene for nonsense", () => {
@@ -134,5 +134,17 @@ describe("helpers", () => {
     const existing = [{ min: [-10, -10, 0], max: [10, 10, 20] }, { min: [10, 20, 0], max: [30, 40, 10] }] as never[];
     // The group spans x -10…30, y -10…40, z 0…20: beside it at x 30 + gap + half.
     expect(placeBeside(existing, [500, -300, 200], [10, 10, 10])).toEqual([30 + 10 + 5, 15, 5]);
+  });
+});
+
+describe("shownAs with a focus", () => {
+  it("fades every part but the one being mapped (and its own plugs)", () => {
+    const parts = normalizeScene({ parts: [
+      { id: "m", name: "Motor" },
+      { id: "b", name: "Board" },
+      { id: "p", name: "Plug", parent: "m" },
+    ] }).parts;
+    expect(parts.map(p => !!shownAs(p, { focus: "m" }).ghost)).toEqual([false, true, false]);
+    expect(parts.map(p => !!shownAs(p, {}).ghost)).toEqual([false, false, false]);
   });
 });
