@@ -75,7 +75,7 @@ jobs:
         run: npm run eval:pictures -w packages/layers
       - name: Keep the report and pictures
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: scene-evals
           path: packages/layers/evals/out/
