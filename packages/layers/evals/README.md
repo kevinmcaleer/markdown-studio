@@ -20,6 +20,7 @@ They cover the parts of 3D scenes that rely on guesses:
 | `cases/sit/` | Sit on part drops a joined part straight down until it rests on the part beneath: on a well's floor rather than its walls, on a wall's top when it's over one, and not at all when nothing is beneath |
 | `cases/explode/` | Smart explode sends a joined part off the way a person would take it apart: a shield lifted off its board even when it was joined by its edge, a board lifted out of a tub rather than through its wall or floor, and a wheel still off along its axle |
 | `cases/track/` | Make track's pieces join up all the way round, and none cuts into a wheel |
+| `cases/trackPiece/` | The piece a track was made from stays out of the finished assembly: hidden when a scene loads or follows the model, an old picture that drew it is marked out of date, and a step counts it once per link |
 | `cases/wire/` | A wire leaves each plug straight out, lies on the faces it's routed over (not in them), takes up its slack, sags or bows the right way, and its ends stay on their parts when exploded; a cable's wires meet each plug at its pins, lie touching (flat or round) and never run through each other |
 | `cases/mirror/` | Mirror a wire finds each part's partner across the middle of the model (not x 0), and puts each point where the mirror does, its face turned the mirror's way |
 | `cases/diagram/` | Add missing wires makes a 3D cable for each of the 2D diagram's with sockets at both ends, its wires in the plug's pin order and the diagram's colours |

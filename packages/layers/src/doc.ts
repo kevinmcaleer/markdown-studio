@@ -5,6 +5,7 @@
 
 import { readText, writeText } from "./png";
 import { meshTable, restoreParts, type Meshes } from "./scene/meshTable";
+import { showsTrackPiece } from "./scene/trackSpec";
 
 export const DOC_APP = "layers";
 export const DOC_VERSION = 1;
@@ -172,7 +173,8 @@ export function staleScenes(doc: LayersDoc | null, stamp: number): number {
   let n = 0;
   for (const o of sceneRecords(doc.objects)) {
     const at = o.scene?.model?.stamp;
-    if (typeof at === "number" && at < stamp) n++;
+    // A picture showing a track's piece beside its track is out of date too: pieces are kept out now.
+    if (typeof at === "number" && (at < stamp || showsTrackPiece(o.scene?.parts))) n++;
   }
   // The screw inventory counts once, however many layers it has.
   const inv = inventoryStamp(doc);

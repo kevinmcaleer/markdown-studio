@@ -1,0 +1,46 @@
+{
+  "title": "A loose link with no track made from it",
+  "why": "A link that no track was made from is an ordinary part: it is drawn, counted once, and nothing is out of date.",
+  "input": {
+    "parts": [
+      {
+        "id": "chassis"
+      },
+      {
+        "id": "wheel-fl",
+        "parent": "chassis"
+      },
+      {
+        "id": "wheel-rl",
+        "parent": "chassis"
+      },
+      {
+        "id": "wheel-fr",
+        "parent": "chassis"
+      },
+      {
+        "id": "wheel-rr",
+        "parent": "chassis"
+      },
+      {
+        "id": "link"
+      }
+    ]
+  },
+  "expect": {
+    "hidden": [],
+    "shown": [
+      "chassis",
+      "link"
+    ],
+    "outOfDate": false,
+    "counts": {
+      "chassis": 1,
+      "wheel-fl": 1,
+      "wheel-rl": 1,
+      "wheel-fr": 1,
+      "wheel-rr": 1,
+      "link": 1
+    }
+  }
+}

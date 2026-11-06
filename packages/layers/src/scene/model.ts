@@ -9,7 +9,7 @@
 
 import { meshTable, restoreParts, type Meshes } from "./meshTable";
 import { normalizeScrew, type ScrewSpec } from "./screw";
-import { normalizeTrack, type TrackSpec } from "./trackSpec";
+import { hideTrackPieces, normalizeTrack, showsTrackPiece, type TrackSpec } from "./trackSpec";
 import { normalizePlug, normalizeSockets, normalizeWire, type PartSocket, type PlugSpec, type WireSpec } from "./wireSpec";
 
 export type Vec3 = [number, number, number];
@@ -411,6 +411,8 @@ export function normalizeScene(value: unknown): SceneData {
   if (s.draft === false) style.draft = false;
   if (s.draftSolid === true) style.draftSolid = true;
   if (s.rounds === false) style.rounds = false;
+  // A track's piece is its template, not a part of the assembly: never drawn.
+  hideTrackPieces(parts);
   const out: SceneData = { version: 1, parts, camera, style, explode: num(v.explode, 0, 0, 1) };
   if (v.model && typeof v.model === "object") out.model = { stamp: num((v.model as { stamp?: unknown }).stamp, 0, 0) };
   const views = normalizeViews(v.views);
@@ -543,12 +545,15 @@ export function followModel(scene: SceneData, model: ProjectModel): SceneData {
     if (!was && !fresh) p.hidden = true;
     return p;
   });
+  hideTrackPieces(parts);
   return { ...scene, parts, model: { stamp: model.stamp } };
 }
 
-/** Whether the scene was drawn from an older version of `model`. */
+/** Whether the scene was drawn from an older version of `model` (or shows a track's piece, which it no longer should). */
 export function behindModel(scene: SceneData | undefined, model: ProjectModel | { stamp: number } | null | undefined): boolean {
-  return !!(scene?.model && model && scene.model.stamp < model.stamp);
+  if (!scene?.model || !model) return false;
+  // A picture that shows a track's piece beside its track was drawn before pieces were kept out: draw it again.
+  return scene.model.stamp < model.stamp || showsTrackPiece(scene.parts);
 }
 
 /** How far a part's joint comes apart: its own setting, or the scene's. */
