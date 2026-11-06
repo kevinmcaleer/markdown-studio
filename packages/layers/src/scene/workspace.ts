@@ -3717,7 +3717,19 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         : skipped ? `${skipped} wire${skipped === 1 ? "" : "s"} need${skipped === 1 ? "s" : ""} pins placed by hand: pick the part, then click its pins under Pins on the model.` : "Every wire in the diagram is in the model.", !said.length && !!skipped);
     }
 
-    /** Links each part whose name matches one in the diagram. */
+    /** Picks a linked part and brings its Pins on the model (its picture with its pins) into view. */
+    function showPins(id: string): void {
+      select(id);
+      const box = props.querySelector<HTMLElement>(".lyr-pins");
+      box?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      const p = partById(id);
+      const w = diagram?.parts.find(x => x.id === p?.wiringPart);
+      if (!p || !w) return;
+      const left = portPlacements(w, p.sockets).reduce((n, x) => n + (x.plug ? 0 : x.port.pins.filter(q => !x.pins.has(q.name)).length), 0);
+      status(left ? `${p.name}: click a pin on its picture, then where it is on the model.` : `${p.name}: its pins are placed (green). To move one, click it on the picture, then where it really is on the model.`, false, true);
+    }
+
+        /** Links each part whose name matches one in the diagram. */
     function linkPartsByName(): void {
       if (!diagram) return;
       const links = linkByName(diagram, scene.parts);
@@ -3836,15 +3848,42 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const byName = linkByName(d, scene.parts).length;
       const away = partsNotInScene(d, scene.parts);
       return `<section class="lyr-scene-section">${head}
-        ${routed < total ? `<button type="button" class="lyr-wide-btn lyr-primary-btn" data-act="wire-it-up" title="Link parts by name, put their pins on the models (from the catalog, or from each part's picture), and add every wire of the diagram">${icon("wand", 14)} Wire it up</button>` : ""}
+        ${routed < total ? `<button type="button" class="lyr-wide-btn" data-act="wire-it-up" title="Link parts by name, put their pins on the models (from the catalog, or from each part's picture), and add every wire of the diagram">${icon("wand", 14)} Wire it up</button>` : ""}
         ${mine}
         ${away.withModel.length || away.noModel.length ? `<p class="lyr-note">Not in this scene yet: ${esc(listNames([...away.withModel, ...away.noModel].map(w => w.name)))}.</p>` : ""}
         ${away.withModel.length ? `<button type="button" class="lyr-wide-btn" data-act="diagram-parts" title="Each from its catalog part's 3D model, linked to the diagram">${icon("plus", 14)} Add ${away.withModel.length === 1 ? esc(away.withModel[0].name) : `the diagram's ${away.withModel.length} parts`}</button>` : ""}
         <p class="lyr-note">${routed} of ${total} wire${total === 1 ? "" : "s"} in the diagram routed here.</p>
+        ${p ? "" : pinsOverview(d)}
         ${missing.wires.length ? `<button type="button" class="lyr-wide-btn" data-act="diagram-missing" title="A wire or cable for each of the diagram's with its pins placed at both ends, by the shortest smooth run">${icon("wire", 14)} Add missing wires (${missing.wires.length})</button>` : ""}
         ${byName ? `<button type="button" class="lyr-wide-btn" data-act="diagram-names" title="Link parts whose names match the diagram's">${icon("link", 14)} Link parts by name (${byName})</button>` : ""}
         ${!p?.wire && wiringHost?.open ? `<button type="button" class="lyr-wide-btn" data-act="diagram-open">${icon("wire", 14)} Open the wiring diagram</button>` : ""}
       </section>`;
+    }
+
+    /**
+     * Each part of the wiring diagram and how many of its pins are on its
+     * model, with Map pins (picks the part and opens its Pins on the model)
+     * or, when no part here is linked to it yet, a list to pick which one is.
+     */
+    function pinsOverview(d: WiringInfo): string {
+      const withPins = d.parts.filter(w => w.ports.some(x => x.pins.length));
+      if (!withPins.length) return "";
+      const free = scene.parts.filter(q => !isWiring(q) && !q.plug && !q.screw && !q.wiringPart);
+      const rows = withPins.map(w => {
+        const q = scene.parts.find(x => x.wiringPart === w.id);
+        const total = new Set(w.ports.flatMap(x => x.pins.map(y => y.name))).size;
+        if (!q) {
+          return `<div class="lyr-pins-row lyr-map-row"><span class="lyr-pins-name" title="${esc(w.name)}">${esc(w.name)}</span>
+            <select data-link-diagram="${esc(w.id)}" aria-label="Which part here is ${esc(w.name)}" title="Which part here is ${esc(w.name)}"><option value="">Which part is it?</option>${free.map(x => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join("")}</select></div>`;
+        }
+        const placed = new Set<string>();
+        for (const x of portPlacements(w, q.sockets)) (x.plug ? x.port.pins.map(y => y.name) : [...x.pins.keys()]).forEach(n => placed.add(n));
+        const done = placed.size >= total;
+        return `<div class="lyr-pins-row lyr-map-row"><span class="lyr-pins-name" title="${esc(`${w.name}: ${q.name}`)}">${esc(w.name)}</span>
+          <span class="lyr-pins-state${done ? " lyr-pins-ok" : ""}">${placed.size} of ${total}</span>
+          <button type="button" class="lyr-btn" data-act="map-pins" data-part="${esc(q.id)}" title="Show ${esc(q.name)}'s pins on its picture and its model, to place or move them">${icon("plug", 14)}<span>Map pins</span></button></div>`;
+      }).join("");
+      return `<div class="lyr-pins"><div class="lyr-pins-head">Pins on the models</div>${rows}</div>`;
     }
 
     // ------------------------------------------------------------ the wires going in
@@ -5208,6 +5247,15 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         renderProps();
         return;
       }
+      if (t.dataset.linkDiagram !== undefined) {
+        const p = partById(t.value);
+        if (p && !isWiring(p)) {
+          setWiringPart(p, t.dataset.linkDiagram);
+          commit();
+          showPins(p.id);
+        }
+        return;
+      }
       if (t.dataset.wiringPart !== undefined) {
         const p = partById(selectedId);
         if (p && !isWiring(p)) setWiringPart(p, t.value);
@@ -5372,7 +5420,9 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         renderList();
         renderProps();
       } else if (b.dataset.act === "diagram-open") {
-        wiringHost?.open?.(b.dataset.connection || undefined);
+        // The diagram may change while it's open: read it again when it closes.
+        const shut = wiringHost?.open?.(b.dataset.connection || undefined);
+        if (shut && typeof (shut as Promise<void>).then === "function") void (shut as Promise<void>).then(() => loadDiagram());
       } else if (b.dataset.act === "diagram-add") {
         const p = wireById(selectedId);
         if (p) void addWireToDiagram(p);
@@ -5384,6 +5434,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           renderList();
           renderProps();
         }
+      } else if (b.dataset.act === "map-pins") {
+        if (b.dataset.part) showPins(b.dataset.part);
       } else if (b.dataset.act === "wire-it-up") {
         void wireItUp();
       } else if (b.dataset.act === "diagram-missing") {

@@ -86,8 +86,8 @@ export interface WiringHost {
   load(): Promise<WiringInfo | null>;
   /** Adds these connections to the diagram (and saves it); resolves with them as saved, ids and all. */
   addConnections?(connections: Omit<WiringConnection, "id">[]): Promise<WiringConnection[]>;
-  /** Opens the diagram, at this connection when there's one. */
-  open?(connection?: string): void;
+  /** Opens the diagram (over the scene), at this connection when there's one; resolves when it's closed. */
+  open?(connection?: string): void | Promise<void>;
   /** Keeps a model's sockets on its catalog part, for every project that uses it. */
   saveSockets?(slug: string, sockets: CatalogSockets): Promise<void>;
 }
