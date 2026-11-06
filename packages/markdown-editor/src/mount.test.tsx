@@ -73,6 +73,22 @@ describe("mount", () => {
     editor.destroy();
   });
 
+  it("shows the 3D model button only when the host has a project model", () => {
+    const plain = host();
+    const a = mount(plain, { toolbar: ["image", "model"] });
+    expect(plain.querySelector(".mde-tool-model")).toBeNull();
+    a.destroy();
+    const el = host();
+    const b = mount(el, {
+      toolbar: ["image", "model"],
+      uploadImage: async () => "x.png",
+      layers: { load: async () => ({}) as never, loadModel: async () => null, saveModel: async () => {} } as never,
+    });
+    const button = el.querySelector<HTMLButtonElement>(".mde-tool-model")!;
+    expect(button.getAttribute("aria-label")).toBe("Edit the 3D model");
+    b.destroy();
+  });
+
   it("turns line numbers on and off in the live view", () => {
     const el = host();
     const editor = mount(el, { doc: "one\ntwo", toolbar: ["line-numbers"] });

@@ -17,7 +17,7 @@ const HEADINGS: { block: Block; label: string }[] = [
 type ViewTool = { id: string; label: string; keys?: string; icon: string };
 
 /** The buttons that change the view rather than the text. */
-export const VIEW_TOOLS: Record<"find" | "spelling" | "outline" | "raw" | "line-numbers" | "preview" | "side-by-side" | "fullscreen" | "guide", ViewTool> = {
+export const VIEW_TOOLS: Record<"find" | "spelling" | "outline" | "raw" | "line-numbers" | "preview" | "side-by-side" | "fullscreen" | "guide" | "model", ViewTool> = {
   find: { id: "find", label: "Find and replace", keys: "Mod-F", icon: "M7 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM10.75 10.75 14 14" },
   spelling: { id: "spelling", label: "Check spelling", keys: "F7", icon: "M1.5 9.5 4 3l2.5 6.5M2.4 7.5h3.2M8 3v6.5h2.1a1.6 1.6 0 0 0 0-3.25H8M10 6.25H8M8.5 13l2 2 4-4.5" },
   outline: { id: "outline", label: "Outline", icon: "M2.5 4h11M5 8h8.5M7.5 12h6" },
@@ -26,6 +26,7 @@ export const VIEW_TOOLS: Record<"find" | "spelling" | "outline" | "raw" | "line-
   preview: { id: "preview", label: "Preview", keys: "Mod-Shift-P", icon: "M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8zM8 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" },
   "side-by-side": { id: "side-by-side", label: "Side by side", keys: "F9", icon: "M2.5 3h11v10h-11zM8 3v10" },
   fullscreen: { id: "fullscreen", label: "Full screen", keys: "Mod-Shift-F", icon: "M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" },
+  model: { id: "model", label: "Edit the 3D model", icon: "M8 1.5 14 4.8v6.4L8 14.5 2 11.2V4.8zM2 4.8 8 8.1l6-3.3M8 8.1v6.4" },
   guide: { id: "guide", label: "Markdown guide", icon: "M8 14.5a6.5 6.5 0 1 0 0-13 6.5 6.5 0 0 0 0 13zM6.25 6.25a1.75 1.75 0 1 1 2.4 1.63c-.4.16-.65.54-.65.97v.4M8 11.25h.01" },
 };
 
@@ -40,6 +41,8 @@ export type ToolbarState = {
   previewEnabled: boolean;
   /** Built-in spelling is on, so "spelling" has something to open. */
   spelling: boolean;
+  /** The host has a project model, so "model" has something to open. */
+  model: boolean;
   canUndo: boolean;
   canRedo: boolean;
 };
@@ -193,6 +196,7 @@ export function Toolbar({
       const tool = VIEW_TOOLS[name as keyof typeof VIEW_TOOLS];
       if ((name === "preview" || name === "side-by-side") && !state.previewEnabled) return null;
       if (name === "spelling" && !state.spelling) return null;
+      if (name === "model" && !state.model) return null;
       return (
         <button
           key={name}
