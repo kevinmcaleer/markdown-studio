@@ -37,6 +37,7 @@ import { createViewCube } from "./viewcube";
 import { MAX_SNAP_TRIANGLES, nearestSnap, Topology, type Face, type Snap } from "./snaps";
 import { createSectionTool } from "./sectionTool";
 import { insideReach, layTrack, MAX_TRACK_PIECES, trackPitch, trackTriangles, type TrackSpec, type TrackWheel, type WorldCircle } from "./track";
+import { hideTrackPieces, trackPieces } from "./trackSpec";
 import { fitDiameter, fitLength, holeDepth, isHoleSnap, matchingHoles, SCREW_HEADS, SCREW_LENGTHS, SCREW_SIZES, screwFile, screwLabel, screwLift, screwMesh, screwName, screwNoun, type ScrewHead, type ScrewSpec } from "./screw";
 
 export interface SceneModel {
@@ -392,6 +393,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
 
     /** Puts the parts in the view again (after adding, removing or restyling). */
     function rebuild(): void {
+      // A track's piece stays out of the picture (Show all, a branch's eye...), but while its track is being made.
+      hideTrackPieces(scene.parts, trackDraft?.linkId);
       art.setSection(scene.section);
       art.look = lookOf(scene);
       syncSectionButton();
@@ -966,6 +969,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       explodeSet = explodeSet.filter(id => partById(id)?.parent);
       if (!explodeSet.includes(explodeOpen)) explodeOpen = explodeSet[explodeSet.length - 1] || "";
       const lit = highlightedParts(scene.parts);
+      const pieces = trackPieces(scene.parts);
       const row = (p: ScenePart, depth: number): string => {
         const m = models.get(p.id);
         const on = lit.has(p.id);
@@ -996,7 +1000,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
               <button type="button" class="lyr-scene-name" data-pick="${esc(p.id)}" title="${broken ? "Its model couldn't be loaded" : "Select"}">${p.wire ? `<span class="lyr-wire-dot" style="--swatch:${esc(p.wire.color)}"></span>` : icon(p.plug ? "plug" : "cube", 14)}<span>${esc(p.name)}</span>${broken ? `<em>missing</em>` : ""}</button>
               <button type="button" class="lyr-btn lyr-icon-btn${on ? " lyr-on" : ""}${inherited ? " lyr-inherited" : ""}" data-highlight="${esc(p.id)}" title="${inherited ? "Highlighted with the part above it: click to leave it and the parts under it out" : on ? "Stop highlighting it and the parts under it" : "Highlight it and the parts under it"} (Shift-click: just this part)" aria-label="Highlight ${esc(p.name)}" aria-pressed="${on}">${icon("highlight", 16)}</button>
               <button type="button" class="lyr-btn lyr-icon-btn${p.ghost ? " lyr-on" : ""}" data-ghost-part="${esc(p.id)}" title="${p.ghost ? "Draw it and the parts under it normally" : "Ghost it and the parts under it: draw them faint, as fitted in an earlier step"} (Shift-click: just this part)" aria-label="Ghost ${esc(p.name)}" aria-pressed="${!!p.ghost}">${icon("opacity", 16)}</button>
-              <button type="button" class="lyr-btn lyr-icon-btn" data-hide="${esc(p.id)}" title="${linked() ? (p.hidden ? "Show it and the parts under it in this scene" : "Leave it and the parts under it out of this scene (they stay in the model)") : p.hidden ? "Show it and the parts under it" : "Hide it and the parts under it"} (Shift-click: just this part)" aria-label="${p.hidden ? "Show" : "Hide"} ${esc(p.name)}">${icon(p.hidden ? "eyeOff" : "eye", 16)}</button>
+              ${pieces.has(p.id) ? `<button type="button" class="lyr-btn lyr-icon-btn" disabled title="The piece a track is made from: the track stands for it, so it stays out of the pictures. Edit track uses it." aria-label="${esc(p.name)} is a track's piece, kept out of the pictures">${icon("track", 16)}</button>` : `<button type="button" class="lyr-btn lyr-icon-btn" data-hide="${esc(p.id)}" title="${linked() ? (p.hidden ? "Show it and the parts under it in this scene" : "Leave it and the parts under it out of this scene (they stay in the model)") : p.hidden ? "Show it and the parts under it" : "Hide it and the parts under it"} (Shift-click: just this part)" aria-label="${p.hidden ? "Show" : "Hide"} ${esc(p.name)}">${icon(p.hidden ? "eyeOff" : "eye", 16)}</button>`}
               <button type="button" class="lyr-btn lyr-icon-btn" data-remove="${esc(p.id)}" title="${linked() ? "Remove it from the project's model (every scene)" : "Remove"}" aria-label="Remove ${esc(p.name)}">${icon("trash", 16)}</button>
             </li>${(byParent.get(p.id) || []).map(c => row(c, depth + 1)).join("")}`;
       };
@@ -4829,7 +4833,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         closeTrackDialog();
         rebuild();
         commit();
-        status(`“${part.name}” made: ${n} pieces round ${wheels} wheels. The piece it's made from is hidden.`);
+        status(`“${part.name}” made: ${n} pieces round ${wheels} wheels. The piece it's made from stays out of the pictures (Edit track still uses it).`);
       } catch (e) {
         status(`The track couldn't be saved: ${e instanceof Error ? e.message : String(e)}`, true, true);
       } finally {

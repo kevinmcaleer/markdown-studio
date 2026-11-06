@@ -5,6 +5,7 @@
 
 import type { ProjectModel, SceneData, ScenePart } from "./scene/model";
 import { highlightedParts } from "./scene/model";
+import { trackPieces } from "./scene/trackSpec";
 import { normalizeScrew, type ScrewHead, type ScrewSpec } from "./scene/screw";
 
 export interface PartCount {
@@ -37,11 +38,6 @@ function countByKind(list: ScenePart[], all: ScenePart[]): PartCount[] {
     else groups.set(key, { key, part, count: n });
   }
   return [...groups.values()];
-}
-
-/** The pieces tracks are made from: parts that stand for the track's pieces, not parts of their own. */
-function trackPieces(parts: ScenePart[]): Set<string> {
-  return new Set(parts.flatMap(p => (p.track ? [p.track.link] : [])));
 }
 
 /**

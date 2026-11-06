@@ -4,7 +4,9 @@
 
 import { BufferAttribute, BufferGeometry, Matrix4, Quaternion, Vector3 } from "three";
 import { jointPlace } from "../../src/scene/joint";
-import { ARROW_FROM, ARROW_TO, type ExplodeDir, lookOf, placeBeside, shownAs, type Box3, type ScenePart, type Vec3 } from "../../src/scene/model";
+import { ARROW_FROM, ARROW_TO, behindModel, type ExplodeDir, followModel, lookOf, modelPart, normalizeScene, placeBeside, shownAs, type Box3, type ScenePart, type Vec3 } from "../../src/scene/model";
+import { partsInStep } from "../../src/stepFrame";
+import { staleScenes } from "../../src/doc";
 import { arrowEnd, cameraFor, frameTight, localMatrix, worldMatrices, type Placed } from "../../src/scene/render";
 import { fitDiameter, fitLength, holeDepth, isHoleSnap, type ScrewHead } from "../../src/scene/screw";
 import { Topology, type Face, type Snap } from "../../src/scene/snaps";
@@ -328,6 +330,36 @@ export const GRADERS: Record<string, Grader> = {
     if (expect.closes !== undefined) {
       const close = ends[ends.length - 1].distanceTo(starts[0]);
       checks.push({ name: "loop closes", score: expect.closes ? Math.max(0, 1 - close / (input.pitch * 0.25)) : close > input.pitch * 0.25 ? 1 : 0, detail: `last piece ends ${show(close)} mm from the first` });
+    }
+    return checks;
+  },
+  /**
+   * A track's piece in the finished assembly: the piece a track was made
+   * from is its template, so a scene (loaded on its own, or following the
+   * project's model) never draws it, a picture drawn while it showed is
+   * marked out of date, and a step counts the piece once per link.
+   */
+  trackPiece(input: { parts: (Partial<ScenePart> & { id: string })[]; stamp?: number }, expect: { hidden: string[]; shown: string[]; outOfDate: boolean; counts?: Record<string, number> }) {
+    const stamp = input.stamp ?? 3;
+    const full = input.parts.map((p, i) => ({ name: p.id, position: [i * 50, 0, 0], rotation: [0, 0, 0], url: `/${p.id}.stl`, ...p })) as ScenePart[];
+    const raw = { version: 1, parts: structuredClone(full), model: { stamp } };
+    const model = { version: 1 as const, stamp, parts: full.map(modelPart) };
+    const loaded = normalizeScene(structuredClone(raw));
+    const followed = followModel(normalizeScene(structuredClone(raw)), model);
+    const hiddenIn = (parts: ScenePart[]) => new Set(parts.filter(p => p.hidden).map(p => p.id));
+    const checks: Check[] = [];
+    for (const [how, parts] of [["loaded", loaded.parts], ["following the model", followed.parts]] as const) {
+      const h = hiddenIn(parts);
+      const wrong = [...expect.hidden.filter(id => !h.has(id)).map(id => `${id} drawn`), ...expect.shown.filter(id => h.has(id)).map(id => `${id} hidden`)];
+      checks.push(yes(`pieces kept out, ${how}`, !wrong.length, wrong.join(", ") || "as expected", 2));
+    }
+    const doc = { version: 1, width: 800, height: 600, objects: [{ type: "SceneLayer", scene: structuredClone(raw) }] };
+    checks.push(same("old picture marked out of date", behindModel(raw as never, model), expect.outOfDate));
+    checks.push(same("graphic counted out of date", staleScenes(doc as never, stamp) > 0, expect.outOfDate));
+    checks.push(same("redrawn picture is up to date", behindModel(followed, model), false));
+    if (expect.counts) {
+      const got = Object.fromEntries(partsInStep(followed).map(c => [c.part.id, c.count]));
+      checks.push(same("parts in the step", got, expect.counts));
     }
     return checks;
   },

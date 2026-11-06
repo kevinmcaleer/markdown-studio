@@ -1,0 +1,161 @@
+{
+  "title": "Two tracks made from the same link",
+  "why": "Both tracks stand for the one link: it is left out once, and the step counts it once per piece of both tracks (2 \u00d7 30).",
+  "input": {
+    "parts": [
+      {
+        "id": "chassis"
+      },
+      {
+        "id": "wheel-fl",
+        "parent": "chassis"
+      },
+      {
+        "id": "wheel-rl",
+        "parent": "chassis"
+      },
+      {
+        "id": "wheel-fr",
+        "parent": "chassis"
+      },
+      {
+        "id": "wheel-rr",
+        "parent": "chassis"
+      },
+      {
+        "id": "link"
+      },
+      {
+        "id": "track-l",
+        "parent": "chassis",
+        "track": {
+          "link": "link",
+          "count": 30,
+          "start": [
+            -6,
+            0,
+            0
+          ],
+          "end": [
+            6,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "wheels": [
+            {
+              "id": "wheel-fl",
+              "point": [
+                0,
+                0,
+                0
+              ],
+              "normal": [
+                0,
+                1,
+                0
+              ],
+              "radius": 20
+            },
+            {
+              "id": "wheel-rl",
+              "point": [
+                0,
+                0,
+                0
+              ],
+              "normal": [
+                0,
+                1,
+                0
+              ],
+              "radius": 20
+            }
+          ],
+          "offset": 0,
+          "lift": 1,
+          "side": 0
+        }
+      },
+      {
+        "id": "track-r",
+        "parent": "chassis",
+        "track": {
+          "link": "link",
+          "count": 30,
+          "start": [
+            -6,
+            0,
+            0
+          ],
+          "end": [
+            6,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "wheels": [
+            {
+              "id": "wheel-fr",
+              "point": [
+                0,
+                0,
+                0
+              ],
+              "normal": [
+                0,
+                1,
+                0
+              ],
+              "radius": 20
+            },
+            {
+              "id": "wheel-rr",
+              "point": [
+                0,
+                0,
+                0
+              ],
+              "normal": [
+                0,
+                1,
+                0
+              ],
+              "radius": 20
+            }
+          ],
+          "offset": 0,
+          "lift": 1,
+          "side": 0
+        }
+      }
+    ]
+  },
+  "expect": {
+    "hidden": [
+      "link"
+    ],
+    "shown": [
+      "chassis",
+      "track-l",
+      "track-r"
+    ],
+    "outOfDate": true,
+    "counts": {
+      "chassis": 1,
+      "wheel-fl": 1,
+      "wheel-rl": 1,
+      "wheel-fr": 1,
+      "wheel-rr": 1,
+      "link": 60
+    }
+  }
+}

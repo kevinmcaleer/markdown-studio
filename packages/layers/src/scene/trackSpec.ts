@@ -66,3 +66,38 @@ export function normalizeTrack(value: unknown): TrackSpec | null {
   return t;
 }
 
+
+type LooseParts = readonly { id?: unknown; hidden?: unknown; track?: unknown }[];
+
+/**
+ * The pieces tracks are made from (by id). A piece is the track's template:
+ * the track stands for it, so it is never part of the assembly itself.
+ */
+export function trackPieces(parts: LooseParts): Set<string> {
+  const out = new Set<string>();
+  for (const p of parts) {
+    const link = (p?.track as { link?: unknown } | undefined)?.link;
+    if (typeof link === "string" && link && link !== p.id) out.add(link);
+  }
+  return out;
+}
+
+/** Whether a track's piece is shown in these parts (a picture drawn before pieces were kept out). */
+export function showsTrackPiece(parts: LooseParts | undefined): boolean {
+  if (!Array.isArray(parts)) return false;
+  const pieces = trackPieces(parts);
+  return pieces.size > 0 && parts.some(p => typeof p?.id === "string" && pieces.has(p.id) && !p.hidden);
+}
+
+/** Puts every track's piece away (hidden), but `keep` (the piece a track is being made from, so its pivots can be picked). Says whether it changed any. */
+export function hideTrackPieces(parts: { id: string; hidden?: boolean; track?: unknown }[], keep = ""): boolean {
+  const pieces = trackPieces(parts);
+  let changed = false;
+  for (const p of parts) {
+    if (pieces.has(p.id) && p.id !== keep && !p.hidden) {
+      p.hidden = true;
+      changed = true;
+    }
+  }
+  return changed;
+}
