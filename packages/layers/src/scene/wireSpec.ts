@@ -104,7 +104,18 @@ export interface PartSocket {
   name?: string;
   /** The port of the part's 2D wiring this is (a header group's id, "bus-1" say), its pins in the plug's order. */
   port?: string;
+  /**
+   * A bare pin (connector {@link BARE_PIN}): which of the 2D wiring's pins
+   * it is ("M1"). A wire ends right on it, soldered or screwed down, with no
+   * plug: a motor's tab, a battery snap, a screw terminal.
+   */
+  pin?: string;
 }
+
+/** The "connector" of a bare pin: no plug, the wire ends on the point. */
+export const BARE_PIN = "pin";
+/** Whether a socket is a bare pin (no plug goes in it). */
+export const isBarePin = (s: Pick<PartSocket, "connector">) => s.connector === BARE_PIN;
 
 /** A plug: a connector part sitting in a socket of the part it's joined to. */
 export interface PlugSpec {
@@ -258,6 +269,7 @@ export function normalizeSockets(value: unknown): PartSocket[] {
     if (typeof s.name === "string" && s.name.trim()) sock.name = s.name.slice(0, 60);
     const port = id(s.port);
     if (port) sock.port = port;
+    if (typeof s.pin === "string" && s.pin.trim()) sock.pin = s.pin.trim().slice(0, 60);
     out.push(sock);
   }
   return out;

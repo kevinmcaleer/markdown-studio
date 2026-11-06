@@ -14,6 +14,8 @@ import {
   missingWires,
   netOfPin,
   partsNotInScene,
+  portById,
+  portPlacements,
   routedCount,
   type WiringInfo,
   type WiringPart,
@@ -136,5 +138,84 @@ describe("the 2D wiring, in 3D", () => {
     expect(got.withModel.map(w => w.id)).toEqual(["bat"]);
     expect(got.noModel.map(w => w.id)).toEqual(["glb"]);
     expect(partsNotInScene(withBattery, model()).noModel.map(w => w.id)).toEqual(["pico", "glb"]);
+  });
+
+  describe("bare pins", () => {
+    // A motor's two tabs, wired to a motor driver's screw terminal (or its JST socket).
+    const pins: WiringInfo = {
+      parts: [
+        { id: "m1", name: "Motor 1", ports: [{ id: "tabs", name: "Tabs", pins: [{ name: "M+", label: "+" }, { name: "M-", label: "-" }] }] },
+        { id: "drv", name: "Driver", ports: [{ id: "motor-a", name: "Motor A", pins: [{ name: "A1" }, { name: "A2" }] }] },
+      ],
+      connections: [
+        // Drawn the driver's end first, A2 before A1.
+        { id: "k2", from: "drv.A2", to: "m1.M-", cable: "motor" },
+        { id: "k1", from: "m1.M+", to: "drv.A1", cable: "motor" },
+      ],
+    };
+    const bare = (id: string, pin: string, port: string, x: number) => ({ id, point: [x, 0, 1] as [number, number, number], normal: [0, 0, 1] as [number, number, number], connector: "pin", pin, port });
+    const scene = (driver: Partial<ScenePart>, motor: Partial<ScenePart> = { sockets: [bare("p1", "M+", "tabs", -2), bare("p2", "M-", "tabs", 2)] }) =>
+      normalizeScene({
+        parts: [
+          { id: "mot", name: "Motor", position: [0, 0, 0], rotation: [0, 0, 0], wiringPart: "m1", ...motor },
+          { id: "dr", name: "Driver", position: [60, 0, 0], rotation: [0, 0, 0], wiringPart: "drv", ...driver },
+        ],
+      }).parts;
+
+    it("keeps a bare pin's pin through saving", () => {
+      const parts = scene({});
+      expect(parts[0].sockets?.map(s => [s.connector, s.pin, s.port])).toEqual([["pin", "M+", "tabs"], ["pin", "M-", "tabs"]]);
+    });
+
+    it("makes a wire per connection, pin to pin, when both ends are bare pins", () => {
+      const { wires, skipped } = missingWires(pins, scene({ sockets: [bare("t1", "A1", "motor-a", 0), bare("t2", "A2", "motor-a", 5)] }));
+      expect(skipped).toBe(0);
+      expect(wires.map(w => w.cores.map(c => c.connection))).toEqual([["k1"], ["k2"]]);
+      // Each on its own pin at both ends, the right way round.
+      expect(wires.map(w => [w.from.socket.id, w.to.socket.id].sort())).toEqual([["p1", "t1"], ["p2", "t2"]]);
+      expect(wires.every(w => w.fromIndex === undefined && w.toIndex === undefined)).toBe(true);
+    });
+
+    it("ends a bare pin's wire on its pin's place along a plug at the other end", () => {
+      const { wires } = missingWires(pins, scene({ sockets: [{ id: "j", point: [0, 0, 1], normal: [0, 0, 1], connector: "jst-xh-2", port: "motor-a" }] }));
+      expect(wires).toHaveLength(2);
+      const byConn = Object.fromEntries(wires.map(w => [w.cores[0].connection, w]));
+      // A1 is pin 1 of the plug (0), A2 pin 2 (1), whichever end of the wire it is.
+      const idx = (w: (typeof wires)[number]) => (w.from.socket.id === "j" ? w.fromIndex : w.toIndex);
+      expect(idx(byConn.k1)).toBe(0);
+      expect(idx(byConn.k2)).toBe(1);
+    });
+
+    it("waits until every pin of the cable is placed", () => {
+      const { wires, skipped } = missingWires(pins, scene({ sockets: [bare("t1", "A1", "motor-a", 0)] }));
+      expect(wires).toHaveLength(0);
+      expect(skipped).toBe(1);
+    });
+
+    it("still lays a cable between two plugs", () => {
+      const { wires } = missingWires(pins, scene(
+        { sockets: [{ id: "j", point: [0, 0, 1], normal: [0, 0, 1], connector: "jst-xh-2", port: "motor-a" }] },
+        { sockets: [{ id: "q", point: [0, 0, 1], normal: [0, 0, 1], connector: "jst-xh-2", port: "tabs" }] },
+      ));
+      expect(wires).toHaveLength(1);
+      expect(wires[0].cores).toHaveLength(2);
+    });
+
+    it("finds the diagram's wire between two bare pins, and adds one pin to pin", () => {
+      const c = cableBetween(pins, { part: "drv", port: "pin:A1" }, { part: "m1", port: "pin:M+" })!;
+      expect(c.connections.map(x => x.id)).toEqual(["k1"]);
+      expect(cableBetween(pins, { part: "drv", port: "pin:A1" }, { part: "m1", port: "pin:M-" })).toBeNull();
+      expect(connectionsFor(pins, { part: "drv", port: "pin:A1" }, { part: "m1", port: "pin:M-" })).toEqual([{ from: "drv.A1", to: "m1.M-", net: "signal" }]);
+      expect(portById(pins.parts[0], "pin:M+")?.name).toBe("M+ (+)");
+    });
+
+    it("says how far each port is placed", () => {
+      const parts = scene({});
+      const [tabs] = portPlacements(pins.parts[0], parts[0].sockets);
+      expect(tabs.plug).toBeUndefined();
+      expect([...tabs.pins.keys()]).toEqual(["M+", "M-"]);
+      // A bare pin doesn't count as the port's plug socket.
+      expect(freePort(pins.parts[0], 2, parts[0].sockets)).toBe("tabs");
+    });
   });
 });

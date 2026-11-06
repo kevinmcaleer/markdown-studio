@@ -511,7 +511,7 @@ export const GRADERS: Record<string, Grader> = {
       ...expect.hidden.map(id => yes(`${id} not there yet`, as(id) === "hidden", as(id))),
     ];
   },
-  diagram(input: { info: WiringInfo; parts: (Pick<ScenePart, "id" | "position"> & Partial<ScenePart>)[] }, expect: { wires: string[][]; skipped: number; colours?: string[][] }) {
+  diagram(input: { info: WiringInfo; parts: (Pick<ScenePart, "id" | "position"> & Partial<ScenePart>)[] }, expect: { wires: string[][]; skipped: number; colours?: string[][]; ends?: string[][] }) {
     const parts: ScenePart[] = input.parts.map(p => ({ name: p.id, rotation: [0, 0, 0], ...p }) as ScenePart);
     const got = missingWires(input.info, parts);
     const checks: Check[] = [
@@ -523,6 +523,12 @@ export const GRADERS: Record<string, Grader> = {
       checks.push(yes(`cable ${i + 1}'s wires in pin order`, !!w && w.cores.map(c => c.connection).join(",") === ids.join(","), w ? w.cores.map(c => c.connection).join(",") : "missing"));
       const want = expect.colours?.[i];
       if (want) checks.push(yes(`cable ${i + 1} coloured as the diagram`, !!w && w.cores.map(c => c.color).join(",") === want.join(","), w ? w.cores.map(c => c.color).join(",") : "missing"));
+      // Where each end is: a socket's id, "#n" its pin along a plug (pin 1 is 0), either way round.
+      const ends = expect.ends?.[i];
+      if (ends) {
+        const got2 = w ? [`${w.from.socket.id}${w.fromIndex !== undefined ? `#${w.fromIndex}` : ""}`, `${w.to.socket.id}${w.toIndex !== undefined ? `#${w.toIndex}` : ""}`].sort().join(" ") : "missing";
+        checks.push(yes(`cable ${i + 1} ends on its pins`, got2 === [...ends].sort().join(" "), got2));
+      }
     });
     return checks;
   },

@@ -4,6 +4,7 @@
   "arrow/side-into-block": 1,
   "arrow/tail-behind-post": 0.25,
   "diagram/bus-servo-daisy-chain": 1,
+  "diagram/motor-bare-pins": 1,
   "fit/cube-iso": 1,
   "fit/exploded-pair": 1,
   "fit/l-shape-turned": 1,

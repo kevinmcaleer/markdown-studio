@@ -193,6 +193,18 @@ const editor = mount(el, {
   marks `group: "parts"` (its parts list's catalog parts, with their `slug`)
   are offered under **From the parts list**; each added one links to the
   next of the diagram's parts of that slug.
+- **Pins on the model**: a linked part's Wiring diagram settings list its
+  ports and pins from the diagram's pinout, and say where each is on the
+  model, picked with the joint picker's snaps (hole and rim centres,
+  middles, corners). A port a plug goes in (JST, Molex, Dupont) is placed
+  as the plug's socket, its pins following the connector's pitch; or each
+  pin on its own as a bare pin (`PartSocket.connector` `"pin"`, with
+  `pin`): a motor's tabs, a battery snap, a screw terminal, where the wire
+  ends with no plug. **Add missing wires** lays a cable between two plugs,
+  and a wire per connection where an end is bare pins, each ending on its
+  pin (or its pin's place along the plug at the other end). The wire tool's
+  Plug **None** ends a wire on a bare pin too. Pins are saved to the
+  catalog part with its sockets.
 - **Showing the wiring**: wires go in in the model's order (Goes in i of n
   in a wire's settings). **Assemble n wires** plays them in one by one, each
   growing along its route from its first plug (1×/2×/4×, Skip, Esc stops).
