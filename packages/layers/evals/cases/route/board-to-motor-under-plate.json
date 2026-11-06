@@ -1,0 +1,13 @@
+{
+  "title": "A wire from a board on a deck down to a motor under the deck goes round the deck's edge",
+  "why": "A board sits on an 80 x 60 deck 30 mm up; its pin points up from the board's top. The motor hangs under the deck, its tab pointing down. The straight line runs through the board and the deck, so the wire has to leave the pin, go out past the deck's nearer edge (the pin is 30 mm from it) and come back under. Up 5, over 30 or so, down 40, back about 30 and up to the tab: well under 200 mm.",
+  "input": {
+    "parts": [
+      { "id": "deck", "shape": { "box": [80, 60, 3] }, "position": [0, 0, 30] },
+      { "id": "board", "shape": { "box": [50, 40, 2] }, "position": [10, 0, 33] },
+      { "id": "motor", "shape": { "box": [40, 12, 10] }, "position": [0, 0, 15] }
+    ],
+    "wire": { "from": { "part": "board", "point": [-15, 0, 1], "normal": [0, 0, 1] }, "to": { "part": "motor", "point": [0, 0, -5], "normal": [0, 0, -1] }, "waypoints": [], "color": "#222", "diameter": 1.6, "slack": 15 }
+  },
+  "expect": { "hitsBefore": true, "maxLength": 200 }
+}

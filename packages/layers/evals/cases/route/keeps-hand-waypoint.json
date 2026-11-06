@@ -1,0 +1,14 @@
+{
+  "title": "Routing keeps a waypoint put in by hand and routes each stretch either side of it",
+  "why": "The wire was routed by hand over a post's top (a waypoint on its top face). Two blocks stand between each end and the post, so each stretch is routed by itself, round its block, and the hand waypoint stays where it was.",
+  "input": {
+    "parts": [
+      { "id": "base", "shape": { "box": [160, 60, 5] }, "position": [0, 0, -5] },
+      { "id": "post", "shape": { "box": [8, 8, 20] }, "position": [0, 0, 0] },
+      { "id": "left", "shape": { "box": [6, 60, 25] }, "position": [-35, 0, 0] },
+      { "id": "right", "shape": { "box": [6, 60, 25] }, "position": [35, 0, 0] }
+    ],
+    "wire": { "from": { "part": "base", "point": [-60, 0, 2.5], "normal": [0, 0, 1] }, "to": { "part": "base", "point": [60, 0, 2.5], "normal": [0, 0, 1] }, "waypoints": [{ "part": "post", "point": [0, 0, 10], "normal": [0, 0, 1] }], "color": "#2a2", "diameter": 1.6, "slack": 0 }
+  },
+  "expect": { "hitsBefore": true, "handKept": 1, "maxLength": 230 }
+}

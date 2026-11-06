@@ -39,6 +39,8 @@ export interface WireWaypoint {
   point?: Vec3;
   normal?: Vec3;
   lift?: number;
+  /** Put there by "Route round parts" (so routing again replaces it), not by hand. */
+  auto?: true;
   /**
    * Alongside another wire (a loom): it runs beside wire `wire`, touching
    * it, from `from` to `to` of the way along it (0 to 1; `from` past `to`
@@ -190,6 +192,7 @@ function waypoint(v: unknown): WireWaypoint | null {
     const out: WireWaypoint = { part, point };
     const n = unit(w.normal);
     if (n) out.normal = n;
+    if (w.auto === true) out.auto = true;
     return out;
   }
   if (typeof w.lift === "number" && Number.isFinite(w.lift)) return { lift: num(w.lift, 0, ...WIRE_LIMITS.lift) };

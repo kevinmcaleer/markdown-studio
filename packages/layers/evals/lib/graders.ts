@@ -16,6 +16,8 @@ import { layTrack, type TrackSpec } from "../../src/scene/track";
 import { cableRadius, coreLines, leadLength, MIN_BEND, ringRadius, tightestBend, wireRoute } from "../../src/scene/wire";
 import { mirrorPartner, mirrorPlane, mirrorPoint } from "../../src/scene/wireMirror";
 import { coresOf, normalizeWire, type Looms } from "../../src/scene/wireSpec";
+import { clearance, solidGrid } from "../../src/scene/wireAvoid";
+import { routeWire, wireHitsParts } from "../../src/scene/wireRouting";
 import { missingWires, type WiringInfo, type WiringPart } from "../../src/scene/wiring2d";
 import { guessPins } from "../../src/scene/pinGuess";
 import { planSteps, stepOfParts, stepWarnings, suggestSteps, type BuildStep } from "../../src/scene/buildSteps";
@@ -713,5 +715,38 @@ export const GRADERS: Record<string, Grader> = {
       yes("comes off the way a person would", want.includes(choice.dir), `went ${choice.dir}, wanted ${want.join(" or ")}`, 2),
       yes("ends clear of the other parts", !hits, hits ? `still in ${hits}` : ""),
     ];
+  },
+
+  /**
+   * Route round parts: a wire whose straight run goes through the model is
+   * given waypoints that take it round (over, under or beside) the solid
+   * parts, keeping off them by about its radius, not much longer than it
+   * needs to be, with waypoints put in by hand kept.
+   */
+  route(input: { parts: CasePart[]; wire: unknown }, expect: { hitsBefore: boolean; maxLength?: number; handKept?: number }, ctx: Ctx) {
+    const { parts, models } = sceneParts(input.parts, ctx);
+    const spec = normalizeWire(input.wire);
+    if (!spec) return [yes("the wire reads", false)];
+    const mats = worldMatrices(parts, 0, false);
+    const g = solidGrid(parts.map(p => ({ part: p.id, positions: models.get(p.id)!, matrix: mats.get(p.id)! })));
+    if (!g) return [yes("the parts draw into a grid", false)];
+    const checks: Check[] = [yes("sees whether the straight run goes through a part", wireHitsParts(spec, mats, g) === expect.hitsBefore)];
+    const got = routeWire(spec, mats, g);
+    if (!got) return [...checks, yes("can be routed", false)];
+    const routed = { ...spec, waypoints: got.waypoints };
+    const route = wireRoute(routed, mats);
+    if (!route) return [...checks, yes("the routed wire can be laid", false)];
+    checks.push(yes("finds a way round every stretch", got.stuck === 0, `${got.stuck} stuck`, 2));
+    checks.push(yes("goes through no part", !wireHitsParts(routed, mats, g), "", 3));
+    // Off the parts by its radius, away from its plugs (where it starts on its part).
+    const r = cableRadius(routed);
+    const lead = leadLength({ diameter: r * 2 });
+    const ends = [spec.from, spec.to].map(e => new Vector3(...e.point).applyMatrix4(mats.get(e.part)!));
+    const away = route.centre.filter(p => ends.every(e => p.distanceTo(e) > lead + 6));
+    const least = Math.min(...away.map(p => clearance(g, p)));
+    checks.push(atLeast("keeps off the parts (mm between its middle and the nearest face)", Math.round(least * 100) / 100, r * 0.9 - g.cell * 0.5, r, 2));
+    if (expect.maxLength) checks.push(atLeast("not much longer than it needs to be (mm to spare)", expect.maxLength - route.length, 0, expect.maxLength * 0.2));
+    if (expect.handKept !== undefined) checks.push(same("waypoints put in by hand kept", got.waypoints.filter(w => !w.auto).length, expect.handKept));
+    return checks;
   },
 };

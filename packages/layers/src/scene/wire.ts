@@ -47,13 +47,15 @@ export interface WireRoute {
   rows: [Vector3 | null, Vector3 | null];
 }
 
-interface Anchor {
+export interface Anchor {
   p: Vector3;
   /** The way out of the face (none for a free waypoint). */
   n: Vector3 | null;
   row?: Vector3 | null;
   /** Held beside another wire (in a loom): the span to the next tied point doesn't bow. */
   tied?: boolean;
+  /** Put there by routing round the parts: the spans either side run straight, as routed (a bow could sag into a part). */
+  auto?: boolean;
 }
 
 /**
@@ -91,7 +93,7 @@ function alongside(along: WireAlong, loom: WireSpec, mats: Map<string, Matrix4>,
   return out;
 }
 
-function anchor(e: Pick<WireEnd, "part" | "point"> & { normal?: WireEnd["normal"]; row?: WireEnd["row"] }, mats: Map<string, Matrix4>): Anchor | null {
+export function anchor(e: Pick<WireEnd, "part" | "point"> & { normal?: WireEnd["normal"]; row?: WireEnd["row"] }, mats: Map<string, Matrix4>): Anchor | null {
   const m = mats.get(e.part);
   if (!m) return null;
   const p = new Vector3(...e.point).applyMatrix4(m);
@@ -138,6 +140,7 @@ export function wireRoute(spec: WireSpec, mats: Map<string, Matrix4>, looms?: Lo
       const at = anchor({ part: w.part, point: w.point, normal: w.normal }, mats);
       if (!at) continue;
       if (at.n) at.p.addScaledVector(at.n, r);
+      if (w.auto) at.auto = true;
       mid.push(at);
     } else if (typeof w.lift === "number") mid.push({ lift: w.lift });
   }
@@ -167,14 +170,14 @@ export function wireRoute(spec: WireSpec, mats: Map<string, Matrix4>, looms?: Lo
   // them isn't quite a parabola, so the bow is scaled until the wire really
   // is `slack` longer than pulled tight.
   // Spans held in a loom don't bow, so they don't share in the slack.
-  const spans = run.slice(1).map((q, i) => (q.tied && run[i].tied ? 0 : q.p.distanceTo(run[i].p)));
+  const spans = run.slice(1).map((q, i) => ((q.tied && run[i].tied) || q.auto || run[i].auto ? 0 : q.p.distanceTo(run[i].p)));
   const total = spans.reduce((s, x) => s + x, 0);
   const bows = run.slice(1).map((p1, i) => {
     const p0 = run[i];
     const L = spans[i];
     const s = total > 1e-6 ? (spec.slack * L) / total : 0;
     const h = Math.sqrt((3 * L * s) / 8);
-    if (L <= 0.5 || h <= 0.05 || (p0.tied && p1.tied)) return null;
+    if (L <= 0.5 || h <= 0.05 || (p0.tied && p1.tied) || p0.auto || p1.auto) return null;
     const want = new Vector3();
     if (p0.n) want.add(p0.n);
     if (p1.n) want.add(p1.n);
