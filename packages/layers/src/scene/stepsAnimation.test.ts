@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { STEPS_TIMING, stepsFrames } from "./stepsAnimation";
+import { fadingOut, STEPS_TIMING, stepsFrames } from "./stepsAnimation";
+import type { ScenePart } from "./model";
 
 describe("stepsFrames", () => {
   it("shows each step apart, then puts it together, ending on the finished model", () => {
@@ -28,5 +29,27 @@ describe("stepsFrames", () => {
     const ms = stepsFrames(4, 24).reduce((a, f) => a + f.delay, 0);
     const want = 4 * (t.hold + t.move) + 3 * (t.glide + t.rest) + t.end + 1 / 24;
     expect(Math.abs(ms / 1000 - want)).toBeLessThan(0.1);
+  });
+});
+
+describe("fadingOut", () => {
+  const part = (id: string, more: Partial<ScenePart> = {}): ScenePart => ({ id, name: id, model: "", position: [0, 0, 0], rotation: [0, 0, 0], ...more }) as ScenePart;
+
+  it("fades the last step's highlighted parts that are only ghosted now", () => {
+    const before = [part("base", { highlight: true }), part("lid", { hidden: true })];
+    const after = [part("base", { ghost: true, highlight: false }), part("lid", { highlight: true })];
+    expect(fadingOut(before, after)).toEqual(["base"]);
+  });
+
+  it("leaves parts still highlighted, hidden, or never highlighted", () => {
+    const before = [part("a", { highlight: true }), part("b", { highlight: true }), part("c", { ghost: true })];
+    const after = [part("a", { highlight: true }), part("b", { hidden: true }), part("c", { ghost: true })];
+    expect(fadingOut(before, after)).toEqual([]);
+  });
+
+  it("fades a highlighted part's children with it", () => {
+    const before = [part("arm", { highlight: true }), part("hand", { parent: "arm" })];
+    const after = [part("arm", { ghost: true, highlight: false }), part("hand", { parent: "arm", ghost: true })];
+    expect(fadingOut(before, after)).toEqual(["arm", "hand"]);
   });
 });

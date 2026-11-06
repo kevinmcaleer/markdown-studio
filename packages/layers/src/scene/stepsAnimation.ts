@@ -2,13 +2,14 @@
 // Play steps shows, drawn a frame at a time and saved as a video. Each step
 // is shown with its parts drawn apart (earlier steps' parts ghosted, later
 // ones not there yet), then its parts go together; the view glides from one
-// step's framing to the next. An MP4 where the browser can encode one, else
+// step's framing to the next, while the last step's highlighted parts fade
+// back to white. An MP4 where the browser can encode one, else
 // an animated GIF.
 
 import { OrthographicCamera } from "three";
 import { mp4Config } from "../mp4";
 import { ANIMATION_BACKGROUND, ease, encodeFrames } from "./animation";
-import type { SceneCamera, ScenePart, SceneStyle, Vec3 } from "./model";
+import { highlightedParts, type SceneCamera, type ScenePart, type SceneStyle, type Vec3 } from "./model";
 import { cameraFor, frameAll, LineArt, type ModelStore } from "./render";
 
 /** How long each piece of a step lasts, in seconds (as Play steps shows it). */
@@ -84,6 +85,13 @@ function between(a: SceneCamera, b: SceneCamera, t: number): SceneCamera {
   return { direction: b.direction, target: [0, 1, 2].map(k => lerp(a.target[k], b.target[k], t)) as Vec3, size: lerp(a.size, b.size, t) };
 }
 
+/** The parts highlighted in one step that are still shown, but not highlighted, in the next: they fade from the highlight to their own fill. */
+export function fadingOut(before: ScenePart[], after: ScenePart[]): string[] {
+  const was = highlightedParts(before.filter(p => !p.ghost));
+  const now = highlightedParts(after);
+  return after.filter(p => !p.hidden && was.has(p.id) && (p.ghost || !now.has(p.id))).map(p => p.id);
+}
+
 /** Draws the steps, one after another, from `direction`, and encodes them as a movie. */
 export async function renderStepsMovie(steps: MovieStep[], style: SceneStyle, direction: Vec3, store: ModelStore, options: StepsMovieOptions = {}): Promise<StepsMovie> {
   if (!steps.length) throw new Error("There are no steps to show.");
@@ -127,13 +135,17 @@ export async function renderStepsMovie(steps: MovieStep[], style: SceneStyle, di
     const ss = Math.max(1, Math.min(2, max / Math.max(width, height)));
     let shownStep = -1;
     let parts: ScenePart[] = [];
+    let fading: string[] = [];
     const draw = (i: number): void => {
       const f = frames[i];
       if (f.step !== shownStep) {
         shownStep = f.step;
         parts = steps[f.step].parts.map(p => ({ ...p }));
         art.setParts(parts.flatMap(part => (models.has(part.id) ? [{ part, model: models.get(part.id)! }] : [])), style, 0);
+        fading = f.step ? fadingOut(steps[f.step - 1].parts, parts) : [];
       }
+      // The last step's highlighted parts fade back to white as the view glides on.
+      for (const id of fading) art.fadeFill(id, style.highlight, f.glide);
       const moving = new Set(steps[f.step].moving);
       for (const p of parts) if (moving.has(p.id)) p.explode = f.explode;
       art.move(parts, 0);

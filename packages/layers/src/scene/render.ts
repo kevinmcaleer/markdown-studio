@@ -818,6 +818,21 @@ export class LineArt {
     }
   }
 
+  /**
+   * Fills a part `t` (0 to 1) of the way from `from` to its own fill, without
+   * rebuilding: a part highlighted in the last step fading back to white as
+   * the next one comes in. At 1 it has its own fill again.
+   */
+  fadeFill(id: string, from: string, t: number): void {
+    const o = this.objects.find(x => x.part.id === id);
+    if (!o || !this.style || o.part.wire) return;
+    const own = this.fillOf(o.part, highlightedParts(this.objects.map(x => x.part)));
+    const c = new Color().lerpColors(new Color(from), new Color(own), Math.max(0, Math.min(1, t)));
+    (o.fill.material as MeshBasicMaterial).color.copy(c);
+    const cap = o.caps?.main.material as ShaderMaterial | undefined;
+    if (cap) (cap.uniforms.fill.value as Color).copy(c);
+  }
+
   /** Follows the parts' new places without rebuilding the scene. */
   move(parts: ScenePart[], explode = 0): void {
     const world = worldMatrices(parts, explode);
