@@ -1,9 +1,10 @@
-// "Sit on the part beneath": slides a joined part along its joint's normal
-// until it rests on the part it's joined to, so a battery sits on the
-// chassis' floor instead of sinking into it (or floating over it).
+// "Sit on the part beneath": moves a part along a direction (the scene's
+// up, so it drops as gravity would) until it rests on what's beneath it, so
+// a battery sits on the chassis' floor instead of sinking into it (or
+// floating over it).
 //
-// Both parts' triangles are drawn into a height map over the child's
-// footprint, looking along the normal: the child's lowest point in each cell,
+// The part's and the parts beneath's triangles are drawn into a height map
+// over the part's footprint, looking along the direction: the child's lowest point in each cell,
 // and the parent's highest point that's still below the child's middle (so a
 // well's floor counts, not the lid above it). The move is the most any cell
 // needs to clear its parent point: the part ends touching, not inside.
