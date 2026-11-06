@@ -18,6 +18,7 @@ import { mirrorPartner, mirrorPlane, mirrorPoint } from "../../src/scene/wireMir
 import { coresOf, normalizeWire, type Looms } from "../../src/scene/wireSpec";
 import { missingWires, type WiringInfo, type WiringPart } from "../../src/scene/wiring2d";
 import { guessPins } from "../../src/scene/pinGuess";
+import { planSteps, stepOfParts, stepWarnings, suggestSteps, type BuildStep } from "../../src/scene/buildSteps";
 import { atLeast, type Check, near, nearPoint, same, show, yes } from "./score";
 import { centred, type ReadFile, shapeTriangles, type ShapeSpec } from "./shapes";
 
@@ -126,6 +127,33 @@ const angleBetween = (a: Matrix4, b: Matrix4) => {
 // ------------------------------------------------------------ the graders
 
 export const GRADERS: Record<string, Grader> = {
+  /**
+   * Build steps: from a model's parts (fixings named) and the steps picked
+   * by hand, are the guide's pages the ones a person expects, does Suggest
+   * steps make the order they'd build in, and is a part fitted before what
+   * it's joined to caught?
+   */
+  steps(
+    input: { parts: { id: string; parent?: string }[]; fixings?: string[]; steps?: BuildStep[] },
+    expect: { pages?: { added: string[]; fixings: string[] }[]; suggest?: string[][]; warnings?: Record<string, string[]> },
+  ) {
+    const parts = input.parts.map(p => ({ name: p.id, position: [0, 0, 0], rotation: [0, 0, 0], ...p })) as ScenePart[];
+    const small = new Set(input.fixings || []);
+    const fixing = (p: ScenePart) => small.has(p.id);
+    const steps = input.steps || [];
+    const checks: Check[] = [];
+    if (expect.pages) {
+      const got = planSteps({ parts, steps }, fixing).map(s => ({ added: s.added.map(p => p.id), fixings: s.fixings.map(p => p.id) }));
+      checks.push(same("the guide's pages", got, expect.pages, 2));
+    }
+    if (expect.suggest) checks.push(same("suggested steps", suggestSteps({ parts }, fixing).map(s => s.parts), expect.suggest));
+    if (expect.warnings) {
+      const at = stepOfParts(parts, steps, fixing);
+      const got = Object.fromEntries(steps.map((_, i) => [String(i + 1), stepWarnings(parts, at, i).map(w => w.part)]).filter(([, w]) => (w as string[]).length));
+      checks.push(same("parts fitted before what they're joined to", got, expect.warnings));
+    }
+    return checks;
+  },
   /**
    * Snaps: click a face; are the snap points the joint tool offers there
    * the ones a person would expect (and no others of those kinds)?

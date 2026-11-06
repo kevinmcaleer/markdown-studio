@@ -8,6 +8,7 @@
 // roll first, then pitch, then yaw (the same as URDF's rpy).
 
 import { meshTable, restoreParts, type Meshes } from "./meshTable";
+import { normalizeSteps, tidySteps, type BuildStep } from "./stepsSpec";
 import { normalizeScrew, type ScrewSpec } from "./screw";
 import { hideTrackPieces, normalizeTrack, showsTrackPiece, type TrackSpec } from "./trackSpec";
 import { normalizePlug, normalizeSockets, normalizeWire, type PartSocket, type PlugSpec, type WireSpec } from "./wireSpec";
@@ -224,6 +225,12 @@ export interface ProjectModel {
   views?: NamedView[];
   /** The named view new steps start from, so every picture looks from the same side. */
   defaultView?: string;
+  /**
+   * The build steps picked by hand (Steps mode in the 3D scene): which
+   * parts are fitted in each. The assembly guide draws a page for each.
+   * They don't change its stamp.
+   */
+  steps?: BuildStep[];
 }
 
 export interface StylePreset {
@@ -501,6 +508,8 @@ export function normalizeModel(value: unknown): ProjectModel | null {
   const views = normalizeViews(v.views);
   if (views.length) out.views = views;
   if (typeof v.defaultView === "string" && views.some(x => x.id === v.defaultView)) out.defaultView = v.defaultView;
+  const steps = tidySteps(normalizeSteps(v.steps), out.parts, views);
+  if (steps.length) out.steps = steps;
   return out;
 }
 

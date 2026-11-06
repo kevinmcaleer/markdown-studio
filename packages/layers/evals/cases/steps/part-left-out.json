@@ -1,0 +1,84 @@
+{
+  "title": "A part in no step still gets a page",
+  "why": "The shield was never put in a step. Leaving it out of the booklet would leave the robot unfinished, so it goes on a page of its own after the last step. Parts on a page are listed down the joint tree (each motor then its wheel), whatever order they were picked in.",
+  "input": {
+    "parts": [
+      {
+        "id": "chassis"
+      },
+      {
+        "id": "motorL",
+        "parent": "chassis"
+      },
+      {
+        "id": "s1",
+        "parent": "motorL"
+      },
+      {
+        "id": "s2",
+        "parent": "motorL"
+      },
+      {
+        "id": "wheelL",
+        "parent": "motorL"
+      },
+      {
+        "id": "motorR",
+        "parent": "chassis"
+      },
+      {
+        "id": "wheelR",
+        "parent": "motorR"
+      },
+      {
+        "id": "s3",
+        "parent": "chassis"
+      },
+      {
+        "id": "shield",
+        "parent": "chassis"
+      }
+    ],
+    "fixings": [
+      "s1",
+      "s2",
+      "s3"
+    ],
+    "steps": [
+      {
+        "id": "a",
+        "parts": [
+          "chassis",
+          "motorL",
+          "motorR",
+          "wheelL",
+          "wheelR"
+        ]
+      }
+    ]
+  },
+  "expect": {
+    "pages": [
+      {
+        "added": [
+          "chassis",
+          "motorL",
+          "wheelL",
+          "motorR",
+          "wheelR"
+        ],
+        "fixings": [
+          "s1",
+          "s2",
+          "s3"
+        ]
+      },
+      {
+        "added": [
+          "shield"
+        ],
+        "fixings": []
+      }
+    ]
+  }
+}

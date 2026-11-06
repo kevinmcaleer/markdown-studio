@@ -1,0 +1,78 @@
+{
+  "title": "A wheel fitted before its motor is caught",
+  "why": "Step 2 fits the left wheel, but the motor it goes on comes in step 3: the wheel would float in the picture. Only that step is flagged; the right wheel goes on with its motor in step 3.",
+  "input": {
+    "parts": [
+      {
+        "id": "chassis"
+      },
+      {
+        "id": "motorL",
+        "parent": "chassis"
+      },
+      {
+        "id": "s1",
+        "parent": "motorL"
+      },
+      {
+        "id": "s2",
+        "parent": "motorL"
+      },
+      {
+        "id": "wheelL",
+        "parent": "motorL"
+      },
+      {
+        "id": "motorR",
+        "parent": "chassis"
+      },
+      {
+        "id": "wheelR",
+        "parent": "motorR"
+      },
+      {
+        "id": "s3",
+        "parent": "chassis"
+      },
+      {
+        "id": "shield",
+        "parent": "chassis"
+      }
+    ],
+    "fixings": [
+      "s1",
+      "s2",
+      "s3"
+    ],
+    "steps": [
+      {
+        "id": "a",
+        "parts": [
+          "chassis"
+        ]
+      },
+      {
+        "id": "b",
+        "parts": [
+          "wheelL"
+        ]
+      },
+      {
+        "id": "c",
+        "parts": [
+          "motorL",
+          "motorR",
+          "wheelR",
+          "shield"
+        ]
+      }
+    ]
+  },
+  "expect": {
+    "warnings": {
+      "2": [
+        "wheelL"
+      ]
+    }
+  }
+}
