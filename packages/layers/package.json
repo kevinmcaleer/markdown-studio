@@ -41,7 +41,7 @@
   "devDependencies": {
     "@types/node": "26.6.5",
     "@types/three": "0.187.0",
-    "happy-dom": "20.14.5",
+    "happy-dom": "21.0.4",
     "playwright": "1.63.0",
     "typescript": "7.0.2",
     "vite": "8.3.5",
