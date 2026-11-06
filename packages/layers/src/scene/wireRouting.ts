@@ -6,7 +6,7 @@
 
 import { Matrix4, Vector3 } from "three";
 import { alongside, anchor, cableRadius, leadLength, MIN_BEND, wireRoute } from "./wire";
-import { clearance, findWay, nearestPart, SQUEEZE_ROOM, tighten, WIRE_ROOM, type RouteEnd, type SolidGrid, type Way } from "./wireAvoid";
+import { besideWires, clearance, isTaken, findWay, nearestPart, SQUEEZE_ROOM, tighten, WIRE_ROOM, type RouteEnd, type SolidGrid, type Way } from "./wireAvoid";
 import type { Looms, WireSpec, WireWaypoint } from "./wireSpec";
 
 export interface RoutedWire {
@@ -48,18 +48,34 @@ export function roundCorners(pts: Vector3[], radius: number): Vector3[] {
   return out;
 }
 
+/** A wire already laid, that others go beside rather than through: its middle line and its radius. */
+export interface LaidWire {
+  centre: Vector3[];
+  r: number;
+}
+
 /**
  * `spec`'s waypoints routed round the solids in `g`, with its parts placed by
  * `mats` (assembled). `room`: mm more to keep off the parts, for wires that
- * run beside this one. Null when its ends aren't there.
+ * run beside this one. `others`: wires already laid, which it goes beside
+ * rather than through (unless that leaves it no way round, or brushing a
+ * part). Null when its ends aren't there.
  */
-export function routeWire(spec: WireSpec, mats: Map<string, Matrix4>, g: SolidGrid, looms?: Looms, room = 0): RoutedWire | null {
+export function routeWire(spec: WireSpec, mats: Map<string, Matrix4>, g: SolidGrid, looms?: Looms, room = 0, others: LaidWire[] = []): RoutedWire | null {
   const a = anchor(spec.from, mats);
   const b = anchor(spec.to, mats);
   if (!a?.n || !b?.n) return null;
   const r = cableRadius(spec);
   const lead = leadLength({ diameter: r * 2 });
   const keep = r + WIRE_ROOM + room;
+  if (others.length) {
+    // Its own leads stay free: the wires on the pins beside start right next to it.
+    const leads: [Vector3, Vector3][] = [a, b].map(e => [e.p, e.p.clone().addScaledVector(e.n!, lead + keep)]);
+    const beside = routeWire(spec, mats, besideWires(g, others, r, leads, r + g.cell), looms, room);
+    if (beside && !beside.stuck && beside.clear) return beside;
+    const plain = routeWire(spec, mats, g, looms, room);
+    return plain && !plain.stuck && (plain.clear || !beside || beside.stuck) ? plain : beside ?? plain;
+  }
   // Through a hole or slot, it may squeeze down to this.
   const hard = r + SQUEEZE_ROOM + room;
   const own = spec.waypoints.filter(w => !w.auto);
@@ -118,11 +134,25 @@ export function routeWire(spec: WireSpec, mats: Map<string, Matrix4>, g: SolidGr
     const route = wireRoute({ ...spec, waypoints: ways }, mats, looms);
     // The drawn wire, away from its plugs and the faces it is held to, off every surface by about its radius.
     const near = heldNear(spec, mats, a.p, b.p, lead, r + WIRE_ROOM);
-    const clear = !!route && route.centre.every(p => near(p) || clearance(g, p) + g.cell * 0.5 >= r * 0.9);
+    const clear = !!route && route.centre.every(p => near(p) || clearance(g, p) + g.cell * 0.5 >= r * 0.9) && !throughLaid(g, route.centre, near);
     best = { waypoints: ways, stuck, clear };
     if (clear) break;
   }
   return best;
+}
+
+/** Whether a drawn run goes through a wire laid already (a cube `g` marks taken), every half cube along it, away from where it's held. */
+function throughLaid(g: SolidGrid, centre: Vector3[], held: (p: Vector3) => boolean): boolean {
+  if (!g.blocked) return false;
+  const p = new Vector3();
+  for (let i = 1; i < centre.length; i++) {
+    const n = Math.max(1, Math.ceil(centre[i - 1].distanceTo(centre[i]) / (g.cell * 0.5)));
+    for (let t = 0; t < n; t++) {
+      p.copy(centre[i - 1]).lerp(centre[i], t / n);
+      if (!held(p) && isTaken(g, p)) return true;
+    }
+  }
+  return false;
 }
 
 /** Whether a wire's drawn run passes through a solid, away from its plugs. */
@@ -141,6 +171,17 @@ export function wireHitsParts(spec: WireSpec, mats: Map<string, Matrix4>, g: Sol
 function heldNear(spec: WireSpec, mats: Map<string, Matrix4>, a: Vector3, b: Vector3, lead: number, keep: number): (p: Vector3) => boolean {
   const held = spec.waypoints.flatMap(w => (!w.auto && w.part && w.point && w.normal ? [anchor({ part: w.part, point: w.point }, mats)?.p] : [])).filter((p): p is Vector3 => !!p);
   return p => p.distanceTo(a) < lead + keep * 2 || p.distanceTo(b) < lead + keep * 2 || held.some(h => p.distanceTo(h) < keep * 2);
+}
+
+/**
+ * The wires laid already that `id` should go beside rather than through:
+ * every wire in `laid` but itself and the ones it runs beside on purpose
+ * (a loom it joins, or that joins it).
+ */
+export function othersFor(id: string, spec: WireSpec, laid: Map<string, LaidWire>, looms: Looms): LaidWire[] {
+  const mine = new Set([id, ...spec.waypoints.flatMap(w => (w.along ? [w.along.wire] : []))]);
+  for (const [k, w] of looms) if (w.waypoints.some(x => x.along?.wire === id)) mine.add(k);
+  return [...laid].filter(([k]) => !mine.has(k)).map(([, w]) => w);
 }
 
 /** Mm more a wire keeps off the parts, so the wires running beside it (in `looms`) clear them too. */

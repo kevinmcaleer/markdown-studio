@@ -59,6 +59,8 @@ export interface SolidGrid {
   /** Which solid that surface is (its index in `parts`, -1 none). */
   owner: Int32Array;
   parts: string[];
+  /** Cubes other wires already run through (see `besideWires`): a wire may lie beside them, not through. */
+  blocked?: Uint8Array;
 }
 
 const FAR = 0xffff;
@@ -206,6 +208,46 @@ const centreOf = (g: SolidGrid, at: number) => {
   return new Vector3(g.origin.x + (i + 0.5) * g.cell, g.origin.y + (j + 0.5) * g.cell, g.origin.z + (k + 0.5) * g.cell);
 };
 
+/** Whether `p` is in a cube another wire runs through. */
+export function isTaken(g: SolidGrid, p: Vector3): boolean {
+  if (!g.blocked) return false;
+  const [i, j, k] = cellOf(g, p);
+  return inside(g, i, j, k) && g.blocked[i + g.nx * (j + g.ny * k)] === 1;
+}
+
+/**
+ * The grid with the cubes other wires run through (their middles,
+ * `centre`, and radii) marked taken for a wire `r` thick, so it lies beside
+ * them rather than through them. Along each of `ends` (this wire's leads,
+ * from its pin straight out: the wires on the pins beside start right next
+ * to it) nothing is taken within `endRoom` mm.
+ */
+export function besideWires(g: SolidGrid, wires: { centre: Vector3[]; r: number }[], r: number, ends: [Vector3, Vector3][] = [], endRoom = 0): SolidGrid {
+  if (!wires.length) return g;
+  const blocked = new Uint8Array(g.nx * g.ny * g.nz);
+  const p = new Vector3();
+  // Every cube whose middle is within `reach` of the run a-b, set to `to`.
+  const mark = (a: Vector3, b: Vector3, reach: number, to: 0 | 1) => {
+    const cells = Math.ceil(reach / g.cell);
+    const n = Math.max(1, Math.ceil(a.distanceTo(b) / (g.cell * 0.5)));
+    for (let t = 0; t <= n; t++) {
+      p.copy(a).lerp(b, t / n);
+      const [i0, j0, k0] = cellOf(g, p);
+      for (let k = k0 - cells; k <= k0 + cells; k++)
+        for (let j = j0 - cells; j <= j0 + cells; j++)
+          for (let i = i0 - cells; i <= i0 + cells; i++) {
+            if (!inside(g, i, j, k)) continue;
+            const x = g.origin.x + (i + 0.5) * g.cell - p.x, y = g.origin.y + (j + 0.5) * g.cell - p.y, z = g.origin.z + (k + 0.5) * g.cell - p.z;
+            if (x * x + y * y + z * z <= reach * reach) blocked[i + g.nx * (j + g.ny * k)] = to;
+          }
+    }
+  };
+  // Touching is fine: the cubes whose middles are inside the two radii, a little short.
+  for (const w of wires) for (let s = 1; s < w.centre.length; s++) mark(w.centre[s - 1], w.centre[s], (w.r + r) * 0.9, 1);
+  for (const [a, b] of ends) mark(a, b, endRoom, 0);
+  return { ...g, blocked };
+}
+
 /** Mm from `p` to the nearest surface (Infinity outside the grid). */
 export function clearance(g: SolidGrid, p: Vector3): number {
   const [i, j, k] = cellOf(g, p);
@@ -231,7 +273,7 @@ export function clearRun(g: SolidGrid, a: Vector3, b: Vector3, keep: number): bo
     p.copy(a).lerp(b, s / n);
     // Half a cube's slack: the grid only knows distance to a cube's middle. Never through a surface.
     const c = clearance(g, p);
-    if (c <= 0 || c + g.cell * 0.5 < keep) return false;
+    if (c <= 0 || c + g.cell * 0.5 < keep || isTaken(g, p)) return false;
   }
   return true;
 }
@@ -242,7 +284,7 @@ export function clearRun(g: SolidGrid, a: Vector3, b: Vector3, keep: number): bo
  * a surface stops it. Null if there's nowhere near.
  */
 function escape(g: SolidGrid, p: Vector3, n: Vector3 | null, keep: number): Vector3 | null {
-  if (clearance(g, p) >= keep) return p.clone();
+  if (clearance(g, p) >= keep && !isTaken(g, p)) return p.clone();
   const want = Math.ceil((keep / g.cell) * 10);
   if (n) {
     const q = new Vector3();
@@ -250,7 +292,7 @@ function escape(g: SolidGrid, p: Vector3, n: Vector3 | null, keep: number): Vect
     for (let s = g.cell * 0.5; s <= 40; s += g.cell * 0.5) {
       q.copy(p).addScaledVector(n, s);
       const c = clearance(g, q);
-      if (c >= keep + g.cell * 0.5) return q.clone();
+      if (c >= keep + g.cell * 0.5 && !isTaken(g, q)) return q.clone();
       // Off its own face, then into another: blocked that way.
       if (c > 0) left = true;
       else if (left) break;
@@ -274,7 +316,7 @@ function escape(g: SolidGrid, p: Vector3, n: Vector3 | null, keep: number): Vect
         const o = X + g.nx * (Y + g.ny * Z);
         if (seen.has(o)) continue;
         seen.add(o);
-        if (g.dist[o] >= want) return centreOf(g, o);
+        if (g.dist[o] >= want && !g.blocked?.[o]) return centreOf(g, o);
         if (g.dist[o] === 0 && r >= own) continue;
         next.push(o);
       }
@@ -323,8 +365,8 @@ class Heap {
   }
 }
 
-/** The searches' working arrays, kept with their grid (one search at a time). */
-const scratch = new WeakMap<SolidGrid, { cost: Float32Array; f: Float32Array; from: Int32Array; done: Uint8Array }>();
+/** The searches' working arrays, kept with their grid's cubes (one search at a time). */
+const scratch = new WeakMap<Uint16Array, { cost: Float32Array; f: Float32Array; from: Int32Array; done: Uint8Array }>();
 
 /** How short of the room it wants a cube is, 0 (roomy) to 1 (only just fits), from its distance (×10 cubes). */
 const shortOf = (d: number, want: number, hard: number) => (d >= want || want <= hard ? 0 : Math.min(1, (want - d) / (want - hard)));
@@ -343,16 +385,17 @@ interface Run {
 function search(g: SolidGrid, a: Vector3, b: Vector3, keep: number, hard = keep): Run | null {
   const want = Math.ceil((keep / g.cell) * 10);
   const least = Math.min(want, Math.ceil((hard / g.cell) * 10));
-  const free = (o: number) => g.dist[o] >= least;
+  const blocked = g.blocked;
+  const free = (o: number) => g.dist[o] >= least && !blocked?.[o];
   const [ai, aj, ak] = cellOf(g, a);
   const [bi, bj, bk] = cellOf(g, b);
   if (!inside(g, ai, aj, ak) || !inside(g, bi, bj, bk)) return null;
   const s = ai + g.nx * (aj + g.ny * ak), t = bi + g.nx * (bj + g.ny * bk);
   const n = g.nx * g.ny * g.nz;
-  let w = scratch.get(g);
+  let w = scratch.get(g.dist);
   if (!w) {
     w = { cost: new Float32Array(n), f: new Float32Array(n), from: new Int32Array(n), done: new Uint8Array(n) };
-    scratch.set(g, w);
+    scratch.set(g.dist, w);
   }
   const { cost, f, from, done } = w;
   cost.fill(Infinity);
@@ -422,7 +465,7 @@ export function runCost(g: SolidGrid, a: Vector3, b: Vector3, keep: number, hard
     // Half a cube's slack: the grid only knows distance to a cube's middle. Never through a surface.
     const c = clearance(g, p);
     const room = c + g.cell * 0.5;
-    if (c <= 0 || room < Math.min(hard, keep)) return Infinity;
+    if (c <= 0 || room < Math.min(hard, keep) || isTaken(g, p)) return Infinity;
     if (room < keep && keep > hard) short += Math.min(1, (keep - room) / (keep - hard)) * (s === 0 || s === n ? 0.5 : 1);
   }
   return len * (1 + (SQUEEZE_COST * short) / n);

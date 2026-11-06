@@ -161,4 +161,40 @@ describe("routing round parts", () => {
       expect(y).toBeLessThan(13);
     });
   });
+
+  it("lays a wire beside one already laid, not through it", () => {
+    const flat: Solid[] = [{ part: "base", positions: box([-40, -40, -5], [40, 40, 0]), matrix: I }];
+    const fg = solidGrid(flat)!;
+    const mats = new Map([["base", I]]);
+    const spec: WireSpec = {
+      from: { part: "base", point: [-20, 0, 0], normal: [0, 0, 1] },
+      to: { part: "base", point: [20, 0, 0], normal: [0, 0, 1] },
+      waypoints: [],
+      color: "#2a2",
+      diameter: 1.6,
+      slack: 0,
+    };
+    // A wire laid across the plate's middle, right where the new one runs.
+    const plain = wireRoute(spec, mats)!.centre;
+    const mid = plain.reduce((a, p) => (Math.abs(p.x) < Math.abs(a.x) ? p : a));
+    const laid = { centre: [new Vector3(0, -30, mid.z), new Vector3(0, 30, mid.z)], r: 0.8 };
+    // Closest the run comes to the laid wire's line, every 0.2 mm along it.
+    const near = (pts: Vector3[]) => {
+      let best = Infinity;
+      for (let i = 1; i < pts.length; i++)
+        for (let t = 0, n = Math.max(1, Math.ceil(pts[i - 1].distanceTo(pts[i]) / 0.2)); t <= n; t++) {
+          const p = pts[i - 1].clone().lerp(pts[i], t / n);
+          best = Math.min(best, Math.hypot(p.x, p.z - mid.z));
+        }
+      return best;
+    };
+    // Left to itself it goes straight through the other.
+    expect(near(wireRoute(spec, mats)!.centre)).toBeLessThan(0.5);
+    const got = routeWire(spec, mats, fg, undefined, 0, [laid])!;
+    expect(got.stuck).toBe(0);
+    const route = wireRoute({ ...spec, waypoints: got.waypoints }, mats)!;
+    // Over it (or round its end), touching at most.
+    expect(near(route.centre)).toBeGreaterThan(1.6 * 0.9 - fg.cell * 0.5);
+    expect(route.length).toBeLessThan(60);
+  });
 });
