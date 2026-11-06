@@ -213,7 +213,7 @@ export function animationStyle(): SceneStyle {
 }
 
 /** Up to `max` of the meshes' points, where they're drawn now (an even spread, for framing). */
-function samplePoints(art: LineArt, max = 40000): Float32Array {
+export function samplePoints(art: LineArt, max = 40000): Float32Array {
   const { meshes, points } = art.placed();
   let total = 0;
   for (const m of meshes) total += m.geometry.getAttribute("position")?.count || 0;
