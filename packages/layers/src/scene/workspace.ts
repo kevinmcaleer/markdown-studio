@@ -45,6 +45,15 @@ export interface SceneModel {
    * the model is drawn here instead.
    */
   thumbnail?: string | (() => Promise<Blob | string | null | undefined>);
+  /** Its file name, when the URL doesn't end in one ("uno-r3.stl"): says whether it's STL or STEP. */
+  file?: string;
+  /**
+   * "parts": a catalog part in the project's parts list (its BOM), offered
+   * under From the parts list rather than with the project's files.
+   */
+  group?: "parts";
+  /** Its catalog part, so it links to the wiring diagram's part of that slug. */
+  slug?: string;
 }
 
 export interface WorkspaceOptions {
@@ -4864,7 +4873,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       menu.innerHTML = `
         <button type="button" class="lyr-scene-menu-item" role="menuitem" data-act="upload">${icon("upload", 16)}<span>Upload an STL or STEP file…</span></button>
         ${diagramMenu()}
-        ${opts.listModels ? `<div class="lyr-panel-title">Your project's models</div><div class="lyr-scene-models"><span class="lyr-note">Loading…</span></div>` : ""}`;
+        ${opts.listModels ? `<div class="lyr-scene-parts-list"></div><div class="lyr-panel-title">Your project's models</div><div class="lyr-scene-models"><span class="lyr-note">Loading…</span></div>` : ""}`;
       menu.querySelectorAll<HTMLElement>("[data-diagram-part]").forEach(b => {
         const w = diagram?.parts.find(x => x.id === b.dataset.diagramPart);
         if (!w?.model) return;
@@ -4876,9 +4885,32 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       });
       if (!opts.listModels) return;
       try {
-        const found = (await opts.listModels()).filter(m => /\.(stl|step|stp)(\?|#|$)/i.test(m.url) || /\.(stl|step|stp)$/i.test(m.title || ""));
+        const all = (await opts.listModels()).filter(m => [m.url, m.title || "", m.file || ""].some(x => /\.(stl|step|stp)(\?|#|$)/i.test(x)));
         const box = menu.querySelector(".lyr-scene-models");
         if (!box || menu.hidden) return;
+        // The parts list's catalog models (a battery, a board, motors), apart
+        // from the files; not those the diagram's section already offers.
+        const offered = new Set(diagram ? partsNotInScene(diagram, scene.parts).withModel.flatMap(w => (w.slug ? [w.slug] : [])) : []);
+        const parts = all.filter(m => m.group === "parts" && !(m.slug && offered.has(m.slug)));
+        const found = all.filter(m => m.group !== "parts");
+        const partsBox = menu.querySelector<HTMLElement>(".lyr-scene-parts-list");
+        if (partsBox && parts.length) {
+          partsBox.innerHTML = `<div class="lyr-panel-title">From the parts list</div><div class="lyr-scene-diagram-tiles">${parts.map((m, i) => {
+            const name = esc(m.title || partName(m.file || m.url));
+            return `<button type="button" class="lyr-scene-tile" role="menuitem" data-parts-model="${i}" title="${name}: the catalog part's model"><span class="lyr-scene-thumb">${icon("cube", 24)}</span><span class="lyr-scene-tile-name">${name}</span></button>`;
+          }).join("")}</div>`;
+          partsBox.querySelectorAll<HTMLElement>("[data-parts-model]").forEach(b => {
+            const m = parts[Number(b.dataset.partsModel)];
+            b.addEventListener("click", () => {
+              closeMenu();
+              // The next of the diagram's parts of this catalog part that nothing stands for yet.
+              const linked = new Set(scene.parts.flatMap(p => (p.wiringPart ? [p.wiringPart] : [])));
+              const w = m.slug ? diagram?.parts.find(x => x.slug === m.slug && !linked.has(x.id)) : undefined;
+              void addModel({ url: m.url, name: m.title || partName(m.file || m.url), file: m.file || m.title, ...(w ? { wiringPart: w.id } : {}) });
+            });
+            showThumb(b.querySelector<HTMLElement>(".lyr-scene-thumb")!, { ...m, title: m.file || m.title });
+          });
+        }
         box.classList.toggle("lyr-scene-tiles", found.length > 0);
         box.innerHTML = found.length
           ? found.map((m, i) => {
@@ -4908,7 +4940,13 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         ${withModel.length ? `<div class="lyr-scene-diagram-tiles">${withModel.map(w => `<button type="button" class="lyr-scene-tile" role="menuitem" data-diagram-part="${esc(w.id)}" title="${esc(`${w.name}: the catalog part's model, linked to the diagram`)}"><span class="lyr-scene-thumb">${icon("cube", 24)}</span><span class="lyr-scene-tile-name">${esc(w.name)}</span></button>`).join("")}</div>` : ""}
         ${noModel.length ? `<p class="lyr-note">No 3D model in the catalog for ${esc(listNames(noModel.map(w => w.name)))}. Add one to the catalog part, or its STL or STEP file to the project.</p>` : ""}`;
     }
-    const listNames = (names: string[]) => (names.length <= 3 ? names.join(", ") : `${names.slice(0, 3).join(", ")} and ${names.length - 3} more`);
+    /** "N20 motor ×2, 9V battery": each name once, with how many. */
+    const listNames = (all: string[]) => {
+      const counts = new Map<string, number>();
+      for (const n of all) counts.set(n, (counts.get(n) || 0) + 1);
+      const names = [...counts].map(([n, k]) => (k > 1 ? `${n} ×${k}` : n));
+      return names.length <= 3 ? names.join(", ") : `${names.slice(0, 3).join(", ")} and ${names.length - 3} more`;
+    };
 
     /** Adds the diagram's parts with these ids, each from its catalog model, linked to the diagram. */
     async function addDiagramParts(ids: string[]): Promise<void> {
