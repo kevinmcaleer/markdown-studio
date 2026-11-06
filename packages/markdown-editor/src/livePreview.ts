@@ -18,7 +18,7 @@ import { tableCursor, tableField } from "./tableWidget";
 import { sizePicture } from "./steadyScroll";
 import { isLayersUrl, LAYERS_MODEL_EVENT, LAYERS_UPDATE_EVENT, layersOpener, type LayersUpdateProgress } from "./layersFacet";
 import { historyButton } from "./layersHistory";
-import { imagePopover, imagePopoverAt, openImagePopover } from "./imagePopover";
+import { closeImagePopover, imagePopover, imagePopoverAt, openImagePopover } from "./imagePopover";
 import { imageCaption } from "./imageCaption";
 
 // The live view: Markdown shown as it reads, and still edited as text, like
@@ -215,6 +215,12 @@ class FenceLabelWidget extends WidgetType {
  * it shows its sizes, and picking one rewrites the modifier after its Markdown.
  * Clicking it opens its popover (imagePopover.ts) rather than its Markdown.
  */
+/** How long a picture with a double-click editor waits for the second click before opening its popover, in ms. */
+export const DOUBLE_CLICK_MS = 300;
+
+/** Whether a double-click on this picture opens an editor (data-md-double-click, set here or by the host). */
+const hasDoubleClick = (img: HTMLImageElement) => img.dataset.mdDoubleClick !== undefined;
+
 class ImageWidget extends WidgetType {
   constructor(
     readonly src: string,
@@ -268,10 +274,25 @@ class ImageWidget extends WidgetType {
     img.title = "Click to change the picture";
     img.draggable = false;
     // A click opens the picture's popover; the caret stays where it was.
+    // A graphic with its own editor opens that on a double-click: a Layers
+    // graphic here, or a picture the host marks with data-md-double-click
+    // (kevsrobots' wiring diagram), which opens it from its own listener.
+    // Its popover waits out a double-click, so the first click doesn't put
+    // it over the picture where the second click lands.
+    let pending: ReturnType<typeof setTimeout> | undefined;
+    const openPopover = () => {
+      if (wrap.isConnected) openImagePopover(view, view.posAtDOM(wrap));
+    };
     img.addEventListener("mousedown", (e) => e.preventDefault());
     img.addEventListener("click", (e) => {
       e.preventDefault();
-      openImagePopover(view, view.posAtDOM(wrap));
+      clearTimeout(pending);
+      if (!hasDoubleClick(img)) openPopover();
+      else if (e.detail < 2) pending = setTimeout(openPopover, DOUBLE_CLICK_MS);
+    });
+    img.addEventListener("dblclick", () => {
+      clearTimeout(pending);
+      closeImagePopover(view);
     });
 
     // A Layers graphic opens again in Layers (layersBlock.ts): from its button, or a double-click.
@@ -288,6 +309,8 @@ class ImageWidget extends WidgetType {
         e.stopPropagation();
         layers.open(view, view.posAtDOM(wrap));
       });
+      img.title = "Click to change the picture, double-click to edit the graphic";
+      img.dataset.mdDoubleClick = "layers";
       img.addEventListener("dblclick", (e) => {
         e.preventDefault();
         layers.open(view, view.posAtDOM(wrap));

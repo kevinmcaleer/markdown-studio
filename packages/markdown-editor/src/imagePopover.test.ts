@@ -3,10 +3,10 @@ import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { ensureSyntaxTree } from "@codemirror/language";
 import { EditorState, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { cardPicturePicker } from "./cardsWidget";
-import { imageAt, imageMarkdown, imagePopoverAt, imageRemoval, openImagePopover, placePopover } from "./imagePopover";
-import { livePreview } from "./livePreview";
+import { closeImagePopover, imageAt, imageMarkdown, imagePopoverAt, imageRemoval, openImagePopover, placePopover } from "./imagePopover";
+import { DOUBLE_CLICK_MS, livePreview } from "./livePreview";
 
 function stateOf(doc: string) {
   const state = EditorState.create({ doc, extensions: markdown({ base: markdownLanguage }) });
@@ -86,6 +86,47 @@ describe("image popover", () => {
     expect(imagePopoverAt(view.state)).toBeNull();
     expect(view.state.selection.main.head).toBe(9);
     view.destroy();
+  });
+
+  it("a double-click on the picture closes the popover its first click opened", () => {
+    const view = viewOf("Intro\n\n![Wiring](https://example.com/wiring.png)\n\nEnd");
+    const img = view.dom.querySelector<HTMLImageElement>("img.cm-md-image")!;
+    img.click();
+    expect(imagePopoverAt(view.state)).toBe(view.state.doc.line(3).from);
+    img.click();
+    img.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+    expect(imagePopoverAt(view.state)).toBeNull();
+    expect(popover()).toBeNull();
+    view.destroy();
+  });
+
+  it("waits out a double-click on a picture the host marks as having its own editor", () => {
+    vi.useFakeTimers();
+    try {
+      const view = viewOf("![Wiring](https://example.com/wiring.png)\n\nEnd");
+      const img = () => view.dom.querySelector<HTMLImageElement>("img.cm-md-image")!;
+      img().dataset.mdDoubleClick = "";
+      let edited = 0;
+      img().addEventListener("dblclick", () => edited++);
+      // One click: the popover opens once a double-click can't come.
+      img().click();
+      expect(imagePopoverAt(view.state)).toBeNull();
+      vi.advanceTimersByTime(DOUBLE_CLICK_MS);
+      expect(imagePopoverAt(view.state)).toBe(0);
+      closeImagePopover(view);
+      // A double-click: the host's editor opens and the popover never does.
+      img().dataset.mdDoubleClick = "";
+      img().addEventListener("dblclick", () => edited++);
+      img().dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 1 }));
+      img().dispatchEvent(new MouseEvent("click", { bubbles: true, detail: 2 }));
+      img().dispatchEvent(new MouseEvent("dblclick", { bubbles: true, detail: 2 }));
+      vi.advanceTimersByTime(DOUBLE_CLICK_MS * 2);
+      expect(edited).toBe(1);
+      expect(imagePopoverAt(view.state)).toBeNull();
+      view.destroy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("doesn't open in a read-only editor", () => {

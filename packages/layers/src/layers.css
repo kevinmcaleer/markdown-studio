@@ -917,3 +917,17 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 .lyr-pins-acts .lyr-btn { display: inline-flex; align-items: center; justify-content: center; gap: 4px; font-size: 12px; }
 .lyr-pins-acts .lyr-btn svg { width: auto; flex: none; }
 .lyr-pins-acts .lyr-icon-btn { margin-left: auto; border: 0; background: transparent; }
+
+/* Part inspector: the part's joints, its own and the ones on it. */
+.lyr-scene-pjoints { margin-top: 10px; }
+.lyr-scene-pjoints .lyr-scene-sub { display: flex; align-items: center; gap: 6px; margin-top: 0; }
+.lyr-scene-count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--lyr-hover); color: var(--lyr-muted); font-size: 11px; line-height: 18px; text-align: center; font-weight: 600; }
+.lyr-scene-pjoints-head { margin: 6px 0 2px; color: var(--lyr-muted); font-size: 11px; }
+.lyr-scene-pjoint .lyr-scene-name { height: 28px; font-size: 12px; gap: 6px; padding: 0 4px; }
+.lyr-scene-pjoint .lyr-scene-name .lyr-icon { color: #1f6fe0; flex: 0 0 auto; }
+.lyr-scene-pjoint .lyr-scene-name > small { margin-left: auto; flex: 0 0 auto; padding: 1px 6px; border-radius: 8px; background: var(--lyr-hover); color: var(--lyr-muted); font-size: 10.5px; font-weight: 500; }
+.lyr-scene-pjoint.lyr-on .lyr-scene-name { color: #1f6fe0; font-weight: 600; }
+.lyr-scene-pjoint .lyr-icon-btn { width: 24px; min-width: 24px; height: 24px; background: transparent; }
+.lyr-scene-pjoint .lyr-icon-btn:not(.lyr-on) { color: #c3c7cd; transition: color 0.12s; }
+.lyr-scene-pjoint .lyr-icon-btn:not(.lyr-on):hover,
+.lyr-scene-pjoint .lyr-icon-btn:not(.lyr-on):focus-visible { color: var(--lyr-ink); }
