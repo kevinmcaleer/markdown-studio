@@ -437,10 +437,11 @@ MarkdownEditor.mount(el, {
 
 With `loadModel` and `saveModel` (a project 3D model, see Layers), **/Assembly
 guide** draws a flat-pack booklet from the model (a cover, *Before you start*,
-the parts list and a step per part), uploads each page and puts them under a
-`## Assembly guide` heading at the end of the text, after the last step, so a
-printed or PDF copy of the page carries it. Run again, it replaces that
-section. A line in the text says how far it has got while it draws.
+the parts list and a step per part), uploads each page and puts them in an
+`# Assembly guide` section of its own at the end of the text, after the last
+step, so a printed or PDF copy of the page carries it. Run again, it replaces
+that section. A guide drawn under the older `## Assembly guide` heading is
+made a `#` section when the page opens. A line in the text says how far it has got while it draws.
 
 ### Videos
 

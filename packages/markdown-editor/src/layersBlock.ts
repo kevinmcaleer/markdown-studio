@@ -1,4 +1,4 @@
-import { StateEffect, StateField, type EditorState, type Extension } from "@codemirror/state";
+import { StateEffect, StateField, Transaction, type EditorState, type Extension } from "@codemirror/state";
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { imageAt, imageMarkdown } from "./imagePopover";
 import { isLayersUrl, LAYERS_MODEL_EVENT, LAYERS_UPDATE_EVENT, layersOpener, layersUrl, type LayersHistoryEntry, type LayersOpenHow, type LayersUpdateProgress } from "./layersFacet";
@@ -560,7 +560,7 @@ export function openLayers(view: EditorView, host: LayersHost, pos: number, mode
 
 // ------------------------------------------------------------ the assembly guide
 
-export const GUIDE_HEADING = "## Assembly guide";
+export const GUIDE_HEADING = "# Assembly guide";
 const GUIDE_MARK = /^\*Making the assembly guide[^\n]*\*$/m;
 /** The comment under the heading saying which model the guide was drawn from (hidden in the live view). */
 const GUIDE_KEY = /^<!-- assembly guide: ([0-9a-z]+) -->$/m;
@@ -611,32 +611,47 @@ export async function refreshAssemblyGuide(view: EditorView, host: LayersHost): 
 }
 
 /**
- * Where the assembly guide goes in `text`: the body of its "## Assembly
+ * Where the assembly guide goes in `text`: the body of its "# Assembly
  * guide" section (up to the next heading of that level or higher), or, with
  * no such section, the end of the text with the heading to insert first.
+ * A guide drawn before it was a section of its own sits under "## Assembly
+ * guide": that counts too (`level` 2), and its heading is made a "#" one.
  * The guide follows the last step, so a printed page carries it too.
  */
-export function guideSection(text: string): { from: number; to: number; heading: boolean } {
-  const re = /^## Assembly guide[ \t]*$/m;
+export function guideSection(text: string): { from: number; to: number; heading: boolean; level?: number; headingAt?: { from: number; to: number } } {
+  const re = /^(#{1,2}) Assembly guide[ \t]*$/m;
   const m = re.exec(text);
   if (!m) return { from: text.length, to: text.length, heading: true };
+  const level = m[1].length;
   let from = m.index + m[0].length;
   if (text[from] === "\n") from++;
   const rest = text.slice(from);
-  const next = /^#{1,2}[ \t]/m.exec(rest);
+  const next = (level === 1 ? /^#[ \t]/m : /^#{1,2}[ \t]/m).exec(rest);
   const to = next ? from + next.index : text.length;
-  return { from, to, heading: false };
+  return { from, to, heading: false, level, headingAt: { from: m.index, to: m.index + m[0].length } };
+}
+
+/** Makes a "## Assembly guide" heading the "# Assembly guide" section it now is (true when it did). */
+export function upgradeGuideHeading(view: EditorView): boolean {
+  if (view.state.readOnly) return false;
+  const text = view.state.doc.toString();
+  const s = guideSection(text);
+  // Only a guide that was drawn there (its pages, not words someone wrote under that heading).
+  if (s.level !== 2 || !s.headingAt || guideKeyIn(text) === null) return false;
+  view.dispatch({ changes: { ...s.headingAt, insert: GUIDE_HEADING }, userEvent: "input.layers", annotations: Transaction.addToHistory.of(false) });
+  return true;
 }
 
 /** The text's first heading-one, as the project's name, or "". */
 function titleOf(text: string): string {
-  return /^# (.+)$/m.exec(text)?.[1].trim() ?? "";
+  for (const m of text.matchAll(/^# (.+)$/gm)) if (!/^Assembly guide\s*$/i.test(m[1].trim())) return m[1].trim();
+  return "";
 }
 
 /**
  * Draws an assembly guide from the project's model (a cover, Before you
  * start, the parts list and a step per part), uploads each page and puts
- * them under "## Assembly guide" at the end of the text (or in that section,
+ * them under "# Assembly guide" at the end of the text (or in that section,
  * replacing what it held). Layers draws the pages out of sight; a line in
  * the text says how far it has got.
  */
@@ -657,7 +672,9 @@ async function drawAssemblyGuide(view: EditorView, host: LayersHost): Promise<vo
   const old = section.heading ? [] : graphicsIn(text.slice(section.from, section.to)).map(g => g.url);
   const lead = section.heading ? `${text.length && !text.endsWith("\n\n") ? (text.endsWith("\n") ? "\n" : "\n\n") : ""}${GUIDE_HEADING}\n\n` : section.from === section.to || text.slice(section.from, section.to).startsWith("\n") ? "" : "\n";
   const mark = (s: string) => `*Making the assembly guide: ${s}…*`;
-  view.dispatch({ changes: { from: section.from, to: section.to, insert: `${lead}${mark("opening the project's model")}\n\n` }, userEvent: "input.layers" });
+  // An old "## Assembly guide" becomes the "#" section it is now.
+  const upgrade = section.level === 2 && section.headingAt ? [{ ...section.headingAt, insert: GUIDE_HEADING }] : [];
+  view.dispatch({ changes: [...upgrade, { from: section.from, to: section.to, insert: `${lead}${mark("opening the project's model")}\n\n` }], userEvent: "input.layers" });
   const setMark = (replacement: string) => {
     const now = view.state.doc.toString();
     const m = GUIDE_MARK.exec(now);
@@ -716,7 +733,7 @@ async function drawAssemblyGuide(view: EditorView, host: LayersHost): Promise<vo
   }
 }
 
-/** "/Assembly guide": a booklet of pages drawn from the project's model, under "## Assembly guide" at the end. */
+/** "/Assembly guide": a booklet of pages drawn from the project's model, in its own "# Assembly guide" section at the end. */
 export function assemblyGuideCommand(host: LayersHost): SlashCommand {
   return {
     id: "assembly-guide",
@@ -979,6 +996,11 @@ export function layersBlocks(host: LayersHost): Extension {
       updateAll: (view) => updateAllGraphics(view, host),
       progress: (view) => allRuns.get(view) ?? null,
       ...(host.history ? { history: host.history } : {}),
+    }),
+    // A guide drawn when it sat under "## Assembly guide" becomes its own "#" section.
+    ViewPlugin.define((view) => {
+      const timer = window.setTimeout(() => upgradeGuideHeading(view), 0);
+      return { destroy: () => clearTimeout(timer) };
     }),
     ViewPlugin.define((view) => ({
       // Graphics moved, added or saved: each checks its step number again.
