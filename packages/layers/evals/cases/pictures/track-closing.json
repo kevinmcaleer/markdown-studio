@@ -1,0 +1,154 @@
+{
+  "title": "Track part way in: the ends swinging together",
+  "why": "Halfway between open and closed, the loose ends have swung most of the way round towards each other, every link still joined to the next.",
+  "scene": {
+    "parts": [
+      {
+        "id": "chassis",
+        "shape": {
+          "box": [
+            70,
+            40,
+            20
+          ]
+        }
+      },
+      {
+        "id": "wheelA",
+        "shape": {
+          "cylinder": [
+            15,
+            8
+          ]
+        },
+        "parent": "chassis",
+        "position": [
+          -38,
+          26,
+          0
+        ],
+        "rotation": [
+          90,
+          0,
+          0
+        ]
+      },
+      {
+        "id": "wheelB",
+        "shape": {
+          "cylinder": [
+            15,
+            8
+          ]
+        },
+        "parent": "chassis",
+        "position": [
+          38,
+          26,
+          0
+        ],
+        "rotation": [
+          90,
+          0,
+          0
+        ]
+      },
+      {
+        "id": "piece",
+        "shape": {
+          "box": [
+            7,
+            8,
+            3
+          ]
+        },
+        "hidden": true,
+        "position": [
+          0,
+          -60,
+          0
+        ]
+      },
+      {
+        "id": "track",
+        "parent": "chassis",
+        "highlight": true,
+        "joint": {
+          "normal": [
+            0,
+            1,
+            0
+          ],
+          "distance": 40
+        },
+        "track": {
+          "link": "piece",
+          "count": 0,
+          "start": [
+            -4,
+            0,
+            0
+          ],
+          "end": [
+            4,
+            0,
+            0
+          ],
+          "axis": [
+            0,
+            1,
+            0
+          ],
+          "wheels": [
+            {
+              "id": "wheelA",
+              "point": [
+                0,
+                0,
+                0
+              ],
+              "normal": [
+                0,
+                0,
+                1
+              ],
+              "radius": 15
+            },
+            {
+              "id": "wheelB",
+              "point": [
+                0,
+                0,
+                0
+              ],
+              "normal": [
+                0,
+                0,
+                1
+              ],
+              "radius": 15
+            }
+          ],
+          "offset": 0,
+          "lift": 1.5,
+          "side": 0
+        }
+      }
+    ],
+    "camera": {
+      "direction": [
+        0.25,
+        1,
+        0.3
+      ],
+      "target": [
+        0,
+        45,
+        8
+      ],
+      "size": 100
+    },
+    "explode": 0.6,
+    "arrows": true
+  }
+}

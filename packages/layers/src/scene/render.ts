@@ -35,6 +35,7 @@ import { readStep, isStepFile, mergeBodies, type StepBody } from "./step";
 import { bounds, fromBase64, parseStl, stlFaces } from "./stl";
 import { isPacked, unpackMesh } from "./mesh";
 import { roundEdges } from "./rounds";
+import { movePieceLines, movePieces, trackOpener, trackOpening, type TrackOpener } from "./trackOpen";
 
 const DEG = Math.PI / 180;
 
@@ -86,22 +87,46 @@ function edgesOf(model: Model, crease: number, rounds = false): LineSegmentsGeom
   const key = rounds ? -angle : angle;
   let g = model.edges.get(key);
   if (!g) {
-    const e = new EdgesGeometry(model.geometry, angle);
-    let lines = e.attributes.position.array as Float32Array;
-    e.dispose();
-    if (rounds) {
-      const r = roundEdges(model.geometry.attributes.position.array as Float32Array, angle);
-      if (r.length) {
-        const both = new Float32Array(lines.length + r.length);
-        both.set(lines);
-        both.set(r, lines.length);
-        lines = both;
-      }
-    }
-    g = new LineSegmentsGeometry().setPositions(lines);
+    g = new LineSegmentsGeometry().setPositions(foldLines(model.geometry, angle, rounds));
     model.edges.set(key, g);
   }
   return g;
+}
+
+/** The fold lines of some triangles at a crease angle (and their rounded edges' tangent lines, with `rounds`), as line ends. */
+function foldLines(geometry: BufferGeometry, angle: number, rounds: boolean): Float32Array {
+  const e = new EdgesGeometry(geometry, angle);
+  let lines = e.attributes.position.array as Float32Array;
+  e.dispose();
+  if (rounds) {
+    const r = roundEdges(geometry.attributes.position.array as Float32Array, angle);
+    if (r.length) {
+      const both = new Float32Array(lines.length + r.length);
+      both.set(lines);
+      both.set(r, lines.length);
+      lines = both;
+    }
+  }
+  return lines;
+}
+
+/** A track's first piece's fold lines, by crease key (see edgesOf), worked out once per model. */
+const pieceLines = new WeakMap<Model, Map<number, Float32Array>>();
+function firstPieceLines(model: Model, count: number, crease: number, rounds: boolean): Float32Array {
+  const angle = Math.round(crease);
+  const key = rounds ? -angle : angle;
+  let byKey = pieceLines.get(model);
+  if (!byKey) pieceLines.set(model, (byKey = new Map()));
+  let lines = byKey.get(key);
+  if (!lines) {
+    const all = model.geometry.attributes.position.array as Float32Array;
+    const g = new BufferGeometry();
+    g.setAttribute("position", new BufferAttribute(all.slice(0, all.length / count), 3));
+    lines = foldLines(g, angle, rounds);
+    g.dispose();
+    byKey.set(key, lines);
+  }
+  return lines;
 }
 
 type PartSource = Pick<ScenePart, "url" | "data" | "id" | "body"> & Pick<Partial<ScenePart>, "wire">;
@@ -250,6 +275,11 @@ interface PartObjects {
   tube?: BufferGeometry;
   /** With a section: the part's cap on the plane, in the picture and in the ID pass. */
   caps?: { main: Mesh; id: Mesh };
+  /** A track: how its pieces open as it explodes (null: it can't), and its shape and lines while open. */
+  opener?: TrackOpener | null;
+  open?: number;
+  shape?: BufferGeometry;
+  shapeLines?: LineSegmentsGeometry;
 }
 
 // A cut face's fill, hatched with lines across the picture (as on a drawing,
@@ -431,8 +461,60 @@ export class LineArt {
       this.objects.push(o);
       if (own.wire) this.paint(o, lit);
     });
+    this.openTracks(list.map(x => x.part), explode);
     this.makeCaps();
     this.drawDraft(world, explode);
+  }
+
+  /**
+   * Each track as open as its explode makes it: exploded far, a string of
+   * pieces with its ends up and apart; closed round the wheels as it comes in.
+   */
+  private openTracks(parts: ScenePart[], explode: number): void {
+    let assembled: Map<string, Matrix4> | undefined;
+    for (const o of this.objects) {
+      if (!o.part.track) continue;
+      const f = o.part.hidden ? 0 : trackOpening(explodeOf(o.part, explode));
+      if (f === (o.open || 0)) continue;
+      if (o.opener === undefined) {
+        assembled ||= worldMatrices(parts, 0, false);
+        o.opener = trackOpener(o.part.id, o.part.track, o.model.triangles, assembled);
+      }
+      if (!o.opener) continue;
+      this.shapeTrack(o, f);
+    }
+  }
+
+  private shapeTrack(o: PartObjects, f: number): void {
+    const style = this.style;
+    const idMesh = o.idGroup.children[0] as Mesh;
+    o.open = f;
+    o.shapeLines?.dispose();
+    o.shapeLines = undefined;
+    if (!(f > 0) || !o.opener) {
+      o.fill.geometry = idMesh.geometry = o.model.geometry;
+      o.shape?.dispose();
+      o.shape = undefined;
+      if (o.lines && style) o.lines.geometry = edgesOf(o.model, style.crease, style.rounds !== false)!;
+      return;
+    }
+    const moves = o.opener.moves(f);
+    const src = o.model.geometry.attributes.position.array as Float32Array;
+    if (!o.shape) {
+      o.shape = new BufferGeometry();
+      o.shape.setAttribute("position", new BufferAttribute(new Float32Array(src.length), 3));
+    }
+    const attr = o.shape.attributes.position as BufferAttribute;
+    movePieces(src, moves, attr.array as Float32Array<ArrayBuffer>);
+    attr.needsUpdate = true;
+    o.shape.computeBoundingBox();
+    o.shape.computeBoundingSphere();
+    o.fill.geometry = idMesh.geometry = o.shape;
+    if (o.lines && style && style.crease < 180) {
+      const first = firstPieceLines(o.model, o.opener.count, style.crease, style.rounds !== false);
+      o.shapeLines = new LineSegmentsGeometry().setPositions(movePieceLines(first, o.opener, moves));
+      o.lines.geometry = o.shapeLines;
+    }
   }
 
   // ------------------------------------------------------------ section view
@@ -510,7 +592,7 @@ export class LineArt {
       const order = 10 + i * 2;
       for (const [k, g] of [o.group, o.idGroup].entries()) {
         for (const m of mats[k]) {
-          const c = new Mesh(o.model.geometry, m);
+          const c = new Mesh(o.shape || o.model.geometry, m);
           c.userData.stencil = true;
           c.renderOrder = order;
           c.raycast = () => {};
@@ -735,6 +817,7 @@ export class LineArt {
         this.paint(o, (lit ||= highlightedParts(parts)));
       }
     }
+    this.openTracks(parts, explode);
     this.placeCaps();
     this.drawDraft(world, explode);
   }
@@ -1127,6 +1210,8 @@ export class LineArt {
     this.clearCaps();
     for (const o of this.objects) {
       o.tube?.dispose();
+      o.shape?.dispose();
+      o.shapeLines?.dispose();
       (o.fill.material as MeshBasicMaterial).dispose();
       ((o.idGroup.children[0] as Mesh).material as MeshBasicMaterial).dispose();
       this.scene.remove(o.group);
@@ -1403,21 +1488,36 @@ export async function partBounds(scene: SceneData, partId: string, store: ModelS
  */
 export async function frameAll(cam: SceneCamera, scenes: SceneData[], store: ModelStore, aspect: number, margin = 1.06): Promise<SceneCamera> {
   const meshes: Placed[] = [];
+  const made: BufferGeometry[] = [];
   for (const scene of scenes) {
     const mats = worldMatrices(scene.parts, scene.explode);
+    let assembled: Map<string, Matrix4> | undefined;
     for (const part of scene.parts) {
       if (part.hidden) continue;
       const m = mats.get(part.id);
       let geometry: BufferGeometry;
       try {
-        geometry = (await store.get(part)).geometry;
+        const model = await store.get(part);
+        geometry = model.geometry;
+        // A track as drawn: open, exploded far.
+        const f = part.track ? trackOpening(explodeOf(part, scene.explode)) : 0;
+        const opener = f > 0 ? trackOpener(part.id, part.track!, model.triangles, (assembled ||= worldMatrices(scene.parts, 0, false))) : null;
+        if (opener) {
+          geometry = new BufferGeometry();
+          geometry.setAttribute("position", new BufferAttribute(movePieces(model.geometry.attributes.position.array as Float32Array, opener.moves(f)), 3));
+          made.push(geometry);
+        }
       } catch {
         continue;
       }
       if (m) meshes.push({ geometry, matrix: m });
     }
   }
-  return frameTight(cam, meshes, aspect, margin);
+  try {
+    return frameTight(cam, meshes, aspect, margin);
+  } finally {
+    made.forEach(g => g.dispose());
+  }
 }
 
 /**
