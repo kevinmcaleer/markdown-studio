@@ -4329,7 +4329,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     /** The wiring diagram's settings for the picked part, plug or wire (and the scene's, under them). */
     /** In the see-through view: whether a part is drawn solid or see-through, worked out or set. */
     function xrayRow(p: ScenePart): string {
-      if (!scene.seeThrough || isWiring(p)) return "";
+      // The Model workspace too: it's what the wiring showcase draws.
+      if ((!scene.seeThrough && !modelOnly) || isWiring(p)) return "";
       const auto = seeThroughParts(scene.parts.map(q => (q.id === p.id ? { ...q, xray: undefined } : q))).has(p.id) ? "see-through" : "solid";
       return `<label class="lyr-scene-namebox" title="How the see-through view draws it. Automatic: electronics (on the wiring diagram, with sockets, wired to, or named like a board or motor) solid, the rest see-through">See-through view <select data-xray><option value="">Automatic (${auto})</option><option value="solid"${p.xray === "solid" ? " selected" : ""}>Solid</option><option value="glass"${p.xray === "glass" ? " selected" : ""}>See-through</option></select></label>`;
     }

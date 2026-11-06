@@ -13,7 +13,7 @@ import type { ScenePart } from "./model";
 const ELECTRONIC_NAME = /\b(servos?|motors?|steppers?|pcb|boards?|arduino|pico|esp32|esp8266|raspberry|rpi|teensy|microbit|micro:bit|batter(y|ies)|lipo|18650|sensors?|cameras?|leds?|neopixels?|displays?|oled|lcd|speakers?|buzzer|switch(es)?|buttons?|drivers?|modules?|shield|breadboard|buck|regulator|n20|sts3215|sg90|mg90s?|mg996r?|ultrasonic|hc-sr04|lidar|imu|mpu6050|bno055|encoder|relay|potentiometer|antenna|wires?|cables?|plugs?|connectors?|headers?|jst|dupont|molex)\b/i;
 
 /** Names of the printed parts that hold electronics ("Motor mount", "Battery cover"): those stay see-through. */
-const HOLDER_NAME = /\b(mounts?|mounting|brackets?|holders?|covers?|case|casing|housing|lids?|plates?|horns?|clips?|trays?|box|frame|enclosure|stand|arms?|shell|bumper|spacers?|cradle|clamps?|caps?|guards?|chassis|body|base|shroud|sleeve|adapter|pulley|wheels?|gears?|legs?|feet|foot|head)\b/i;
+const HOLDER_NAME = /\b(mounts?|mounting|brackets?|holders?|covers?|case|casing|housing|lids?|plates?|horns?|clips?|trays?|box|frame|enclosure|stand|arms?|shell|bumper|spacers?|standoffs?|risers?|supports?|holding|holds|decks?|platforms?|cradle|clamps?|caps?|guards?|chassis|body|base|shroud|sleeve|adapter|pulley|wheels?|gears?|legs?|feet|foot|head)\b/i;
 
 /** Whether a part's name says it's electronics (and not something printed to hold them). */
 export function electronicName(name: string): boolean {
@@ -25,7 +25,8 @@ export function electronicName(name: string): boolean {
  * The parts drawn see-through in the see-through view: every part but the
  * electronics. Electronics are the wiring (wires and plugs), a part on the
  * wiring diagram, a part with sockets, a part a wire ends on, and a part
- * whose name says so. A part's own `xray` setting wins.
+ * whose name says so, unless one of those is joined under it (then it's the
+ * printed part holding it). A part's own `xray` setting wins.
  */
 export function seeThroughParts(parts: ScenePart[]): Set<string> {
   const byId = new Map(parts.map(p => [p.id, p]));
@@ -41,6 +42,19 @@ export function seeThroughParts(parts: ScenePart[]): Set<string> {
       solid.add(ownerOf(p.wire.to.part));
     }
   }
+  // Known for sure: on the wiring diagram, with sockets, or wired to.
+  const sure = (p: ScenePart) => !!(p.wiringPart || p.sockets?.length || solid.has(p.id));
+  // A part named like electronics that has the real thing joined under it
+  // ("Ultrasonic sensor" holding the HC-SR04) is what holds it: printed.
+  const holdsSure = new Set<string>();
+  for (const p of parts) {
+    if (!sure(p)) continue;
+    const seen = new Set<string>();
+    for (let up = p.parent; up && !seen.has(up); up = byId.get(up)?.parent) {
+      seen.add(up);
+      holdsSure.add(up);
+    }
+  }
   const out = new Set<string>();
   for (const p of parts) {
     if (p.xray === "solid" || p.wire || p.plug) continue;
@@ -48,7 +62,7 @@ export function seeThroughParts(parts: ScenePart[]): Set<string> {
       out.add(p.id);
       continue;
     }
-    if (p.wiringPart || p.sockets?.length || solid.has(p.id) || electronicName(p.name || "")) continue;
+    if (sure(p) || (electronicName(p.name || "") && !holdsSure.has(p.id))) continue;
     out.add(p.id);
   }
   return out;
