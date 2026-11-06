@@ -6962,7 +6962,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     stage.appendChild(showcaseDialog);
     draggable(showcaseDialog);
     /** The showcase being made or shown: its shape, how far it's got, and the video once made. */
-    type Showcase = { shape: string; pct: number; stopped: boolean; made?: { url: string; type: string; blob: Blob }; error?: string };
+    type Showcase = { shape: string; pct: number; stopped: boolean; made?: { url: string; type: string; blob: Blob; width: number; height: number; because?: string }; error?: string };
     let showcase: Showcase | null = null;
 
     /** Opens the wiring showcase's preview, made from the view as it is now. */
@@ -6973,21 +6973,23 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       renderShowcase();
       const size = SHOWCASE_SHAPES.find(x => x.id === shape) || SHOWCASE_SHAPES[0];
       const parts = clone(scene).parts.filter(p => !p.hidden);
-      void renderWiringAnimation({ parts }, opts.store, [...scene.camera.direction] as Vec3, {
-        width: size.w,
-        height: size.h,
-        progress: (done, total) => {
-          const pct = Math.floor((done / total) * 100);
-          if (pct === me.pct || showcase !== me) return;
-          me.pct = pct;
-          const el = showcaseDialog.querySelector("[data-showcase-pct]");
-          if (el) el.textContent = `Making it… ${pct}%`;
-        },
-        cancelled: () => me.stopped || closed,
-      }).then(
+      const direction = [...scene.camera.direction] as Vec3;
+      // An MP4 first; a GIF only where the browser can't make one (kept under X's 15 MB by encodeFrames).
+      const make = () => renderWiringAnimation({ parts }, opts.store, direction, { width: size.w, height: size.h, progress, cancelled });
+      function progress(done: number, total: number): void {
+        const pct = Math.floor((done / total) * 100);
+        if (pct === me.pct || showcase !== me) return;
+        me.pct = pct;
+        const el = showcaseDialog.querySelector("[data-showcase-pct]");
+        if (el) el.textContent = `Making it… ${pct}%`;
+      }
+      function cancelled(): boolean {
+        return me.stopped || closed;
+      }
+      void make().then(
         made => {
           if (me.stopped || closed) return;
-          me.made = { url: URL.createObjectURL(made.blob), type: made.type, blob: made.blob };
+          me.made = { url: URL.createObjectURL(made.blob), type: made.type, blob: made.blob, width: made.width, height: made.height, because: made.gifBecause };
           renderShowcase();
         },
         e => {
@@ -7035,11 +7037,12 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
             <select data-showcase-shape>${SHOWCASE_SHAPES.map(x => `<option value="${x.id}"${x.id === sc.shape ? " selected" : ""}>${esc(x.label)}</option>`).join("")}</select>
           </label>
           <div class="lyr-showcase-preview" style="aspect-ratio: ${size.w} / ${size.h}">${preview}</div>
-          <p class="lyr-note">From the view as it is now: turn the model and press Again to change it.${sc.made && !video ? " This browser can't make an MP4, so it's an animated GIF." : ""}</p>
+          <p class="lyr-note">From the view as it is now: turn the model and press Again to change it.</p>
+          ${sc.made ? `<p class="lyr-note">${video ? "MP4" : "Animated GIF"}, ${sc.made.width} × ${sc.made.height}, ${(sc.made.blob.size / 1e6).toFixed(1)} MB.${video ? "" : ` Not an MP4 because ${esc(sc.made.because || "this browser can't make one")}.`}</p>` : ""}
         </div>
         <div class="lyr-joint-foot">
           <button type="button" class="lyr-btn" data-act="showcase-again" title="Make it again from the view as it is now">${icon("rotate", 16)}<span>Again</span></button>
-          <button type="button" class="lyr-btn lyr-done" data-act="showcase-save"${sc.made ? "" : " disabled"} title="Download it, ${size.w} × ${size.h}">${icon("download", 16)}<span>Save video</span></button>
+          <button type="button" class="lyr-btn lyr-done" data-act="showcase-save"${sc.made ? "" : " disabled"} title="Download it">${icon("download", 16)}<span>${sc.made && sc.made.type !== "video/mp4" ? "Save GIF" : "Save video"}</span></button>
         </div>`;
     }
 

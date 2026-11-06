@@ -194,6 +194,8 @@ export interface Animation {
   width: number;
   height: number;
   frames: number;
+  /** Why it's a GIF when an MP4 was wanted: the browser has no H.264 encoder, or each one it has failed. */
+  gifBecause?: string;
 }
 
 /**
@@ -339,6 +341,11 @@ export async function encodeFrames(canvas: HTMLCanvasElement, delays: number[], 
   }
   // Every encoder gave up: a GIF still works, unless an MP4 was asked for.
   if (failure && format === "mp4") throw failure;
+  const because =
+    format === "gif" ? undefined
+    : failure ? `the video encoder failed (${failure instanceof Error && failure.message ? failure.message : String(failure)})`
+    : typeof VideoEncoder === "undefined" ? "this browser has no video encoder"
+    : "this browser can't encode H.264 at this size";
   const rgb = hexRgb(bg);
   const max = options.maxGifBytes ?? MAX_GIF_BYTES;
   /** The GIF at `scale` of the size, with every `every`th frame (each shown as long as the ones it stands for). */
@@ -385,7 +392,7 @@ export async function encodeFrames(canvas: HTMLCanvasElement, delays: number[], 
     scale = Math.max(0.25, scale * Math.sqrt(Math.min(1, share)));
     made = await gifAt(scale, every);
   }
-  return { blob: new Blob([made.bytes as BlobPart], { type: "image/gif" }), type: "image/gif", width: made.w, height: made.h, frames: made.frames };
+  return { blob: new Blob([made.bytes as BlobPart], { type: "image/gif" }), type: "image/gif", width: made.w, height: made.h, frames: made.frames, ...(because ? { gifBecause: because } : {}) };
 }
 
 function hexRgb(hex: string): [number, number, number] {
