@@ -161,6 +161,12 @@ export function animationCameras(frames: AnimationFrame[], direction: Vec3, poin
 /** Bigger than this, the animation is drawn again smaller (uploads stop at 10 MB). */
 export const MAX_ANIMATION_BYTES = 8 * 1024 * 1024;
 
+/**
+ * The most a GIF may come to: a bigger one is made again smaller, and with
+ * fewer frames if it must. X takes a GIF of up to 15 MB; this leaves room.
+ */
+export const MAX_GIF_BYTES = 14 * 1024 * 1024;
+
 /** The Assembly step template's page grey, so the animation sits with the step pictures. */
 export const ANIMATION_BACKGROUND = "#ececec";
 
@@ -177,6 +183,8 @@ export interface AnimationOptions {
   progress?(done: number, total: number): void;
   /** True once the caller has gone (the editor closed): it stops. */
   cancelled?(): boolean;
+  /** A GIF's most bytes (MAX_GIF_BYTES unless given): bigger, it's made again smaller. */
+  maxGifBytes?: number;
 }
 
 export interface Animation {
@@ -186,7 +194,7 @@ export interface Animation {
   width: number;
   height: number;
   frames: number;
-  /** Why it's a GIF when an MP4 was wanted ("auto"): the browser has no H.264 encoder, or it failed. */
+  /** Why it's a GIF when an MP4 was wanted: the browser has no H.264 encoder, or each one it has failed. */
   gifBecause?: string;
 }
 
@@ -313,7 +321,7 @@ export async function encodeFrames(canvas: HTMLCanvasElement, delays: number[], 
   const format = options.format ?? "auto";
   const configs = format === "gif" ? [] : await mp4Configs(width, height, options.fps ?? 15);
   if (format === "mp4" && !configs.length) throw new Error("This browser can't make an MP4 video.");
-  let because = format === "gif" ? undefined : typeof VideoEncoder === "undefined" ? "this browser has no video encoder" : "this browser can't encode H.264";
+  let failure: unknown = null;
   for (const config of configs) {
     const mp4 = new Mp4Writer(config);
     try {
@@ -327,21 +335,64 @@ export async function encodeFrames(canvas: HTMLCanvasElement, delays: number[], 
     } catch (e) {
       mp4.close();
       if (options.cancelled?.()) throw e;
-      // The encoder gave up part way (a GPU hiccup, a hardware encoder that said yes): the next one, then a GIF, unless an MP4 was asked for.
-      because = `the video encoder failed (${e instanceof Error && e.message ? e.message : String(e)})`;
-      if (format === "mp4" && config === configs[configs.length - 1]) throw e;
+      // The encoder gave up part way (a GPU hiccup, say): the next one (the browser's own) may not.
+      failure = e;
     }
   }
+  // Every encoder gave up: a GIF still works, unless an MP4 was asked for.
+  if (failure && format === "mp4") throw failure;
+  const because =
+    format === "gif" ? undefined
+    : failure ? `the video encoder failed (${failure instanceof Error && failure.message ? failure.message : String(failure)})`
+    : typeof VideoEncoder === "undefined" ? "this browser has no video encoder"
+    : "this browser can't encode H.264 at this size";
   const rgb = hexRgb(bg);
-  const palette = paletteFor(samples.filter(i => i >= 0 && i < n).map(i => pixels(i).slice()), rgb);
-  const gif = new GifWriter(width, height, palette);
-  for (let i = 0; i < n; i++) {
-    if (options.cancelled?.()) throw new Error("Stopped.");
-    gif.add({ indices: indexFrame(pixels(i), palette, rgb), delay: delays[i] });
-    await step(i);
+  const max = options.maxGifBytes ?? MAX_GIF_BYTES;
+  /** The GIF at `scale` of the size, with every `every`th frame (each shown as long as the ones it stands for). */
+  const gifAt = async (scale: number, every: number) => {
+    const w = Math.max(2, Math.round(width * scale));
+    const h = Math.max(2, Math.round(height * scale));
+    let small: CanvasRenderingContext2D | null = null;
+    if (w !== width || h !== height) {
+      const c = document.createElement("canvas");
+      c.width = w;
+      c.height = h;
+      small = c.getContext("2d", { willReadFrequently: true })!;
+      small.imageSmoothingEnabled = true;
+      small.imageSmoothingQuality = "high";
+    }
+    const shrunk = (i: number) => {
+      if (!small) return pixels(i);
+      draw(i);
+      small.drawImage(canvas, 0, 0, w, h);
+      return small.getImageData(0, 0, w, h).data;
+    };
+    const kept: { i: number; delay: number }[] = [];
+    for (let i = 0; i < n; i += every) kept.push({ i, delay: delays.slice(i, i + every).reduce((a, b) => a + b, 0) });
+    const palette = paletteFor(samples.filter(i => i >= 0 && i < n).map(i => shrunk(i).slice()), rgb);
+    const gif = new GifWriter(w, h, palette);
+    for (let k = 0; k < kept.length; k++) {
+      if (options.cancelled?.()) throw new Error("Stopped.");
+      gif.add({ indices: indexFrame(shrunk(kept[k].i), palette, rgb), delay: kept[k].delay });
+      options.progress?.(k + 1, kept.length);
+      if (k % 4 === 3) await new Promise(r => setTimeout(r, 0));
+    }
+    return { bytes: gif.finish(), w, h, frames: kept.length };
+  };
+  let scale = 1;
+  let every = 1;
+  let made = await gifAt(scale, every);
+  // Too big (for X, say): smaller, and with half the frames if that alone would make it too small to see.
+  for (let tries = 0; made.bytes.length > max && tries < 3; tries++) {
+    let share = (max * 0.9) / made.bytes.length;
+    if (every === 1 && n > 20 && share < 0.45) {
+      every = 2;
+      share *= 2;
+    }
+    scale = Math.max(0.25, scale * Math.sqrt(Math.min(1, share)));
+    made = await gifAt(scale, every);
   }
-  const bytes = gif.finish();
-  return { blob: new Blob([bytes as BlobPart], { type: "image/gif" }), type: "image/gif", width, height, frames: n, ...(because ? { gifBecause: because } : {}) };
+  return { blob: new Blob([made.bytes as BlobPart], { type: "image/gif" }), type: "image/gif", width: made.w, height: made.h, frames: made.frames, ...(because ? { gifBecause: because } : {}) };
 }
 
 function hexRgb(hex: string): [number, number, number] {

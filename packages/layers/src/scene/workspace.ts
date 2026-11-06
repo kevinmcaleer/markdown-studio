@@ -6962,9 +6962,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     stage.appendChild(showcaseDialog);
     draggable(showcaseDialog);
     /** The showcase being made or shown: its shape, how far it's got, and the video once made. */
-    type Showcase = { shape: string; pct: number; stopped: boolean; made?: { url: string; type: string; blob: Blob; width: number; height: number; because?: string }; error?: string; smaller?: boolean };
-    /** X (Twitter) takes a GIF up to 15 MB: a bigger one is made again smaller and at fewer frames a second. */
-    const SHOWCASE_GIF_BYTES = 15 * 1000 * 1000;
+    type Showcase = { shape: string; pct: number; stopped: boolean; made?: { url: string; type: string; blob: Blob; width: number; height: number; because?: string }; error?: string };
     let showcase: Showcase | null = null;
 
     /** Opens the wiring showcase's preview, made from the view as it is now. */
@@ -6976,25 +6974,14 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const size = SHOWCASE_SHAPES.find(x => x.id === shape) || SHOWCASE_SHAPES[0];
       const parts = clone(scene).parts.filter(p => !p.hidden);
       const direction = [...scene.camera.direction] as Vec3;
-      const even = (v: number) => Math.max(2, Math.round(v / 2) * 2);
-      const make = async () => {
-        // An MP4 first; a GIF only where the browser can't make one, kept under X's 15 MB.
-        let made = await renderWiringAnimation({ parts }, opts.store, direction, { width: size.w, height: size.h, progress, cancelled });
-        for (let k = 1; made.type === "image/gif" && made.blob.size > SHOWCASE_GIF_BYTES && k <= 3; k++) {
-          if (cancelled()) throw new Error("Stopped.");
-          me.smaller = true;
-          me.pct = -1;
-          const f = Math.pow(0.72, k);
-          made = { ...(await renderWiringAnimation({ parts }, opts.store, direction, { width: even(size.w * f), height: even(size.h * f), fps: 15, format: "gif", progress, cancelled })), gifBecause: made.gifBecause };
-        }
-        return made;
-      };
+      // An MP4 first; a GIF only where the browser can't make one (kept under X's 15 MB by encodeFrames).
+      const make = () => renderWiringAnimation({ parts }, opts.store, direction, { width: size.w, height: size.h, progress, cancelled });
       function progress(done: number, total: number): void {
         const pct = Math.floor((done / total) * 100);
         if (pct === me.pct || showcase !== me) return;
         me.pct = pct;
         const el = showcaseDialog.querySelector("[data-showcase-pct]");
-        if (el) el.textContent = `${me.smaller ? "Making a smaller GIF (X takes up to 15 MB)" : "Making it"}… ${pct}%`;
+        if (el) el.textContent = `Making it… ${pct}%`;
       }
       function cancelled(): boolean {
         return me.stopped || closed;

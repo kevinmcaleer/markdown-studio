@@ -6,11 +6,12 @@
 import { ArrayBufferTarget, Muxer } from "mp4-muxer";
 
 /**
- * H.264 profiles to try, most widely played first: Main, Baseline, High
- * (level 4.0), then the same at level 5.1 for big pictures (a 9:16 1080p
- * video), which some encoders want named.
+ * H.264 profiles to try, most widely played first: Main, Constrained
+ * Baseline and Baseline (all some browsers' encoders do, Firefox's among
+ * them), High, each at level 4.0 (up to 1080p), then 5.1 for anything
+ * bigger, then Baseline 3.1 (up to 720p) for old encoders.
  */
-const CODECS = ["avc1.4d0028", "avc1.42001f", "avc1.640028", "avc1.4d0033", "avc1.640033", "avc1.42e033"];
+const CODECS = ["avc1.4d0028", "avc1.42e028", "avc1.420028", "avc1.640028", "avc1.4d0033", "avc1.42e033", "avc1.640033", "avc1.42001f"];
 
 /** About this many bits a second for each pixel of the picture: line art on a flat grey needs little. */
 const BITS_PER_PIXEL_SECOND = 2.2;
@@ -21,17 +22,17 @@ export async function mp4Config(width: number, height: number, fps: number): Pro
 }
 
 /**
- * Every encoder setting this browser says it can use (up to `max`), best
- * first: each profile as the browser likes it, then with the software
- * encoder. A hardware encoder can say yes and then fail part way (Safari,
- * some Macs), so the next one is tried before giving up on an MP4.
+ * Up to `max` encoder settings this browser can use, best first: the
+ * hardware's (or the browser's choice), then the browser's own software
+ * encoder, so an encoder that gives up part way has another to go to
+ * before the animation falls back to a GIF.
  */
-export async function mp4Configs(width: number, height: number, fps: number, max = 4): Promise<VideoEncoderConfig[]> {
+export async function mp4Configs(width: number, height: number, fps: number, max = 3): Promise<VideoEncoderConfig[]> {
   if (typeof VideoEncoder === "undefined" || typeof VideoFrame === "undefined") return [];
   // H.264 wants even sizes.
   if (width % 2 || height % 2) return [];
   const out: VideoEncoderConfig[] = [];
-  for (const hw of [undefined, "prefer-software"] as const) {
+  for (const hardwareAcceleration of ["no-preference", "prefer-software"] as const) {
     for (const codec of CODECS) {
       const config: VideoEncoderConfig = {
         codec,
@@ -40,20 +41,20 @@ export async function mp4Configs(width: number, height: number, fps: number, max
         bitrate: Math.round(width * height * BITS_PER_PIXEL_SECOND),
         framerate: fps,
         avc: { format: "avc" },
-        ...(hw ? { hardwareAcceleration: hw } : {}),
+        ...(hardwareAcceleration === "no-preference" ? {} : { hardwareAcceleration }),
       };
       try {
         const { supported } = await VideoEncoder.isConfigSupported(config);
         if (supported) {
           out.push(config);
-          // One of each kind: the first profile that works with the browser's choice of encoder, and in software.
+          if (out.length >= max) return out;
+          // The next one with the other kind of encoder.
           break;
         }
       } catch {
         // Not this one.
       }
     }
-    if (out.length >= max) break;
   }
   return out;
 }

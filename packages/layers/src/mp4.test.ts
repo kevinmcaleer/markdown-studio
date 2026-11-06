@@ -26,14 +26,23 @@ describe("mp4Config", () => {
       },
     });
     const config = await mp4Config(800, 600, 15);
-    expect(tried).toEqual(["avc1.4d0028", "avc1.42001f"]);
+    expect(tried[0]).toBe("avc1.4d0028");
+    expect(tried.at(-1)).toBe("avc1.42001f");
     expect(config).toMatchObject({ codec: "avc1.42001f", width: 800, height: 600, framerate: 15 });
   });
 
-  it("offers the software encoder too, for when the hardware one says yes and then fails", async () => {
+  it("tries Baseline at level 4.0, so an encoder that only does Baseline still makes a 1080p MP4", async () => {
+    vi.stubGlobal("VideoFrame", class {});
+    vi.stubGlobal("VideoEncoder", { isConfigSupported: async (c: VideoEncoderConfig) => ({ supported: c.codec === "avc1.42e028" }) });
+    expect(await mp4Config(1080, 1920, 20)).toMatchObject({ codec: "avc1.42e028" });
+  });
+});
+
+describe("mp4Configs", () => {
+  it("gives the browser's choice, then its software encoder, for when one gives up part way", async () => {
     vi.stubGlobal("VideoFrame", class {});
     vi.stubGlobal("VideoEncoder", { isConfigSupported: async () => ({ supported: true }) });
-    const configs = await mp4Configs(1080, 1920, 20);
+    const configs = await mp4Configs(1280, 720, 20);
     expect(configs.map(c => [c.codec, c.hardwareAcceleration])).toEqual([
       ["avc1.4d0028", undefined],
       ["avc1.4d0028", "prefer-software"],
