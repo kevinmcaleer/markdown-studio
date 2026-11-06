@@ -39,8 +39,9 @@ import { MAX_SNAP_TRIANGLES, nearestSnap, Topology, type Face, type Snap } from 
 import { createSectionTool } from "./sectionTool";
 import { insideReach, layTrack, MAX_TRACK_PIECES, trackPitch, trackTriangles, type TrackSpec, type TrackWheel, type WorldCircle } from "./track";
 import { hideTrackPieces, trackPieces } from "./trackSpec";
-import { DEFAULT_GUIDE_TOOLS, GUIDE_TOOLS, MAX_GUIDE_TOOLS, MAX_TOOL_LENGTH, fixingOwners, newStepId, readyToFit, stepIndex, stepOfParts, steppable, stepWarnings, suggestSteps, tidySteps, type BuildStep } from "./buildSteps";
+import { MAX_GUIDE_TOOLS, MAX_TOOL_LENGTH, fixingOwners, newStepId, readyToFit, stepIndex, stepOfParts, steppable, stepWarnings, suggestSteps, tidySteps, type BuildStep } from "./buildSteps";
 import { isFastener } from "../stepFrame";
+import { bestTool, DEFAULT_GUIDE_TOOLS, findTools, readTool, TOOL_CATALOGUE, TOOL_GROUPS, toolSvg } from "../tools";
 import { fitDiameter, fitLength, holeDepth, isHoleSnap, matchingHoles, SCREW_HEADS, SCREW_LENGTHS, SCREW_SIZES, screwFile, screwLabel, screwLift, screwMesh, screwName, screwNoun, type ScrewHead, type ScrewSpec } from "./screw";
 
 export interface SceneModel {
@@ -5465,9 +5466,22 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     props.addEventListener("keyup", e => {
       if (e.key === "ArrowUp" || e.key === "ArrowDown") commit();
     });
+    props.addEventListener("input", e => {
+      const t = e.target as HTMLInputElement;
+      if (t.dataset?.guideToolFind === undefined) return;
+      toolFind = t.value;
+      const box = props.querySelector<HTMLElement>("[data-tool-catalogue]");
+      if (box) box.innerHTML = toolCatalogue();
+      const d = props.querySelector<HTMLDetailsElement>(".lyr-tool-catalogue");
+      if (d && toolFind) d.open = true;
+    });
+    props.addEventListener("toggle", e => {
+      const d = e.target as HTMLElement;
+      if (d.classList?.contains("lyr-tool-catalogue")) toolsOpen = (d as HTMLDetailsElement).open;
+    }, true);
     props.addEventListener("keydown", e => {
       const add = e.target as HTMLInputElement;
-      if (add.dataset?.guideToolAdd !== undefined && e.key === "Enter") {
+      if (add.dataset?.guideToolFind !== undefined && e.key === "Enter") {
         e.preventDefault();
         e.stopPropagation();
         addGuideTool(add.value);
@@ -6626,42 +6640,78 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     }
 
     /** Tools for the guide: what its Before you start page lists under You will need. */
+    let toolFind = "";
+    let toolsOpen = false;
+    const toolList = () => guideToolList ?? DEFAULT_GUIDE_TOOLS;
     function toolsPanel(): string {
-      const list = guideToolList ?? DEFAULT_GUIDE_TOOLS;
-      const has = (id: string) => list.includes(id);
-      const own = list.filter(t => !GUIDE_TOOLS.some(g => g.id === t));
+      const list = toolList();
+      const picked = list.map(t => {
+        const r = readTool(t);
+        return `<button type="button" class="lyr-tool-chip lyr-on" data-guide-tool="${esc(t)}" title="Take it off the list">${r.kind ? toolSvg(r.kind, 14) : ""}<span>${esc(r.label)}</span>${icon("close", 12)}</button>`;
+      }).join("");
       return `<section class="lyr-scene-section lyr-guide-tools">
         <div class="lyr-panel-title">Tools for the guide</div>
         <p class="lyr-note">Listed under You will need on the guide's Before you start page.</p>
-        <div class="lyr-tool-chips">
-          ${GUIDE_TOOLS.map(g => `<button type="button" class="lyr-tool-chip${has(g.id) ? " lyr-on" : ""}" data-guide-tool="${esc(g.id)}" aria-pressed="${has(g.id)}" title="${has(g.id) ? "Take it off the list" : "Add it to the list"}">${has(g.id) ? icon("check", 12) : icon("plus", 12)}<span>${esc(g.label)}</span></button>`).join("")}
-          ${own.map(t => `<button type="button" class="lyr-tool-chip lyr-on" data-guide-tool="${esc(t)}" aria-pressed="true" title="Take it off the list">${icon("close", 12)}<span>${esc(t)}</span></button>`).join("")}
-        </div>
-        <input type="text" class="lyr-tool-add" data-guide-tool-add maxlength="${MAX_TOOL_LENGTH}" placeholder="Add a tool, then Enter"${list.length >= MAX_GUIDE_TOOLS ? " disabled" : ""}>
+        <div class="lyr-tool-chips">${picked || `<span class="lyr-note">None: the page says no tools are needed.</span>`}</div>
+        <input type="search" class="lyr-tool-add" data-guide-tool-find maxlength="${MAX_TOOL_LENGTH}" value="${esc(toolFind)}" placeholder="Find or type a tool, then Enter"${list.length >= MAX_GUIDE_TOOLS ? ` disabled title="That's the most a page lists (${MAX_GUIDE_TOOLS})"` : ""}>
+        <details class="lyr-tool-catalogue"${toolsOpen || toolFind ? " open" : ""}><summary>All tools</summary><div data-tool-catalogue>${toolCatalogue()}</div></details>
       </section>`;
     }
+    /** The catalogue, grouped, as far as the search goes. */
+    function toolCatalogue(): string {
+      const list = toolList();
+      const found = findTools(toolFind);
+      if (!found.length) return `<p class="lyr-note">No tool called that: press Enter to add "${esc(toolFind.trim())}" as it is.</p>`;
+      return TOOL_GROUPS.map(g => {
+        const tools = found.filter(t => t.group === g);
+        if (!tools.length) return "";
+        return `<div class="lyr-tool-group">${esc(g)}</div>${tools.map(t => {
+          const on = list.includes(t.id);
+          return `<div class="lyr-tool-row">
+            <button type="button" class="lyr-tool-pick${on ? " lyr-on" : ""}" data-guide-tool="${esc(t.id)}" aria-pressed="${on}" title="${on ? "Take it off the list" : "Add it to the list"}"><span class="lyr-tool-ico">${toolSvg(t, 18)}</span><span>${esc(t.label)}</span>${on ? icon("check", 12) : ""}</button>
+            ${t.sizes ? `<div class="lyr-tool-sizes">${t.sizes.map(sz => {
+              const id = `${t.id}:${sz}`;
+              const son = list.includes(id);
+              return `<button type="button" class="lyr-tool-size${son ? " lyr-on" : ""}" data-guide-tool="${esc(id)}" aria-pressed="${son}" title="${esc(`${t.label} ${sz}`)}">${esc(sz)}</button>`;
+            }).join("")}</div>` : ""}
+          </div>`;
+        }).join("")}`;
+      }).join("");
+    }
+    /** Picks in catalogue order (sizes in theirs), any typed in last. */
+    function sortTools(list: string[]): string[] {
+      const rank = (t: string) => {
+        const r = readTool(t);
+        if (!r.kind) return 1e6;
+        return TOOL_CATALOGUE.indexOf(r.kind) * 100 + (r.size ? (r.kind.sizes?.indexOf(r.size) ?? 50) + 1 : 0);
+      };
+      return list.map((t, i) => [t, rank(t) + i / 1000] as const).sort((a, b) => a[1] - b[1]).map(x => x[0]);
+    }
     function setGuideTools(next: string[]): void {
-      guideToolList = next.slice(0, MAX_GUIDE_TOOLS);
+      guideToolList = sortTools(next).slice(0, MAX_GUIDE_TOOLS);
       stepsCommit();
       renderProps();
     }
     function toggleGuideTool(id: string): void {
-      const list = guideToolList ?? DEFAULT_GUIDE_TOOLS;
+      const list = toolList();
       if (list.includes(id)) return setGuideTools(list.filter(t => t !== id));
-      // A symbol goes in its place in the list of symbols, before any typed in.
-      const order = GUIDE_TOOLS.map(g => g.id);
-      const known = [...list.filter(t => order.includes(t)), id].sort((a, b) => order.indexOf(a) - order.indexOf(b));
-      setGuideTools([...known, ...list.filter(t => !order.includes(t))]);
+      // A size stands for the tool itself, and the tool alone for any size.
+      const base = id.split(":")[0];
+      const rest = list.filter(t => (id.includes(":") ? t !== base : !t.startsWith(`${base}:`)));
+      if (rest.length >= MAX_GUIDE_TOOLS) return status(`A page lists ${MAX_GUIDE_TOOLS} tools at most: take one off first.`, true);
+      setGuideTools([...rest, id]);
     }
     function addGuideTool(name: string): void {
       const t = name.replace(/\s+/g, " ").trim().slice(0, MAX_TOOL_LENGTH);
       if (!t) return;
-      const list = guideToolList ?? DEFAULT_GUIDE_TOOLS;
-      const known = GUIDE_TOOLS.find(g => g.label.toLowerCase() === t.toLowerCase());
-      if (list.some(x => x.toLowerCase() === t.toLowerCase()) || (known && list.includes(known.id))) return status(`${t} is on the list already.`);
-      if (known) return toggleGuideTool(known.id);
-      setGuideTools([...list, t]);
-      props.querySelector<HTMLInputElement>("[data-guide-tool-add]")?.focus();
+      const list = toolList();
+      // A tool in the catalogue (by any of its names) is picked from it.
+      const known = bestTool(t);
+      const pick = known ? known.id : t;
+      if (list.some(x => x.toLowerCase() === pick.toLowerCase())) return status(`${known ? known.label : t} is on the list already.`);
+      toolFind = "";
+      toggleGuideTool(pick);
+      props.querySelector<HTMLInputElement>("[data-guide-tool-find]")?.focus();
     }
 
     function renderStepsList(): void {

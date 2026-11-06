@@ -90,7 +90,7 @@ export function bubble(x: number, y: number, w: number, h: number, r: number, ta
   return pts;
 }
 
-const rect = (x: number, y: number, w: number, h: number): XY[] => [
+export const rect = (x: number, y: number, w: number, h: number): XY[] => [
   { x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h },
 ];
 

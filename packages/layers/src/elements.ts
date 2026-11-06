@@ -4,9 +4,9 @@
 import { Circle, Ellipse, FabricObject, FabricText, Group, Path, Polygon, Rect, Textbox } from "fabric";
 import { Connector } from "./connector";
 import {
-  ALLEN_KEY, CAREFUL, CROSS, CURVED_SOLID, FIGURE, GLUE_GUN, HAMMER, HELP, NO_SIGN, NUT, PLIERS, POINTING_HAND, PRINTER_3D, ROTATE, SCREW, SCREWDRIVER,
-  SOLDERING_IRON, TICK, TWO_PEOPLE,
+  CAREFUL, CROSS, CURVED_SOLID, FIGURE, HELP, NO_SIGN, NUT, POINTING_HAND, ROTATE, SCREW, TICK, TWO_PEOPLE,
 } from "./symbols";
+import { TOOL_CATALOGUE, toolKind } from "./tools";
 import { measureTextAtRealSize } from "./textMeasure";
 
 // Letters are measured at the size they are drawn, so the caret and centring match (see textMeasure.ts).
@@ -116,13 +116,8 @@ export const FIGURES: ShapeKind[] = [
 
 /** Tools and fixings, drawn as bold silhouettes for a tools row or a step. */
 export const TOOLS: ShapeKind[] = [
-  { id: "screwdriver", label: "Screwdriver", svg: sym(SCREWDRIVER, 200, 44) },
-  { id: "allen-key", label: "Allen key", svg: sym(ALLEN_KEY, 70, 130) },
-  { id: "pliers", label: "Pliers", svg: sym(PLIERS, 200, 200) },
-  { id: "soldering-iron", label: "Soldering iron", svg: sym(SOLDERING_IRON, 240, 70) },
-  { id: "glue-gun", label: "Hot glue gun", svg: sym(GLUE_GUN, 210, 160) },
-  { id: "hammer", label: "Hammer", svg: sym(HAMMER, 100, 180) },
-  { id: "printer", label: "3D printer", svg: sym(PRINTER_3D, 200, 180) },
+  // Every tool in the catalogue (tools.ts), then the fixings.
+  ...TOOL_CATALOGUE.map(t => ({ id: t.id, label: t.label, svg: sym(t.path, t.w, t.h) })),
   { id: "screw", label: "Screw", svg: sym(SCREW, 60, 210) },
   { id: "nut", label: "Nut", svg: sym(NUT, 100, 100) },
 ];
@@ -182,6 +177,8 @@ export function doDont(at: Point, color: string): Group {
 export function makeShape(kind: string, at: Point, color: string): FabricObject | null {
   const base = { left: at.x, top: at.y };
   const fill = { fill: color, stroke: "", strokeWidth: 0, strokeUniform: true };
+  const tool = toolKind(kind);
+  if (tool) return named(new Path(tool.path, { ...base, ...fill }), tool.label);
   switch (kind) {
     case "rect": return named(new Rect({ ...base, ...fill, width: 240, height: 240 }), "Square");
     case "rounded": return named(new Rect({ ...base, ...fill, width: 240, height: 240, rx: 40, ry: 40 }), "Rounded square");
@@ -213,13 +210,6 @@ export function makeShape(kind: string, at: Point, color: string): FabricObject 
     case "careful": return named(new Path(CAREFUL, { ...base, ...fill }), "Careful");
     case "hand": return named(new Path(POINTING_HAND, { ...base, ...fill }), "Pointing hand");
     case "do-dont": return doDont(at, color);
-    case "screwdriver": return named(new Path(SCREWDRIVER, { ...base, ...fill }), "Screwdriver");
-    case "allen-key": return named(new Path(ALLEN_KEY, { ...base, ...fill }), "Allen key");
-    case "pliers": return named(new Path(PLIERS, { ...base, ...fill }), "Pliers");
-    case "soldering-iron": return named(new Path(SOLDERING_IRON, { ...base, ...fill }), "Soldering iron");
-    case "glue-gun": return named(new Path(GLUE_GUN, { ...base, ...fill }), "Hot glue gun");
-    case "hammer": return named(new Path(HAMMER, { ...base, ...fill }), "Hammer");
-    case "printer": return named(new Path(PRINTER_3D, { ...base, ...fill }), "3D printer");
     case "screw": return named(new Path(SCREW, { ...base, ...fill }), "Screw");
     case "nut": return named(new Path(NUT, { ...base, ...fill }), "Nut");
     default: return null;

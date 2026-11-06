@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { fixingOwners, normalizeSteps, planSteps, readyToFit, stepOfParts, stepWarnings, suggestSteps, tidySteps } from "./buildSteps";
-import { guideTools, normalizeGuide } from "./stepsSpec";
+import { normalizeGuide } from "./stepsSpec";
+import { guideTools } from "../tools";
 import { normalizeModel, type ScenePart } from "./model";
 
 const part = (id: string, name: string, parent?: string, extra: Partial<ScenePart> = {}): ScenePart => ({ id, name, position: [0, 0, 0], rotation: [0, 0, 0], ...(parent ? { parent } : {}), ...extra });
@@ -117,15 +118,29 @@ describe("guide tools", () => {
   });
   it("lists the default three when none are set, symbols for the ones it knows", () => {
     expect(guideTools().map(t => t.kind)).toEqual(["screwdriver", "allen-key", "pliers"]);
-    expect(guideTools({ tools: ["soldering-iron", "hammer", "Wire cutters"] })).toEqual([
-      { kind: "soldering-iron", label: "Soldering iron" },
-      { kind: "hammer", label: "Hammer" },
-      { label: "Wire cutters" },
+    expect(guideTools({ tools: ["soldering-iron", "allen-key:2.5 mm", "Flush cutters", "Bent spoon"] }).map(t => [t.kind, t.label, !!t.path])).toEqual([
+      ["soldering-iron", "Soldering iron", true],
+      ["allen-key", "Allen key 2.5 mm", true],
+      ["flush-cutters", "Flush cutters", true],
+      [undefined, "Bent spoon", false],
     ]);
     expect(guideTools({ tools: [] })).toEqual([]);
   });
   it("is kept in the project's model", () => {
     const m = normalizeModel({ version: 1, stamp: 1, parts: [{ id: "a", name: "A" }], guide: { tools: ["pliers"] } });
     expect(m!.guide).toEqual({ tools: ["pliers"] });
+  });
+});
+
+describe("tool catalogue", () => {
+  it("finds a tool by any of its names", async () => {
+    const { bestTool, findTools, TOOL_CATALOGUE, readTool } = await import("../tools");
+    expect(bestTool("tape")?.id).toBe("tape");
+    expect(bestTool("wire cutters")?.id).toBe("flush-cutters");
+    expect(bestTool("hex key")?.id).toBe("allen-key");
+    expect(bestTool("spoon")).toBeUndefined();
+    expect(findTools("").length).toBe(TOOL_CATALOGUE.length);
+    expect(readTool("phillips:PH1").label).toBe("Phillips screwdriver PH1");
+    expect(new Set(TOOL_CATALOGUE.map(t => t.id)).size).toBe(TOOL_CATALOGUE.length);
   });
 });
