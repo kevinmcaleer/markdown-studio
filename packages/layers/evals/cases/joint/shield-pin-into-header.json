@@ -1,0 +1,105 @@
+{
+  "title": "Shield's pin base sat on the header socket it plugs into",
+  "why": "Parent: a board with a header on top (whole model 40 \u00d7 30 \u00d7 10.1, so centred its socket's mouth is at (10, 1.27, 5.05)). Child: a shield 10.6 tall with a leg at (-3, 4) whose base is at the board's bottom, z = 9 \u2212 5.3 = 3.7 once centred, looking down. Base to socket: the shield isn't turned, and its middle goes to (10 + 3, 1.27 \u2212 4, 5.05 \u2212 3.7) = (13, \u22122.73, 1.35). The leg runs 9 mm down into the socket.",
+  "input": {
+    "parent": {
+      "shape": {
+        "parts": [
+          {
+            "box": [
+              40,
+              30,
+              1.6
+            ]
+          },
+          {
+            "plate": [
+              2.54,
+              25.4,
+              8.5
+            ],
+            "holes": [
+              {
+                "at": [
+                  0,
+                  1.27
+                ],
+                "r": 0.45,
+                "depth": 6
+              }
+            ],
+            "at": [
+              10,
+              0,
+              1.6
+            ]
+          }
+        ]
+      }
+    },
+    "child": {
+      "shape": {
+        "parts": [
+          {
+            "box": [
+              40,
+              30,
+              1.6
+            ],
+            "at": [
+              0,
+              0,
+              9
+            ]
+          },
+          {
+            "box": [
+              0.64,
+              0.64,
+              9
+            ],
+            "at": [
+              -3,
+              4,
+              0
+            ]
+          }
+        ]
+      }
+    },
+    "parentClick": {
+      "at": [
+        10.9,
+        1.27,
+        5.05
+      ]
+    },
+    "childClick": {
+      "at": [
+        -2.68,
+        4,
+        0
+      ],
+      "looking": [
+        -1,
+        0,
+        0
+      ]
+    },
+    "parentSnap": "hole",
+    "childSnap": "pin"
+  },
+  "expect": {
+    "position": [
+      13,
+      -2.73,
+      1.35
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ],
+    "lowest": -9
+  }
+}

@@ -13,12 +13,16 @@
 //   hole) is the triangles joined smoothly to it. Its snaps are the centres
 //   of the round rims at its ends, facing the way the part meets another
 //   there: a screw's neck faces down its shank, a hole's rim faces out.
+// - The side of a pin or peg (a thin square or round post) also offers the
+//   pin's base, on its axis where it comes out of the board or body it
+//   stands in, and its tip. Both face the way the pin points, so a shield's
+//   pin base sits on the top of the header it plugs into.
 //
 // No three.js here, so it can be tested. Units are the model's (mm).
 
 export type V3 = [number, number, number];
 
-export type SnapRole = "centre" | "corner" | "edge" | "hole" | "rim" | "pocket";
+export type SnapRole = "centre" | "corner" | "edge" | "hole" | "rim" | "pocket" | "pin" | "tip";
 
 export interface Snap {
   p: V3;
@@ -254,6 +258,7 @@ function findFace(topo: Topology, seed: number): Face {
     tris = flat;
     snaps = flatSnaps(topo, flat, n0);
   }
+  if (curved || isStrip(topo, flat, n0)) snaps = withPin(snaps, pinSnaps(topo, flat, n0));
   return { tris, curved: curved && snaps.length > 0 && tris !== flat, normal: n0, snaps };
 }
 
@@ -268,9 +273,9 @@ function cadFace(topo: Topology, tris: number[], seed: number, n0: V3, d0: numbe
     else for (let k = 0; k < 3 && flat; k++) if (Math.abs(dot(n0, topo.point(topo.corner[t * 3 + k])) - d0) > 0.02) flat = false;
     if (!flat) break;
   }
-  if (flat) return { tris, curved: false, normal: n0, snaps: flatSnaps(topo, tris, n0) };
+  if (flat) return { tris, curved: false, normal: n0, snaps: isStrip(topo, tris, n0) ? withPin(flatSnaps(topo, tris, n0), pinSnaps(topo, tris, n0)) : flatSnaps(topo, tris, n0) };
   const snaps = curvedSnaps(topo, tris, seed);
-  if (snaps.length) return { tris, curved: true, normal: n0, snaps };
+  if (snaps.length) return { tris, curved: true, normal: n0, snaps: withPin(snaps, pinSnaps(topo, facetOf(topo, seed, n0, d0), n0)) };
   // Many CADs split a round surface in two halves along a seam: the halves
   // joined smoothly make the whole hole or peg, with its rims.
   const smooth = grow(topo, seed, (x, y) => dot(topo.normalOf(x), topo.normalOf(y)) > SMOOTH_COS);
@@ -280,12 +285,184 @@ function cadFace(topo: Topology, tris: number[], seed: number, n0: V3, d0: numbe
   }
   // A curved face with no round rim (a fillet's strip, a freeform patch): the
   // facet under the pointer still offers its middle and corners, as an STL's would.
-  const facet = grow(topo, seed, (_, o) => {
+  const facet = facetOf(topo, seed, n0, d0);
+  return { tris: facet, curved: false, normal: n0, snaps: flatSnaps(topo, facet, n0) };
+}
+
+/** The flat facet of a CAD face that triangle `seed` lies in. */
+function facetOf(topo: Topology, seed: number, n0: V3, d0: number): number[] {
+  return grow(topo, seed, (_, o) => {
     if (topo.cadFace![o] !== topo.cadFace![seed] || dot(topo.normalOf(o), n0) < FLAT_COS) return false;
     for (let k = 0; k < 3; k++) if (Math.abs(dot(n0, topo.point(topo.corner[o * 3 + k])) - d0) > 0.02) return false;
     return true;
   });
-  return { tris: facet, curved: false, normal: n0, snaps: flatSnaps(topo, facet, n0) };
+}
+
+// ------------------------------------------------------------ pins
+
+/** Sideways: a pin's side faces lie within about 3° of its axis. */
+const SIDE_SIN = Math.sin((3 * Math.PI) / 180);
+/** Across: a board face a pin comes out of is within about 3° of square to it. */
+const ACROSS_COS = Math.cos((3 * Math.PI) / 180);
+
+/**
+ * The base and tip of the pin whose side `facet` (a thin flat strip, n its
+ * normal) is part of, if it is one: a post standing out of the model, much
+ * longer than it is wide, whose sides go right round it.
+ *
+ * A pin's base is where its axis meets a face square to it that reaches
+ * beyond the pin: the board the pin is soldered into (one mesh with the
+ * pin, or a separate one, as a pin stood against it is), or the body of a
+ * header. That face looks the way the pin sticks out of it, so the snap
+ * there does too; a pin right through a board has a base on each side.
+ * The tip is the far end of the pin from each base, looking the same way.
+ */
+export function pinSnaps(topo: Topology, facet: number[], n: V3): Snap[] {
+  if (!facet.length) return [];
+  // The strip's long way is the pin's axis, near enough.
+  const pts: V3[] = [];
+  for (const t of facet) for (let k = 0; k < 3; k++) pts.push(topo.point(topo.corner[t * 3 + k]));
+  let axis = longWay(pts, n);
+  if (!axis) return [];
+  const sides = (a: V3) => grow(topo, facet[0], (_, o) => topo.area[o] > 0 && Math.abs(dot(topo.normalOf(o), a)) < SIDE_SIN, 50_000);
+  let side = sides(axis);
+  // Square it up from the side across the pin from the first (a square
+  // pin's next side, or a quarter round a round one): both lie along it.
+  let best = 1;
+  let other: V3 | null = null;
+  for (const t of side) {
+    const c = Math.abs(dot(topo.normalOf(t), n));
+    if (c < best) [best, other] = [c, topo.normalOf(t)];
+  }
+  if (other && best < 0.7) {
+    const a = unit(cross(n, other));
+    axis = dot(a, axis) < 0 ? mul(a, -1) : a;
+    side = sides(axis);
+  }
+  if (side.length < 4 || side.length >= 50_000) return [];
+  // The sides must go right round, as a post's do, not be one wall of a box.
+  let sum: V3 = [0, 0, 0];
+  let area = 0;
+  for (const t of side) {
+    sum = add(sum, mul(topo.normalOf(t), topo.area[t]));
+    area += topo.area[t];
+  }
+  if (len(sum) > 0.2 * area) return [];
+  // Its middle line, length and width.
+  let mid: V3 = [0, 0, 0];
+  const ids = new Set<number>();
+  for (const t of side) {
+    const c = mul(add(add(topo.point(topo.corner[t * 3]), topo.point(topo.corner[t * 3 + 1])), topo.point(topo.corner[t * 3 + 2])), 1 / 3);
+    mid = add(mid, mul(c, topo.area[t] / area));
+    for (let k = 0; k < 3; k++) ids.add(topo.corner[t * 3 + k]);
+  }
+  let lo = Infinity, hi = -Infinity, radius = 0;
+  // Its width two ways across: about the same for a square or round pin,
+  // not for a long block such as a header's body.
+  const across = unit(cross(axis, n));
+  let wLo = Infinity, wHi = -Infinity, dLo = Infinity, dHi = -Infinity;
+  for (const id of ids) {
+    const p = topo.point(id);
+    const s = dot(p, axis);
+    lo = Math.min(lo, s);
+    hi = Math.max(hi, s);
+    const off = sub(sub(p, mid), mul(axis, dot(sub(p, mid), axis)));
+    radius = Math.max(radius, len(off));
+    const w = dot(p, across), d = dot(p, n);
+    wLo = Math.min(wLo, w);
+    wHi = Math.max(wHi, w);
+    dLo = Math.min(dLo, d);
+    dHi = Math.max(dHi, d);
+  }
+  const length = hi - lo;
+  const w = wHi - wLo, d = dHi - dLo;
+  if (radius <= 0 || length < 3 * radius || Math.min(w, d) < 0.6 * Math.max(w, d)) return [];
+  const centre = sub(mid, mul(axis, dot(mid, axis)));
+  // A post's sides look away from its middle; a hole's look into it.
+  const f0 = pts[0];
+  if (dot(n, sub(sub(f0, centre), mul(axis, dot(f0, axis)))) <= 0) return [];
+  const onAxis = (s: number): V3 => add(centre, mul(axis, s));
+  // Faces square to the pin that it comes out of, along its length.
+  const inSide = new Set(side);
+  const near = radius * 1.6 + 0.05;
+  const bases: { s: number; up: 1 | -1 }[] = [];
+  for (let t = 0; t < topo.triangles; t++) {
+    if (inSide.has(t) || topo.area[t] <= 0) continue;
+    const c = dot(topo.normalOf(t), axis);
+    if (Math.abs(c) < ACROSS_COS) continue;
+    const a = topo.point(topo.corner[t * 3]);
+    const s = dot(a, axis);
+    if (s < lo - 0.05 || s > hi + 0.05) continue;
+    const up: 1 | -1 = c > 0 ? 1 : -1;
+    // The pin must stick out of it, the way it looks.
+    if ((up > 0 ? hi - s : s - lo) < Math.max(radius, 0.1)) continue;
+    if (bases.some(b => b.up === up && Math.abs(b.s - s) < 0.05)) continue;
+    const b = topo.point(topo.corner[t * 3 + 1]), d = topo.point(topo.corner[t * 3 + 2]);
+    // Not the pin's own end: some of it reaches past the pin's edge.
+    const out = (p: V3) => len(sub(sub(p, centre), mul(axis, dot(p, axis)))) > radius * 1.2;
+    if (!out(a) && !out(b) && !out(d)) continue;
+    const at = onAxis(s);
+    if (distToTri(at, a, b, d) > near) continue;
+    bases.push({ s, up });
+  }
+  const snaps: Snap[] = [];
+  for (const b of bases) {
+    const look = mul(axis, b.up);
+    snaps.push({ p: onAxis(b.s), n: look, role: "pin", radius });
+    snaps.push({ p: onAxis(b.up > 0 ? hi : lo), n: look, role: "tip", radius });
+  }
+  return dedupe(snaps);
+}
+
+/** The long way across points lying in a plane of normal `n`, if they're much longer than wide. */
+function longWay(pts: V3[], n: V3): V3 | null {
+  let u: V3 = Math.abs(n[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+  u = unit(sub(u, mul(n, dot(u, n))));
+  const v = cross(n, u);
+  let mu = 0, mv = 0;
+  for (const p of pts) {
+    mu += dot(p, u);
+    mv += dot(p, v);
+  }
+  mu /= pts.length;
+  mv /= pts.length;
+  let xx = 0, xy = 0, yy = 0;
+  for (const p of pts) {
+    const a = dot(p, u) - mu, b = dot(p, v) - mv;
+    xx += a * a;
+    xy += a * b;
+    yy += b * b;
+  }
+  const angle = 0.5 * Math.atan2(2 * xy, xx - yy);
+  const dir = add(mul(u, Math.cos(angle)), mul(v, Math.sin(angle)));
+  return xx + yy > 0 ? unit(dir) : null;
+}
+
+/** How far point p is from triangle abc. */
+function distToTri(p: V3, a: V3, b: V3, c: V3): number {
+  // Ericson, Real-Time Collision Detection, 5.1.5.
+  const ab = sub(b, a), ac = sub(c, a), ap = sub(p, a);
+  const d1 = dot(ab, ap), d2 = dot(ac, ap);
+  if (d1 <= 0 && d2 <= 0) return len(ap);
+  const bp = sub(p, b);
+  const d3 = dot(ab, bp), d4 = dot(ac, bp);
+  if (d3 >= 0 && d4 <= d3) return len(bp);
+  const vc = d1 * d4 - d3 * d2;
+  if (vc <= 0 && d1 >= 0 && d3 <= 0) return len(sub(p, add(a, mul(ab, d1 / (d1 - d3)))));
+  const cp = sub(p, c);
+  const d5 = dot(ab, cp), d6 = dot(ac, cp);
+  if (d6 >= 0 && d5 <= d6) return len(cp);
+  const vb = d5 * d2 - d1 * d6;
+  if (vb <= 0 && d2 >= 0 && d6 <= 0) return len(sub(p, add(a, mul(ac, d2 / (d2 - d6)))));
+  const va = d3 * d6 - d5 * d4;
+  if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) return len(sub(p, add(b, mul(sub(c, b), (d4 - d3) / (d4 - d3 + (d5 - d6))))));
+  const den = 1 / (va + vb + vc);
+  return len(sub(p, add(a, add(mul(ab, vb * den), mul(ac, vc * den)))));
+}
+
+/** A face's snaps with a pin's added, leaving out any already there facing the same way. */
+function withPin(snaps: Snap[], pin: Snap[]): Snap[] {
+  return [...snaps, ...pin.filter(q => !snaps.some(s => len(sub(s.p, q.p)) < 1e-3 && dot(s.n, q.n) > 0.99))];
 }
 
 // ------------------------------------------------------------ edges of a face

@@ -11,9 +11,9 @@ They cover the parts of 3D scenes that rely on guesses:
 
 | Folder | What is checked |
 | --- | --- |
-| `cases/snaps/` | Clicking a face offers the snap points a person expects (middle, corners, edge middles, holes, rims), and no others |
+| `cases/snaps/` | Clicking a face offers the snap points a person expects (middle, corners, edge middles, holes, rims, and a pin's base and tip, looking the way it points), and no others |
 | `cases/screw/` | Auto screw picks the size and length you'd buy for a hole (or the right heat-set insert) |
-| `cases/joint/` | Joining two picked snaps puts the part flush where it belongs, turned the right way |
+| `cases/joint/` | Joining two picked snaps puts the part flush where it belongs, turned the right way, nudged by its X/Y/Z offset; a pin's base sits on the socket it plugs into |
 | `cases/placement/` | A new part lands beside the others: not inside one, not far away, and in its CAD spot when that fits |
 | `cases/fit/` | Fit fills the picture with the parts and cuts none off |
 | `cases/arrow/` | An assembly arrow's head is always in sight, and the arrow is no shorter than it needs to be |
@@ -68,6 +68,8 @@ the floor (z = 0), centred on x and y:
 - `{ "plate": [w, d, t], "holes": [{ "at": [x, y], "r": 1.6 }, { "at": [x, y], "r": 2, "depth": 5 }] }`. Leave out `depth` for a hole right through.
 - `{ "cylinder": [r, h] }`, with its axis up
 - `{ "stl": "meshes/leg.stl" }`, a real part. Put the file in `evals/meshes/`.
+- `{ "parts": [ … ] }`, several shapes as one model (a board with pins on
+  it), each placed with its own `"at": [x, y, z]`.
 
 In `joint`, `fit` and `arrow` cases, parts are centred on their own middle,
 as a scene keeps them, so the plate `[40, 40, 4]` has its top face at z = 2.

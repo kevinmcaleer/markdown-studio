@@ -46,6 +46,22 @@ describe("normalizeScene", () => {
     expect(by.b.joint).toEqual({ normal: [0, 0, 1], distance: 20 });
   });
 
+  it("keeps a joint's offset, and leaves it out when it's nothing", () => {
+    const joint = { normal: [0, 0, 1], distance: 10, point: [0, 0, 1], childPoint: [0, 0, -1], childNormal: [0, 0, -1], spin: 0, gap: 0 };
+    const s = normalizeScene({
+      parts: [
+        { id: "a" },
+        { id: "b", parent: "a", joint: { ...joint, offset: [2.54, 0, -1] } },
+        { id: "c", parent: "a", joint: { ...joint, offset: [0, 0, 0] } },
+        { id: "d", parent: "a", joint: { ...joint, offset: "nope" } },
+      ],
+    });
+    const by = Object.fromEntries(s.parts.map(p => [p.id, p]));
+    expect(by.b.joint?.offset).toEqual([2.54, 0, -1]);
+    expect(by.c.joint && "offset" in by.c.joint).toBe(false);
+    expect(by.d.joint && "offset" in by.d.joint).toBe(false);
+  });
+
   it("keeps the scene's arrows switch and each part's arrow, within the gap", () => {
     const s = normalizeScene({
       ...blankScene(),

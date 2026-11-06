@@ -96,6 +96,8 @@ export interface PartJoint {
   spin?: number;
   /** Millimetres standing off the face. */
   gap?: number;
+  /** A nudge in the parent's own X, Y and Z (mm), on top of the line-up. Left out when none. */
+  offset?: Vec3;
   /**
    * How the part moves on its joint: fixed, turning about the normal
    * (revolute: spin is its angle) or sliding along it (prismatic: gap is
@@ -332,6 +334,10 @@ export function normalizeScene(value: unknown): SceneData {
             part.joint.childNormal = unit(j.childNormal);
             part.joint.spin = wrapAngle(num(j.spin, 0));
             part.joint.gap = num(j.gap, 0, -LIMITS.position, LIMITS.position);
+            if (Array.isArray(j.offset)) {
+              const o = vec(j.offset, [0, 0, 0], LIMITS.position);
+              if (o.some(v => v !== 0)) part.joint.offset = o;
+            }
           }
           if (j.type === "revolute" || j.type === "prismatic") {
             const [lo, hi] = DEFAULT_LIMITS[j.type];

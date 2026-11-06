@@ -9,6 +9,8 @@
 //       or { "at": [x, y], "r": 2, "depth": 5 } (blind, from the top)
 //   { "cylinder": [r, h] }                       a disc or rod, its axis up (Z)
 //   { "stl": "meshes/leg.stl" }                  a real part (path from evals/)
+//   { "parts": [ … ] }                           several shapes as one model
+//       (a board with pins, a header on a board), each with its own "at"
 //
 // Any shape can add "at": [x, y, z] to move it, as a part sits off-centre
 // in its file.
@@ -28,6 +30,7 @@ export type ShapeSpec = { at?: [number, number, number] } & (
   | { plate: [number, number, number]; holes?: Hole[] }
   | { cylinder: [number, number] }
   | { stl: string }
+  | { parts: ShapeSpec[] }
 );
 
 type P3 = [number, number, number];
@@ -42,7 +45,15 @@ export function shapeTriangles(spec: ShapeSpec, read?: ReadFile): Float32Array {
   if ("box" in spec) pos = soup(new BoxGeometry(...spec.box).translate(0, 0, spec.box[2] / 2));
   else if ("cylinder" in spec) pos = soup(new CylinderGeometry(spec.cylinder[0], spec.cylinder[0], spec.cylinder[1], ROUND * 2).rotateX(Math.PI / 2).translate(0, 0, spec.cylinder[1] / 2));
   else if ("plate" in spec) pos = plate(spec.plate, spec.holes || []);
-  else if ("stl" in spec) {
+  else if ("parts" in spec) {
+    const all = spec.parts.map(p => shapeTriangles(p, read));
+    pos = new Float32Array(all.reduce((n, p) => n + p.length, 0));
+    let at = 0;
+    for (const p of all) {
+      pos.set(p, at);
+      at += p.length;
+    }
+  } else if ("stl" in spec) {
     if (!read) throw new Error(`No way to read ${spec.stl} here.`);
     pos = parseStl(read(spec.stl));
   } else throw new Error(`Unknown shape: ${JSON.stringify(spec)}`);

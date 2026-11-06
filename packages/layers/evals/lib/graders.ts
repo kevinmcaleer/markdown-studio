@@ -126,7 +126,7 @@ export const GRADERS: Record<string, Grader> = {
    * Snaps: click a face; are the snap points the joint tool offers there
    * the ones a person would expect (and no others of those kinds)?
    */
-  snaps(input: { shape: ShapeSpec; click: Click }, expect: { curved?: boolean; snaps: { role: string; p: Vec3; radius?: number }[]; tol?: number; roles?: string[] }, ctx) {
+  snaps(input: { shape: ShapeSpec; click: Click }, expect: { curved?: boolean; snaps: { role: string; p: Vec3; n?: Vec3; radius?: number }[]; tol?: number; roles?: string[] }, ctx) {
     const pos = shapeTriangles(input.shape, ctx.read);
     const topo = new Topology(pos);
     const { face } = clickFace(pos, topo, input.click);
@@ -137,9 +137,9 @@ export const GRADERS: Record<string, Grader> = {
     const used = new Set<Snap>();
     const missing: string[] = [];
     for (const want of expect.snaps) {
-      const hit = offered.find(s => !used.has(s) && s.role === want.role && Math.hypot(...s.p.map((v, i) => v - want.p[i])) <= tol && (want.radius === undefined || Math.abs((s.radius || 0) - want.radius) <= Math.max(tol, want.radius * 0.03)));
+      const hit = offered.find(s => !used.has(s) && s.role === want.role && Math.hypot(...s.p.map((v, i) => v - want.p[i])) <= tol && (want.radius === undefined || Math.abs((s.radius || 0) - want.radius) <= Math.max(tol, want.radius * 0.03)) && (want.n === undefined || s.n[0] * want.n[0] + s.n[1] * want.n[1] + s.n[2] * want.n[2] > 0.999));
       if (hit) used.add(hit);
-      else missing.push(`${want.role} at ${show(want.p)}`);
+      else missing.push(`${want.role} at ${show(want.p)}${want.n ? ` looking ${show(want.n)}` : ""}`);
     }
     const extra = offered.filter(s => !used.has(s)).map(s => `${s.role} at ${show(s.p)}`);
     const checks: Check[] = [
@@ -168,7 +168,7 @@ export const GRADERS: Record<string, Grader> = {
   },
 
   /** Join: pick a snap on each part; does the child land flush where it should? */
-  joint(input: { parent: CasePart; child: CasePart; parentClick: Click; childClick: Click; parentSnap?: string; childSnap?: string; spin?: number; gap?: number }, expect: { position: Vec3; rotation: Vec3; tol?: number }, ctx) {
+  joint(input: { parent: CasePart; child: CasePart; parentClick: Click; childClick: Click; parentSnap?: string; childSnap?: string; spin?: number; gap?: number; offset?: Vec3 }, expect: { position: Vec3; rotation: Vec3; tol?: number; lowest?: number }, ctx) {
     const pp = centred(shapeTriangles(input.parent.shape, ctx.read));
     const cp = centred(shapeTriangles(input.child.shape, ctx.read));
     const pt = new Topology(pp), ct = new Topology(cp);
@@ -177,7 +177,7 @@ export const GRADERS: Record<string, Grader> = {
     const sb = b.face && nearestTo(b.face.snaps, b.point, input.childSnap);
     if (!sa || !sb) return [yes("finds a snap on each part", false, `${sa ? "" : "parent "}${sb ? "" : "child "}has none`)];
     const gap = input.gap || 0;
-    const at = jointPlace({ point: sa.p, normal: sa.n, childPoint: sb.p, childNormal: sb.n, spin: input.spin || 0, gap });
+    const at = jointPlace({ point: sa.p, normal: sa.n, childPoint: sb.p, childNormal: sb.n, spin: input.spin || 0, gap, offset: input.offset });
     const tol = expect.tol ?? 0.05;
     const got = localMatrix(at), want = localMatrix({ position: expect.position, rotation: expect.rotation });
     // Flush: the child's face turned to look straight back at the parent's.
@@ -192,7 +192,8 @@ export const GRADERS: Record<string, Grader> = {
       nearPoint("child position", at.position, expect.position, tol, 2),
       near("child turned right (degrees off)", angleBetween(got, want), 0, 0.5, 2),
       near("faces meet flush", facing, -1, 0.001),
-      near("stands off the face by the gap", lowest, gap, tol),
+      // A pin goes into its socket, so its case says how far below the face it reaches.
+      near("stands off the face by the gap", lowest, expect.lowest ?? gap + (input.offset ? new Vector3(...input.offset).dot(n) : 0), tol),
     ];
   },
 

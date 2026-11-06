@@ -1,0 +1,62 @@
+{
+  "title": "Block on a plate, nudged one header pitch along X and lifted",
+  "why": "As 'Block stood on a plate's middle' (middle at (0, 0, 7)), then the joint's offset moves it 2.54 along the plate's X and 0.5 up its Z: (2.54, 0, 7.5), not turned, and 0.5 off the face.",
+  "input": {
+    "parent": {
+      "shape": {
+        "plate": [
+          40,
+          40,
+          4
+        ]
+      }
+    },
+    "child": {
+      "shape": {
+        "box": [
+          10,
+          10,
+          10
+        ]
+      }
+    },
+    "parentClick": {
+      "at": [
+        1,
+        1,
+        2
+      ]
+    },
+    "childClick": {
+      "at": [
+        1,
+        1,
+        -5
+      ],
+      "looking": [
+        0,
+        0,
+        1
+      ]
+    },
+    "parentSnap": "centre",
+    "childSnap": "centre",
+    "offset": [
+      2.54,
+      0,
+      0.5
+    ]
+  },
+  "expect": {
+    "position": [
+      2.54,
+      0,
+      7.5
+    ],
+    "rotation": [
+      0,
+      0,
+      0
+    ]
+  }
+}

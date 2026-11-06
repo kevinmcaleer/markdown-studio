@@ -1,4 +1,4 @@
-import { BoxGeometry, type BufferGeometry, ExtrudeGeometry, LatheGeometry, Path, Shape, Vector2 } from "three";
+import { BoxGeometry, type BufferGeometry, CylinderGeometry, ExtrudeGeometry, LatheGeometry, Path, Shape, Vector2 } from "three";
 import { describe, expect, it } from "vitest";
 import { nearestSnap, Topology, type Snap } from "./snaps";
 
@@ -139,6 +139,57 @@ describe("snaps", () => {
     const top = of(face.snaps, "rim").find(s => s.p[2] > 4)!;
     expect(r(top.p)).toEqual([0, 0, 5]);
     expect(r(top.n)).toEqual([0, 0, 1]);
+  });
+
+  // A board with pins, as a shield's 3D model is: the pins are boxes of
+  // their own standing against the board, or one mesh with it.
+  const join = (...gs: BufferGeometry[]) => {
+    const parts = gs.map(g => Float32Array.from(soup(g)));
+    const out = new Float32Array(parts.reduce((n, p) => n + p.length, 0));
+    let at = 0;
+    for (const p of parts) {
+      out.set(p, at);
+      at += p.length;
+    }
+    return out;
+  };
+  /** The first triangle of a pin's side facing +x (centred on x = cx). */
+  const pinSide = (t: Topology, cx: number) => triFacing(t, [1, 0, 0], i => Math.abs(t.point(t.corner[i * 3])[0] - (cx + 0.32)) < 1e-3);
+
+  it("finds a pin's base where it meets the board, and its tip, both looking the way it points", () => {
+    // A 1.6 mm board from z = 9 to 10.6, with a 0.64 mm pin hanging 9 mm below it.
+    const t = new Topology(join(new BoxGeometry(30, 20, 1.6).translate(0, 0, 9.8), new BoxGeometry(0.64, 0.64, 9).translate(5, 2, 4.5)));
+    const face = t.faceAt(pinSide(t, 5))!;
+    expect(of(face.snaps, "pin").map(s => [r(s.p), r(s.n)])).toEqual([[[5, 2, 9], [0, 0, -1]]]);
+    expect(of(face.snaps, "tip").map(s => [r(s.p), r(s.n)])).toEqual([[[5, 2, 0], [0, 0, -1]]]);
+    // Its side still offers its own corners and edges.
+    expect(of(face.snaps, "corner").length).toBe(4);
+  });
+
+  it("finds a base on each side of a pin right through a board", () => {
+    // Board z = 0 to 1.6; pin from z = -3 to 8.
+    const t = new Topology(join(new BoxGeometry(30, 20, 1.6).translate(0, 0, 0.8), new BoxGeometry(0.64, 0.64, 11).translate(0, 0, 2.5)));
+    const face = t.faceAt(pinSide(t, 0))!;
+    const pins = of(face.snaps, "pin").map(s => [r(s.p), r(s.n)]).sort();
+    expect(pins).toEqual([[[0, 0, 0], [0, 0, -1]], [[0, 0, 1.6], [0, 0, 1]]].sort());
+    expect(of(face.snaps, "tip").map(s => r(s.p)).sort()).toEqual([[0, 0, -3], [0, 0, 8]].sort());
+  });
+
+  it("finds the base of a round pin standing on a board", () => {
+    const pin = new CylinderGeometry(0.4, 0.4, 5, 24).rotateX(Math.PI / 2).translate(3, 0, 4.1);
+    const t = new Topology(join(new BoxGeometry(30, 20, 1.6).translate(0, 0, 0.8), pin));
+    let seed = -1;
+    for (let i = 0; i < t.triangles && seed < 0; i++) if (Math.abs(t.normalOf(i)[2]) < 0.01 && Math.abs(t.point(t.corner[i * 3])[0] - 3) < 0.5) seed = i;
+    const face = t.faceAt(seed)!;
+    expect(of(face.snaps, "pin").map(s => [r(s.p), r(s.n)])).toEqual([[[3, 0, 1.6], [0, 0, 1]]]);
+  });
+
+  it("finds no pin in a long block (a header's body), nor in a pin with nothing to stand in", () => {
+    const block = new Topology(join(new BoxGeometry(30, 20, 1.6).translate(0, 0, 0.8), new BoxGeometry(2.54, 25.4, 8.5).translate(0, 0, 5.85)));
+    const side = block.faceAt(triFacing(block, [1, 0, 0], i => Math.abs(block.point(block.corner[i * 3])[0] - 1.27) < 1e-3))!;
+    expect(of(side.snaps, "pin")).toEqual([]);
+    const loose = new Topology(soup(new BoxGeometry(0.64, 0.64, 9)));
+    expect(of(loose.faceAt(pinSide(loose, 0))!.snaps, "pin")).toEqual([]);
   });
 
   it("takes a wide hole's centre from anywhere inside it, and any point while the face is held", () => {
