@@ -8,7 +8,7 @@
 // roll first, then pitch, then yaw (the same as URDF's rpy).
 
 import { meshTable, restoreParts, type Meshes } from "./meshTable";
-import { normalizeSteps, tidySteps, type BuildStep } from "./stepsSpec";
+import { normalizeGuide, normalizeSteps, tidySteps, type BuildStep, type GuideSettings } from "./stepsSpec";
 import { normalizeScrew, type ScrewSpec } from "./screw";
 import { hideTrackPieces, normalizeTrack, showsTrackPiece, type TrackSpec } from "./trackSpec";
 import { normalizePlug, normalizeSockets, normalizeWire, type PartSocket, type PlugSpec, type WireSpec } from "./wireSpec";
@@ -231,6 +231,8 @@ export interface ProjectModel {
    * They don't change its stamp.
    */
   steps?: BuildStep[];
+  /** Settings for the assembly guide (the tools it lists). They don't change its stamp. */
+  guide?: GuideSettings;
 }
 
 export interface StylePreset {
@@ -510,6 +512,8 @@ export function normalizeModel(value: unknown): ProjectModel | null {
   if (typeof v.defaultView === "string" && views.some(x => x.id === v.defaultView)) out.defaultView = v.defaultView;
   const steps = tidySteps(normalizeSteps(v.steps), out.parts, views);
   if (steps.length) out.steps = steps;
+  const guide = normalizeGuide(v.guide);
+  if (guide) out.guide = guide;
   return out;
 }
 

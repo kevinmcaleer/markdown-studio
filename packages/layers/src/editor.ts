@@ -1576,46 +1576,65 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
         }
         const big = kinds.filter(k => !isFastener(k.size));
         const small = kinds.filter(k => isFastener(k.size));
-        const maxR = Math.max(1, ...big.map(k => k.radius));
+        const unit = Math.min(W, H);
         const margin = Math.round(W * 0.05);
-        const labelPx = Math.round(Math.min(W, H) * 0.032);
         let y = margin;
-        made.push(tbox("Parts", { left: margin, top: y, width: W * 0.4, fontSize: Math.round(Math.min(W, H) * 0.07), fontWeight: "800" }));
-        y += Math.round(Math.min(W, H) * 0.11);
-        // The big parts in a grid, each drawn to the same scale (the biggest fills its cell).
-        const cols = Math.max(1, Math.min(4, Math.ceil(Math.sqrt(big.length))));
-        const cell = Math.floor((W - margin * 2) / cols);
-        const boxH = small.length ? Math.round(H * 0.22) : 0;
+        made.push(tbox("Parts", { left: margin, top: y, width: W * 0.4, fontSize: Math.round(unit * 0.07), fontWeight: "800" }));
+        y += Math.round(unit * 0.11);
+        // The fixings' box: one row of them, or two when there are many.
+        const smallRows = small.length > 6 ? 2 : small.length ? 1 : 0;
+        const boxH = smallRows ? Math.round(H * (smallRows === 2 ? 0.3 : 0.2)) : 0;
+        const availW = W - margin * 2;
+        const availH = Math.max(unit * 0.2, H - y - margin - (boxH ? boxH + margin * 0.6 : 0));
+        // The big parts in a grid, each picture filling its cell (they needn't be to scale):
+        // as many columns as make the pictures biggest, their names under them.
+        const label = (cellW: number) => Math.max(12, Math.round(Math.min(unit * 0.03, cellW * 0.1)));
+        let cols = 1;
+        let pic = 0;
+        for (let c = 1; c <= Math.min(6, Math.max(1, big.length)); c++) {
+          const rows = Math.ceil(big.length / c) || 1;
+          const cw = availW / c;
+          const p = Math.min(cw * 0.86, availH / rows - label(cw) * 3);
+          if (p > pic) {
+            pic = p;
+            cols = c;
+          }
+        }
+        const cell = availW / cols;
+        const labelPx = label(cell);
         const rows = Math.max(1, Math.ceil(big.length / cols));
-        const cellH = Math.max(labelPx * 3, Math.floor((H - y - margin - boxH - (small.length ? margin : 0)) / rows));
-        const pic = Math.max(16, Math.min(cell, cellH - labelPx * 2.6) - margin / 2);
+        const cellH = availH / rows;
+        pic = Math.max(16, Math.floor(pic));
         for (let i = 0; i < big.length; i++) {
           const k = big[i];
           const x = margin + (i % cols) * cell;
           const top = y + Math.floor(i / cols) * cellH;
-          const px = Math.max(pic * 0.3, pic * (k.radius / maxR));
-          const img = await FabricImage.fromURL(thumbnailer.draw(k.model, style, direction, Math.round(px * 2)));
-          img.scaleToWidth(px);
-          img.set({ left: x + (cell - px) / 2, top: top + (pic - px) / 2 });
+          const img = await FabricImage.fromURL(thumbnailer.draw(k.model, style, direction, Math.round(pic * 2)));
+          if (destroyed) return;
+          img.scaleToWidth(pic);
+          img.set({ left: x + (cell - pic) / 2, top });
           Object.assign(img, { name: k.part.name || "Part", layerId: newId() });
-          made.push(img, tbox(`${k.count}x ${k.part.name || "part"}`, { left: x, top: top + pic + labelPx * 0.4, width: cell, fontSize: labelPx, fontWeight: "600", textAlign: "center" }));
+          made.push(img, tbox(`${k.count}x ${k.part.name || "part"}`, { left: x, top: top + pic + labelPx * 0.3, width: cell, fontSize: labelPx, fontWeight: "600", textAlign: "center" }));
         }
         if (small.length) {
-          // The fixings together in a box, each at a size that shows it, with its count.
+          // The fixings together in a box, each filling its slot, with its count and name.
           const top = H - margin - boxH;
-          made.push(named(new Rect({ left: margin, top, width: W - margin * 2, height: boxH, rx: 24, ry: 24, fill: "#ffffff", stroke: INK, strokeWidth: Math.max(3, Math.round(Math.min(W, H) * 0.005)), strokeUniform: true }), "Fixings"));
-          const perRow = Math.min(small.length, 6);
-          const slot = Math.floor((W - margin * 2) / perRow);
-          const px = Math.max(16, Math.min(boxH - labelPx * 2.4, slot * 0.6));
-          for (const [i, k] of small.slice(0, 12).entries()) {
-            const x = margin + (i % perRow) * slot + (slot - px) / 2;
-            const yy = top + margin * 0.4 + Math.floor(i / perRow) * (px + labelPx * 1.6);
+          made.push(named(new Rect({ left: margin, top, width: availW, height: boxH, rx: 24, ry: 24, fill: "#ffffff", stroke: INK, strokeWidth: Math.max(3, Math.round(unit * 0.005)), strokeUniform: true }), "Fixings"));
+          const shown = small.slice(0, 12);
+          const perRow = Math.ceil(shown.length / smallRows);
+          const slot = availW / perRow;
+          const rowH = boxH / smallRows;
+          const fixPx = Math.max(12, Math.round(Math.min(unit * 0.026, slot * 0.1)));
+          const px = Math.max(16, Math.min(rowH - fixPx * 3.6, slot * 0.7));
+          for (const [i, k] of shown.entries()) {
+            const sx = margin + (i % perRow) * slot;
+            const yy = top + Math.floor(i / perRow) * rowH + fixPx * 0.6;
             const img = await FabricImage.fromURL(thumbnailer.draw(k.model, style, direction, Math.round(px * 2)));
             if (destroyed) return;
             img.scaleToWidth(px);
-            img.set({ left: x, top: yy });
+            img.set({ left: sx + (slot - px) / 2, top: yy });
             Object.assign(img, { name: k.part.name || "Fixing", layerId: newId() });
-            made.push(img, tbox(`${k.count}x`, { left: x - px * 0.5, top: yy + px + labelPx * 0.2, width: px * 2, fontSize: labelPx, fontWeight: "700", textAlign: "center" }));
+            made.push(img, tbox(`${k.count}x ${k.part.name || "fixing"}`, { left: sx + slot * 0.04, top: yy + px + fixPx * 0.2, width: slot * 0.92, fontSize: fixPx, fontWeight: "700", textAlign: "center" }));
           }
         }
       } finally {
@@ -1782,8 +1801,8 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
    * second part onto the first), each with its fixings, the parts of
    * earlier steps as ghosts, the new ones highlighted and drawn apart along
    * their joints with arrows, a parts strip and a pinned step number. Every
-   * page looks from one camera (the project's chosen view, if any), framed
-   * round the whole assembly. Each finished page goes to `guide.each`.
+   * page looks from the project's chosen view (or a step's own), each step
+   * framed round itself. Each finished page goes to `guide.each`.
    */
   async function assemblyGuide(guide: GuideOptions): Promise<number> {
     const model = await getProjectModel();
@@ -1804,26 +1823,22 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     };
     // The steps picked by hand in the 3D scene's Steps mode, or, with none, one per part from the joint tree.
     const steps: import("./scene/buildSteps").PlannedStep[] = model.steps?.some(s => s.parts.length) ? b.planSteps(model, fixing) : g.guideSteps(model, fixing);
-    if (!steps.length) throw new Error("Every part in the model is a fixing (12 mm or less across): nothing to fit.");
+    if (!steps.length) throw new Error("Every part in the model is a fixing (a screw, nut or the like): nothing to fit.");
     const PAGE = SIZES.find(s => s.id === "photo") || SIZES[0];
     const SCENE = { left: 0.3, top: 0.06, width: 0.66, height: 0.88 };
     const COVER = { left: 0.1, top: 0.2, width: 0.8, height: 0.76 };
-    // One camera for every page: the project's chosen view, framed round every step as drawn.
+    // Every page looks from the project's chosen view (or a step's own).
     const style = { ...blankScene().style, draftSolid: true };
     const view = model.defaultView ? model.views?.find(v => v.id === model.defaultView) : undefined;
     const base = view ? view.camera : blankScene().camera;
     const scenes = [g.coverScene(model, base, style), ...steps.map(s => g.stepScene(model, steps, s.n, base, style))];
-    const camera = await t.frameAll(base, scenes.slice(1), t.store, (PAGE.width * SCENE.width) / (PAGE.height * SCENE.height));
     // The cover fills its space with the finished assembly alone.
     scenes[0].camera = await t.frameAll(base, [scenes[0]], t.store, (PAGE.width * COVER.width) / (PAGE.height * COVER.height), 1.1);
-    for (const s of scenes) {
-      if (s !== scenes[0]) s.camera = structuredClone(camera);
-      s.model = { stamp: model.stamp };
-    }
-    // A step drawn from a view of its own is framed round itself.
+    for (const s of scenes) s.model = { stamp: model.stamp };
+    // Each step is framed round itself (what it shows, drawn apart), from its own view or the project's, so it fills its page.
     for (const step of steps) {
       const own = step.view ? model.views?.find(v => v.id === step.view) : undefined;
-      if (own) scenes[step.n].camera = await t.frameAll(own.camera, [scenes[step.n]], t.store, (PAGE.width * SCENE.width) / (PAGE.height * SCENE.height));
+      scenes[step.n].camera = await t.frameAll(own ? own.camera : base, [scenes[step.n]], t.store, (PAGE.width * SCENE.width) / (PAGE.height * SCENE.height));
     }
     const total = steps.length + 3;
     let made = 0;
@@ -1884,7 +1899,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       await place(scenes[0], COVER);
     });
 
-    // Before you start: a few tips with their symbols, and a row of tools (to edit to match the build).
+    // Before you start: a few tips with their symbols, and the tools picked for the guide.
     await page("Before you start", "#ffffff", async () => {
       const tips: [string, string][] = [
         ["figure", "Lay out every part and check it against the parts list on the next page."],
@@ -1904,14 +1919,34 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       });
       const toolsTop = top0 + tips.length * rowH + H * 0.03;
       list.push(text("You will need", { left: W * 0.06, top: toolsTop, width: W * 0.4, fontSize: Math.round(unit * 0.04), fontWeight: "700" }));
-      let x = W * 0.06;
-      for (const [kind, label] of [["screwdriver", "Screwdriver"], ["allen-key", "Allen key"], ["pliers", "Pliers"]] as [string, string][]) {
-        const o = symbol(kind, unit * 0.1, 0, 0, label, unit * 0.3);
-        const b = o.getBoundingRect();
-        o.set({ left: x, top: toolsTop + unit * 0.06 + (unit * 0.1 - b.height) / 2 });
-        list.push(o);
-        x += Math.max(b.width, unit * 0.12) + unit * 0.05;
-      }
+      // The tools picked in the 3D scene's Steps mode (Tools for the guide), each with its symbol and name; any other is its name.
+      const tools = b.guideTools(model.guide);
+      if (!tools.length) list.push(text("No tools needed.", { left: W * 0.06, top: toolsTop + unit * 0.07, width: W * 0.8, fontSize: Math.round(unit * 0.03), fill: "#495057" }));
+      // Smaller, a long list still fits the page.
+      const room = H * 0.96 - (toolsTop + unit * 0.06);
+      let k = 1;
+      const fit = (z: number) => {
+        const icoH = unit * 0.11 * z;
+        const labelPx = Math.max(10, Math.round(unit * 0.03 * Math.max(z, 0.7)));
+        const slot = unit * 0.22 * z;
+        const perRow = Math.max(1, Math.floor((W * 0.88) / slot));
+        const rowH = icoH + labelPx * 3.2;
+        return { icoH, labelPx, slot, perRow, rowH, height: Math.ceil(tools.length / perRow) * rowH };
+      };
+      while (k > 0.4 && fit(k).height > room) k *= 0.9;
+      const { icoH, labelPx, slot, perRow, rowH: toolRowH } = fit(k);
+      tools.forEach((tool, i) => {
+        const x = W * 0.06 + (i % perRow) * slot;
+        const top = toolsTop + unit * 0.06 + Math.floor(i / perRow) * toolRowH;
+        if (tool.kind) {
+          const o = symbol(tool.kind, icoH, 0, 0, tool.label, slot * 0.8);
+          const bb = o.getBoundingRect();
+          o.set({ left: x + (slot * 0.85 - bb.width) / 2, top: top + (icoH - bb.height) / 2 });
+          list.push(o);
+        }
+        // One with no symbol is its name, in line with the others' names.
+        list.push(text(tool.label, { left: x, top: top + icoH + labelPx * 0.5, width: slot * 0.85, fontSize: labelPx, textAlign: "center", fill: "#1f2328" }));
+      });
       addAll(list);
     });
 

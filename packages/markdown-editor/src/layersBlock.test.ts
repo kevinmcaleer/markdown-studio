@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isLayersUrl, layersUrl } from "./layersFacet";
-import { graphicFileName, graphicsIn, guideSection, inventorySpot, newGraphicInsert } from "./layersBlock";
+import { graphicFileName, graphicsIn, guideKey, guideKeyIn, guideSection, inventorySpot, isGuideMarker, newGraphicInsert } from "./layersBlock";
 
 describe("layers links", () => {
   it("marks and recognises a graphic's link", () => {
@@ -66,5 +66,30 @@ describe("inventorySpot", () => {
   it("goes to the end of the text in the last section, or with no headings", () => {
     expect(inventorySpot(text, text.indexOf("Wires"))).toBe(text.length - 1);
     expect(inventorySpot("Just text\n", 2)).toBe(9);
+  });
+});
+
+describe("assembly guide key", () => {
+  const model = { version: 1 as const, stamp: 5, parts: [] as unknown[], steps: [{ id: "s1", parts: ["a"] }] };
+  it("changes with the steps, the tools and the model's version", () => {
+    const k = guideKey(model);
+    expect(k).toMatch(/^[0-9a-z]+$/);
+    expect(guideKey({ ...model })).toBe(k);
+    expect(guideKey({ ...model, steps: [{ id: "s1", parts: ["a", "b"] }] })).not.toBe(k);
+    expect(guideKey({ ...model, guide: { tools: ["pliers"] } })).not.toBe(k);
+    expect(guideKey({ ...model, stamp: 6 })).not.toBe(k);
+  });
+  it("reads the key a guide was drawn from", () => {
+    expect(guideKeyIn("# Robot\n")).toBeNull();
+    expect(guideKeyIn("## Assembly guide\n\n<!-- assembly guide: abc12 -->\n\n![Cover](/a.png#layers)\n")).toBe("abc12");
+    // From before keys: behind.
+    expect(guideKeyIn("## Assembly guide\n\n![Cover](/a.png#layers)\n")).toBe("");
+    // Being drawn, or nothing drawn there: left alone.
+    expect(guideKeyIn("## Assembly guide\n\n*Making the assembly guide: page 2 of 9, Parts…*\n")).toBeNull();
+    expect(guideKeyIn("## Assembly guide\n\nSome words.\n")).toBeNull();
+  });
+  it("hides its marker in the live view", () => {
+    expect(isGuideMarker("<!-- assembly guide: abc12 -->")).toBe(true);
+    expect(isGuideMarker("<!-- a note -->")).toBe(false);
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fixingOwners, normalizeSteps, planSteps, readyToFit, stepOfParts, stepWarnings, suggestSteps, tidySteps } from "./buildSteps";
+import { guideTools, normalizeGuide } from "./stepsSpec";
 import { normalizeModel, type ScenePart } from "./model";
 
 const part = (id: string, name: string, parent?: string, extra: Partial<ScenePart> = {}): ScenePart => ({ id, name, position: [0, 0, 0], rotation: [0, 0, 0], ...(parent ? { parent } : {}), ...extra });
@@ -103,5 +104,28 @@ describe("readyToFit", () => {
     expect(readyToFit(parts[2], new Set(), parts)).toBe(false);
     expect(readyToFit(parts[2], new Set(["base"]), parts)).toBe(true);
     expect(readyToFit(parts[0], new Set(), parts)).toBe(true);
+  });
+});
+
+describe("guide tools", () => {
+  it("keeps tools tidy: trimmed, no repeats, at most 12", () => {
+    expect(normalizeGuide(undefined)).toBeUndefined();
+    expect(normalizeGuide({})).toBeUndefined();
+    expect(normalizeGuide({ tools: [" pliers ", "Pliers", 3, "", "wire  cutters"] })).toEqual({ tools: ["pliers", "wire cutters"] });
+    expect(normalizeGuide({ tools: Array.from({ length: 20 }, (_, i) => `t${i}`) })!.tools).toHaveLength(12);
+    expect(normalizeGuide({ tools: [] })).toEqual({ tools: [] });
+  });
+  it("lists the default three when none are set, symbols for the ones it knows", () => {
+    expect(guideTools().map(t => t.kind)).toEqual(["screwdriver", "allen-key", "pliers"]);
+    expect(guideTools({ tools: ["soldering-iron", "hammer", "Wire cutters"] })).toEqual([
+      { kind: "soldering-iron", label: "Soldering iron" },
+      { kind: "hammer", label: "Hammer" },
+      { label: "Wire cutters" },
+    ]);
+    expect(guideTools({ tools: [] })).toEqual([]);
+  });
+  it("is kept in the project's model", () => {
+    const m = normalizeModel({ version: 1, stamp: 1, parts: [{ id: "a", name: "A" }], guide: { tools: ["pliers"] } });
+    expect(m!.guide).toEqual({ tools: ["pliers"] });
   });
 });

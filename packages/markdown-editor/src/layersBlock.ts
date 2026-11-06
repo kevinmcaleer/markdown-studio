@@ -2,6 +2,7 @@ import { StateEffect, StateField, type EditorState, type Extension } from "@code
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from "@codemirror/view";
 import { imageAt, imageMarkdown } from "./imagePopover";
 import { isLayersUrl, LAYERS_MODEL_EVENT, LAYERS_UPDATE_EVENT, layersOpener, layersUrl, type LayersHistoryEntry, type LayersOpenHow, type LayersUpdateProgress } from "./layersFacet";
+import { hiddenComments } from "./hiddenComments";
 import { historyTheme } from "./layersHistory";
 import type { SlashCommand } from "./slashMenu";
 
@@ -33,7 +34,7 @@ export type LayersApi = {
 };
 
 /** The project's 3D model, as Layers keeps it: `stamp` goes up with each change. */
-export type LayersProjectModel = { version: 1; stamp: number; parts: unknown[] };
+export type LayersProjectModel = { version: 1; stamp: number; parts: unknown[]; views?: unknown[]; defaultView?: string; steps?: unknown[]; guide?: unknown };
 /** The 2D wiring diagram as 3D scenes use it (Layers' WiringHost). */
 export type LayersWiringHost = {
   load: () => Promise<unknown | null>;
@@ -480,6 +481,11 @@ export function openLayers(view: EditorView, host: LayersHost, pos: number, mode
       // Its step number from its place: after the graphic it's the next step of, or where it is.
       const text = view.state.doc.toString();
       const stepNumber = await stepAt(api, host, text, after && from ? from.to : image ? image.from : pos).catch(() => undefined);
+      // The model saved (its parts, steps or the guide's tools changed): the assembly guide follows once this graphic is done.
+      let modelSaved = false;
+      const followGuide = () => {
+        if (modelSaved) void refreshAssemblyGuide(view, host).catch(() => {});
+      };
       if (session.closed) return;
       container.innerHTML = "";
       session.editor = api.mount(container, {
@@ -498,6 +504,7 @@ export function openLayers(view: EditorView, host: LayersHost, pos: number, mode
               saveModel: async (model: LayersProjectModel) => {
                 await host.saveModel!(model);
                 modelCache.set(host, { at: Date.now(), model: Promise.resolve(model) });
+                modelSaved = true;
                 // Other graphics on the page check whether they're now behind.
                 dispatchEvent(new CustomEvent(LAYERS_MODEL_EVENT));
               },
@@ -527,10 +534,12 @@ export function openLayers(view: EditorView, host: LayersHost, pos: number, mode
           if (oldUrl && oldUrl !== url) host.onReplace?.(oldUrl, url);
           // A step put in between: the steps after it count on from it.
           if (after) void renumberAfter(view, host, url).catch(() => {});
+          followGuide();
         },
         onCancel: () => {
           closeSession(view);
           view.focus();
+          followGuide();
         },
       });
     } catch (e) {
@@ -553,6 +562,53 @@ export function openLayers(view: EditorView, host: LayersHost, pos: number, mode
 
 export const GUIDE_HEADING = "## Assembly guide";
 const GUIDE_MARK = /^\*Making the assembly guide[^\n]*\*$/m;
+/** The comment under the heading saying which model the guide was drawn from (hidden in the live view). */
+const GUIDE_KEY = /^<!-- assembly guide: ([0-9a-z]+) -->$/m;
+export const isGuideMarker = (comment: string) => /^<!-- assembly guide: [0-9a-z]+ -->$/.test(comment.trim());
+
+/**
+ * What the assembly guide is drawn from, as a short key: the model's
+ * version (its parts and joints), its views, steps and the guide's tools.
+ * A guide whose key differs is behind.
+ */
+export function guideKey(model: LayersProjectModel): string {
+  const text = JSON.stringify([model.stamp, model.views ?? [], model.defaultView ?? "", model.steps ?? [], model.guide ?? null]);
+  // FNV-1a, two ways round, for a key short enough to keep in the text.
+  let a = 0x811c9dc5;
+  let b = 0x01000193;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    a = Math.imul(a ^ c, 0x01000193) >>> 0;
+    b = Math.imul(b ^ c, 0x811c9dc5) >>> 0;
+  }
+  return a.toString(36) + b.toString(36);
+}
+
+/** The key the guide in `text` was drawn from: a string, "" for a guide drawn before keys, or null with no guide. */
+export function guideKeyIn(text: string): string | null {
+  const section = guideSection(text);
+  if (section.heading) return null;
+  const body = text.slice(section.from, section.to);
+  if (GUIDE_MARK.test(body)) return null; // Being drawn now.
+  const key = GUIDE_KEY.exec(body);
+  if (key) return key[1];
+  // A guide from before keys: its pictures alone.
+  return graphicsIn(body).length ? "" : null;
+}
+
+const guideRuns = new WeakSet<EditorView>();
+
+/** Draws the assembly guide again when the project's model, steps or tools have moved on from the one it was drawn from. */
+export async function refreshAssemblyGuide(view: EditorView, host: LayersHost): Promise<boolean> {
+  if (view.state.readOnly || !host.loadModel || !host.saveModel || guideRuns.has(view)) return false;
+  const had = guideKeyIn(view.state.doc.toString());
+  if (had === null) return false;
+  const model = await projectModel(host);
+  if (!model || guideKey(model) === had) return false;
+  if (guideKeyIn(view.state.doc.toString()) !== had) return false;
+  await makeAssemblyGuide(view, host);
+  return true;
+}
 
 /**
  * Where the assembly guide goes in `text`: the body of its "## Assembly
@@ -585,9 +641,20 @@ function titleOf(text: string): string {
  * the text says how far it has got.
  */
 export async function makeAssemblyGuide(view: EditorView, host: LayersHost): Promise<void> {
-  if (view.state.readOnly || !host.loadModel || !host.saveModel) return;
+  if (view.state.readOnly || !host.loadModel || !host.saveModel || guideRuns.has(view)) return;
+  guideRuns.add(view);
+  try {
+    await drawAssemblyGuide(view, host);
+  } finally {
+    guideRuns.delete(view);
+  }
+}
+
+async function drawAssemblyGuide(view: EditorView, host: LayersHost): Promise<void> {
   const text = view.state.doc.toString();
   const section = guideSection(text);
+  // The pages there now: each new page replaces the one in its place, so old pages don't pile up.
+  const old = section.heading ? [] : graphicsIn(text.slice(section.from, section.to)).map(g => g.url);
   const lead = section.heading ? `${text.length && !text.endsWith("\n\n") ? (text.endsWith("\n") ? "\n" : "\n\n") : ""}${GUIDE_HEADING}\n\n` : section.from === section.to || text.slice(section.from, section.to).startsWith("\n") ? "" : "\n";
   const mark = (s: string) => `*Making the assembly guide: ${s}…*`;
   view.dispatch({ changes: { from: section.from, to: section.to, insert: `${lead}${mark("opening the project's model")}\n\n` }, userEvent: "input.layers" });
@@ -604,8 +671,11 @@ export async function makeAssemblyGuide(view: EditorView, host: LayersHost): Pro
   document.body.appendChild(box);
   let editor: LayersEditor | null = null;
   const lines: string[] = [];
+  let key = "";
   try {
     const api = await loadLayers(host.load);
+    const model = await projectModel(host);
+    if (model) key = guideKey(model);
     editor = api.mount(box, {
       doc: null,
       mode: "inline",
@@ -629,11 +699,13 @@ export async function makeAssemblyGuide(view: EditorView, host: LayersHost): Pro
       each: async (result, index, total) => {
         setMark(mark(`page ${index + 1} of ${total}, ${result.title || "a page"}`));
         const file = new File([result.png], graphicFileName(result.title), { type: "image/png" });
-        const url = layersUrl(await host.uploadImage(file));
+        const was = old[index];
+        const url = layersUrl(await host.uploadImage(file, was && isLayersUrl(was) ? { replaces: was } : undefined));
         lines.push(imageMarkdown({ alt: result.title || `Page ${index + 1}`, url }));
       },
     });
-    setMark(lines.join("\n\n"));
+    // Which model it was drawn from, so it's drawn again when that moves on.
+    setMark([...(key ? [`<!-- assembly guide: ${key} -->`] : []), ...lines].join("\n\n"));
   } catch (e) {
     const msg = e instanceof Error && e.message ? e.message : String(e);
     // The pages made so far stay; the line says what stopped it.
@@ -898,6 +970,7 @@ export function layersBlocks(host: LayersHost): Extension {
     decorations,
     theme,
     historyTheme,
+    hiddenComments.of(isGuideMarker),
     layersOpener.of({
       open: (view, pos, mode, how) => openLayers(view, host, pos, mode ?? "inline", how),
       status: (url: string, text?: string) => graphicStatus(host, url, text),

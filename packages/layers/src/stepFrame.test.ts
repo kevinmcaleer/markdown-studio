@@ -48,6 +48,8 @@ describe("fixings and the inventory", () => {
     expect(isFastener([7, 7, 2.4])).toBe(true); // a nut
     expect(isFastener([40, 40, 3])).toBe(false); // a plate
     expect(isFastener([3, 60, 3])).toBe(true); // an axle
+    expect(isFastener([12, 10, 34])).toBe(false); // an N20 gearmotor: a part, not a fixing
+    expect(isFastener([10, 12, 24])).toBe(false); // an N20 without its shaft
     const list = inventoryOf([part("a", "plate.stl", { hidden: true }), part("b", "screw.stl", { ghost: true }), part("c", "screw.stl"), part("d", "plate.stl")]);
     expect(list.map(g => [g.part.url, g.count])).toEqual([["plate.stl", 2], ["screw.stl", 2]]);
     // A track's piece is counted once per piece in it, not as a part of its own.
