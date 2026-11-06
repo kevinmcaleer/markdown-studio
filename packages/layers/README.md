@@ -103,20 +103,24 @@ const editor = mount(el, {
   fills left whole. Where it passes behind or inside a part it isn't
   drawn at all: a part in front hides it, as it hides an arrow.
 - **Parts list** (Templates): every kind of part in the project's model
-  (or the first 3D scene's parts) drawn at one scale with its name and
-  count, and the **fixings** together in a box at the bottom, each with
-  its count. A part no more than 12 mm across (its middle dimension,
-  whatever its length) counts as a fixing: screws, nuts, pegs, axles.
+  (or the first 3D scene's parts), each filling a slot of its own (not to
+  scale) with its count and name under it, and the **fixings** together in
+  a box at the bottom, each with its count and name. A part no more than
+  12 mm across (its middle dimension, whatever its length) and 8 mm thick
+  (its smallest) counts as a fixing: screws, nuts, pegs, axles, but not a
+  small motor.
 - **Assembly guide**: `handle.assemblyGuide({ title, each })` draws a whole
   flat-pack booklet from the project's model, a page at a time, handing
   each page to `each` (to upload, say): a cover with the finished
-  assembly, a *Before you start* page of tips and tools, the parts list,
+  assembly, a *Before you start* page of tips and the tools picked in Steps mode
+  (*Tools for the guide*: screwdriver, Allen key and pliers to start),
+  the parts list,
   then one step per part. The first step fits the second part onto the
   first; each step's fixings go with the part they're joined to, the
   parts of earlier steps are ghosts, the new ones are highlighted and
   drawn apart along their joints with arrows, a parts box and a pinned
   step number, and no words, as on a flat-pack sheet. Every page looks from the project's default view (or the
-  usual one), framed round the whole assembly. It draws on the editor's
+  usual one), each step framed round itself so it fills its page. It draws on the editor's
   own page, so mount one out of sight for it. Every page is an ordinary
   graphic afterwards, to open and tidy. With **build steps** (below) it
   draws one page per step instead, titled and viewed as the step says.
@@ -136,7 +140,14 @@ const editor = mount(el, {
   their part. Steps are saved in the project model (`model.steps`,
   `[{ id, title?, parts, view? }]`) without making pictures out of date,
   and the scene's own picture is left as it was unless *Use this step for
-  this picture* is pressed.
+  this picture* is pressed. Hover between two step cards for a **+** that
+  puts a new step there. The Step panel's *Tools for the guide* picks what
+  the guide's Before you start page lists (`model.guide.tools`: symbol ids
+  such as `soldering-iron`, or any tool's name, drawn as words). The
+  Markdown editor draws its `## Assembly guide` again by itself after a
+  graphic saves a model whose steps, tools, views or parts moved on from
+  the one it was drawn from (a hidden `<!-- assembly guide: key -->` says
+  which).
 - **Detail circles**, as on a flat-pack sheet: from a scene's bar, *Detail
   circle…* picks a part and adds a magnifier: a white disc with a bold ring
   and a **tail** that curves in to the spot it magnifies (the part's middle

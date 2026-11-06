@@ -75,11 +75,17 @@ export const TURNED_DEGREES = 30;
 
 /** Parts no more than this many mm across (their middle dimension) count as fixings: screws, nuts, pegs. */
 export const FASTENER_MM = 12;
+/** ...and no more than this thick (their smallest dimension): a screw, nut or peg is thin one way, a motor isn't. */
+export const FASTENER_THIN_MM = 8;
 
-/** Whether a part of this size (mm) is a fixing: its middle dimension is small, whatever its length. */
+/**
+ * Whether a part of this size (mm) is a fixing: its middle dimension is
+ * small, whatever its length, and it's thin one way. A small motor (an N20
+ * gearmotor, 12 × 10 × 34) is a part, not a fixing.
+ */
 export function isFastener(size: [number, number, number]): boolean {
   const s = [...size].sort((a, b) => a - b);
-  return s[1] <= FASTENER_MM;
+  return s[1] <= FASTENER_MM && s[0] <= FASTENER_THIN_MM;
 }
 
 /** Every part, counted by kind, in model order: the parts list for a whole project. */

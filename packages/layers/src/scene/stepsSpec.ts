@@ -57,3 +57,54 @@ export function tidySteps(steps: BuildStep[], parts: { id: string }[], views?: {
   });
 }
 
+
+/** The tools the assembly guide's Before you start page can draw (their symbols are in elements.ts TOOLS). */
+export const GUIDE_TOOLS: { id: string; label: string }[] = [
+  { id: "screwdriver", label: "Screwdriver" },
+  { id: "allen-key", label: "Allen key" },
+  { id: "pliers", label: "Pliers" },
+  { id: "soldering-iron", label: "Soldering iron" },
+  { id: "glue-gun", label: "Hot glue gun" },
+  { id: "hammer", label: "Hammer" },
+  { id: "printer", label: "3D printer" },
+];
+
+/** What the guide lists under You will need when none were picked. */
+export const DEFAULT_GUIDE_TOOLS = ["screwdriver", "allen-key", "pliers"];
+
+/** The longest a tool typed in can be, and the most a guide lists. */
+export const MAX_TOOL_LENGTH = 40;
+export const MAX_GUIDE_TOOLS = 12;
+
+/** Settings for the project's assembly guide. */
+export interface GuideSettings {
+  /**
+   * What the Before you start page lists under You will need: a symbol's
+   * id (GUIDE_TOOLS), or the name of any other tool, drawn as words. None
+   * set: the default three.
+   */
+  tools?: string[];
+}
+
+/** `value` as guide settings (undefined when there's nothing set). */
+export function normalizeGuide(value: unknown): GuideSettings | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const raw = (value as GuideSettings).tools;
+  if (!Array.isArray(raw)) return undefined;
+  const tools: string[] = [];
+  for (const t of raw) {
+    if (typeof t !== "string") continue;
+    const s = t.replace(/\s+/g, " ").trim().slice(0, MAX_TOOL_LENGTH);
+    if (s && !tools.some(x => x.toLowerCase() === s.toLowerCase())) tools.push(s);
+    if (tools.length >= MAX_GUIDE_TOOLS) break;
+  }
+  return { tools };
+}
+
+/** The tools the guide lists: each with its symbol (a GUIDE_TOOLS id) when it has one, and its name. */
+export function guideTools(guide?: GuideSettings): { kind?: string; label: string }[] {
+  return (guide?.tools ?? DEFAULT_GUIDE_TOOLS).map(t => {
+    const known = GUIDE_TOOLS.find(g => g.id === t || g.label.toLowerCase() === t.toLowerCase());
+    return known ? { kind: known.id, label: known.label } : { label: t };
+  });
+}

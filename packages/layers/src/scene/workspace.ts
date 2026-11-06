@@ -39,7 +39,7 @@ import { MAX_SNAP_TRIANGLES, nearestSnap, Topology, type Face, type Snap } from 
 import { createSectionTool } from "./sectionTool";
 import { insideReach, layTrack, MAX_TRACK_PIECES, trackPitch, trackTriangles, type TrackSpec, type TrackWheel, type WorldCircle } from "./track";
 import { hideTrackPieces, trackPieces } from "./trackSpec";
-import { fixingOwners, newStepId, readyToFit, stepIndex, stepOfParts, steppable, stepWarnings, suggestSteps, tidySteps, type BuildStep } from "./buildSteps";
+import { DEFAULT_GUIDE_TOOLS, GUIDE_TOOLS, MAX_GUIDE_TOOLS, MAX_TOOL_LENGTH, fixingOwners, newStepId, readyToFit, stepIndex, stepOfParts, steppable, stepWarnings, suggestSteps, tidySteps, type BuildStep } from "./buildSteps";
 import { isFastener } from "../stepFrame";
 import { fitDiameter, fitLength, holeDepth, isHoleSnap, matchingHoles, SCREW_HEADS, SCREW_LENGTHS, SCREW_SIZES, screwFile, screwLabel, screwLift, screwMesh, screwName, screwNoun, type ScrewHead, type ScrewSpec } from "./screw";
 
@@ -141,6 +141,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     type Showing = { hidden?: boolean; ghost?: boolean; highlight?: boolean; explode?: number };
     let steps: BuildStep[] = structuredClone(shared ? opts.model?.steps || [] : []);
     const startSteps = JSON.stringify(steps);
+    /** The tools the assembly guide lists (Steps mode's Tools for the guide); none set, its default three. */
+    let guideToolList: string[] | undefined = shared && opts.model?.guide?.tools ? [...opts.model.guide.tools] : undefined;
+    const startTools = JSON.stringify(guideToolList ?? null);
+    const stepsState = () => JSON.stringify([steps, guideToolList ?? null]);
+    const stepsChanged = () => JSON.stringify(steps) !== startSteps || JSON.stringify(guideToolList ?? null) !== startTools;
     let stepsOn = false;
     let stepAt = 0;
     /** What the scene showed before Steps mode, put back when it ends. */
@@ -5461,6 +5466,13 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       if (e.key === "ArrowUp" || e.key === "ArrowDown") commit();
     });
     props.addEventListener("keydown", e => {
+      const add = e.target as HTMLInputElement;
+      if (add.dataset?.guideToolAdd !== undefined && e.key === "Enter") {
+        e.preventDefault();
+        e.stopPropagation();
+        addGuideTool(add.value);
+        return;
+      }
       const dot = (e.target as Element).closest?.(".lyr-pin-dot");
       if (dot && (e.key === "Enter" || e.key === " ")) {
         e.preventDefault();
@@ -5876,7 +5888,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     // The view new steps start from (the project's, with a model).
     let defaultView = shared && views.some(v => v.id === opts.model?.defaultView) ? opts.model!.defaultView! : "";
     const startViews = JSON.stringify([views, defaultView]);
-    const stepsOut = () => (steps.length ? { steps } : { steps: undefined });
+    const stepsOut = () => ({ ...(steps.length ? { steps } : { steps: undefined }), guide: guideToolList ? { tools: guideToolList } : undefined });
     const viewsOut = () => (views.length ? { views, ...(defaultView ? { defaultView } : {}) } : { views: [], defaultView: undefined });
     const viewsMenu = $(".lyr-scene-views-menu");
     const sameCamera = (a: NamedView["camera"], b: NamedView["camera"]) =>
@@ -6127,7 +6139,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     // for this picture.
     const stepsPast: string[] = [];
     const stepsFuture: string[] = [];
-    let stepsNow = JSON.stringify(steps);
+    let stepsNow = stepsState();
     const strip = $(".lyr-steps-strip");
     /** The model as it was when Steps mode started (it can't change in it): step pictures drawn from another are drawn again. */
     let stepsSig = "";
@@ -6149,7 +6161,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       stepAt = Math.max(0, Math.min(stepAt, steps.length - 1));
     }
     function stepsCommit(): void {
-      const next = JSON.stringify(steps);
+      const next = stepsState();
       if (next === stepsNow) return;
       stepsPast.push(stepsNow);
       if (stepsPast.length > 80) stepsPast.shift();
@@ -6158,7 +6170,9 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       syncHistory();
     }
     function stepsRestore(text: string): void {
-      steps = JSON.parse(text) as BuildStep[];
+      const [was, tools] = JSON.parse(text) as [BuildStep[], string[] | null];
+      steps = was;
+      guideToolList = tools ?? undefined;
       stepsNow = text;
       tidy();
       showStep();
@@ -6225,6 +6239,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       layout();
     }
 
+    /** The step last shown in the view (-1 while recording), so a new one is fitted. */
+    let shownStep = -2;
     /** Shows the step picked (or the recording so far) in the view, the list, the strip and the panel. */
     function showStep(): void {
       if (stepsOn) {
@@ -6250,7 +6266,10 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         scene.arrows = true;
         rebuild();
         renderStrip();
-        // Each step fills the picture, drawn apart (as it plays, too).
+        // Each step fills the picture, drawn apart (as it plays, too): a new step is fitted even after zooming by hand.
+        const shown = recording ? -1 : stepAt;
+        if (shown !== shownStep) keepFitted = true;
+        shownStep = shown;
         if (keepFitted && loaded().length) glideTo(fitCamera(scene.camera));
       } else rebuild();
       renderList();
@@ -6273,9 +6292,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
             <div class="lyr-step-cap"><span class="lyr-step-badge">${i + 1}</span><span>${esc(ids.length ? ids.filter(id => !isFixing(partById(id)!)).map(id => partById(id)?.name || "part").join(", ") || "Fixings" : "Click parts to fit them")}</span></div>
           </div>`).join("")
         : steps.map((_, i) => {
+            // Between two steps: a + that shows on hover, to put a new step there.
+            const gap = i ? `<div class="lyr-step-gap"><button type="button" data-step-insert="${i}" title="Add a step between ${i} and ${i + 1}" aria-label="Add a step between ${i} and ${i + 1}">${icon("plus", 14)}</button></div>` : "";
             const warn = stepWarnings(scene.parts, at, i).length > 0;
             const img = stepThumbs.get(thumbKey(i));
-            return `<div class="lyr-step-card${i === stepAt ? " lyr-on" : ""}" data-step-card="${i}" draggable="true" role="button" tabindex="0" title="Step ${i + 1}: ${esc(stepName(i, at))}. Drag to move it.">
+            return `${gap}<div class="lyr-step-card${i === stepAt ? " lyr-on" : ""}" data-step-card="${i}" draggable="true" role="button" tabindex="0" title="Step ${i + 1}: ${esc(stepName(i, at))}. Drag to move it.">
               <div class="lyr-step-thumb">${img ? `<img src="${img}" alt="">` : icon("cube", 22)}</div>
               <div class="lyr-step-cap"><span class="lyr-step-badge">${i + 1}</span><span>${esc(stepName(i, at))}</span>${warn ? `<span class="lyr-step-warn" title="A part in this step is joined to one fitted later">!</span>` : ""}</div>
             </div>`;
@@ -6336,19 +6357,16 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       });
       const todo = steps.map((_, i) => i).filter(i => !stepThumbs.has(thumbKey(i)));
       if (!todo.length) return;
-      const all = steps.map((_, i) => sceneFor(i));
       const W = 132, H = 84;
-      let cam: SceneCamera;
-      try {
-        cam = await frameAll(scene.camera, all, opts.store, W / H, 1.08);
-      } catch {
-        return;
-      }
       for (const i of todo) {
         if (gen !== thumbGen || closed || !stepsOn || recording) return;
         const key = thumbKey(i);
         try {
-          const pic = await renderPicture({ ...all[i], camera: cam }, opts.store, W, H, 2);
+          // Each step's picture is framed round itself, as its guide page is.
+          const one = sceneFor(i);
+          const cam = await frameAll(scene.camera, [one], opts.store, W / H, 1.08);
+          if (gen !== thumbGen) return;
+          const pic = await renderPicture({ ...one, camera: cam }, opts.store, W, H, 2);
           if (gen !== thumbGen) return;
           stepThumbs.set(key, pic.toDataURL("image/png"));
           const img = strip.querySelector<HTMLElement>(`[data-step-card="${i}"] .lyr-step-thumb`);
@@ -6382,9 +6400,10 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       showStep();
     }
 
-    function newStep(): void {
+    /** Adds an empty step at `i` (after the one shown when not given) and shows it. */
+    function newStep(at?: number): void {
       const s: BuildStep = { id: newStepId(steps), parts: [] };
-      const i = steps.length ? stepAt + 1 : 0;
+      const i = at ?? (steps.length ? stepAt + 1 : 0);
       steps.splice(i, 0, s);
       stepAt = i;
       stepsCommit();
@@ -6571,7 +6590,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         <p class="lyr-note">Build the model in Model mode, joints and all. Then make the steps here: each says which parts go on in it, and the assembly guide draws a page for each.</p>
         <button type="button" class="lyr-wide-btn" data-steps="suggest">${icon("wand", 16)} Suggest steps</button>
         <button type="button" class="lyr-wide-btn" data-steps="record">${icon("pencil", 16)} Record steps</button>
-        <button type="button" class="lyr-wide-btn" data-steps="new">${icon("plus", 16)} New step</button></section>`;
+        <button type="button" class="lyr-wide-btn" data-steps="new">${icon("plus", 16)} New step</button></section>${toolsPanel()}`;
       const at = stepsAt();
       const own = s.parts.map(id => partById(id)).filter((p): p is ScenePart => !!p);
       const follow = scene.parts.filter(p => at.get(p.id) === stepAt && !s.parts.includes(p.id));
@@ -6603,7 +6622,46 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         </ul>
         <button type="button" class="lyr-wide-btn" data-steps="use" title="This picture shows this step when Steps mode ends">${icon("camera", 16)} Use this step for this picture</button>
         <p class="lyr-note">The project's /Assembly guide draws a page for each step, in this order.</p>
+      </section>${toolsPanel()}`;
+    }
+
+    /** Tools for the guide: what its Before you start page lists under You will need. */
+    function toolsPanel(): string {
+      const list = guideToolList ?? DEFAULT_GUIDE_TOOLS;
+      const has = (id: string) => list.includes(id);
+      const own = list.filter(t => !GUIDE_TOOLS.some(g => g.id === t));
+      return `<section class="lyr-scene-section lyr-guide-tools">
+        <div class="lyr-panel-title">Tools for the guide</div>
+        <p class="lyr-note">Listed under You will need on the guide's Before you start page.</p>
+        <div class="lyr-tool-chips">
+          ${GUIDE_TOOLS.map(g => `<button type="button" class="lyr-tool-chip${has(g.id) ? " lyr-on" : ""}" data-guide-tool="${esc(g.id)}" aria-pressed="${has(g.id)}" title="${has(g.id) ? "Take it off the list" : "Add it to the list"}">${has(g.id) ? icon("check", 12) : icon("plus", 12)}<span>${esc(g.label)}</span></button>`).join("")}
+          ${own.map(t => `<button type="button" class="lyr-tool-chip lyr-on" data-guide-tool="${esc(t)}" aria-pressed="true" title="Take it off the list">${icon("close", 12)}<span>${esc(t)}</span></button>`).join("")}
+        </div>
+        <input type="text" class="lyr-tool-add" data-guide-tool-add maxlength="${MAX_TOOL_LENGTH}" placeholder="Add a tool, then Enter"${list.length >= MAX_GUIDE_TOOLS ? " disabled" : ""}>
       </section>`;
+    }
+    function setGuideTools(next: string[]): void {
+      guideToolList = next.slice(0, MAX_GUIDE_TOOLS);
+      stepsCommit();
+      renderProps();
+    }
+    function toggleGuideTool(id: string): void {
+      const list = guideToolList ?? DEFAULT_GUIDE_TOOLS;
+      if (list.includes(id)) return setGuideTools(list.filter(t => t !== id));
+      // A symbol goes in its place in the list of symbols, before any typed in.
+      const order = GUIDE_TOOLS.map(g => g.id);
+      const known = [...list.filter(t => order.includes(t)), id].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+      setGuideTools([...known, ...list.filter(t => !order.includes(t))]);
+    }
+    function addGuideTool(name: string): void {
+      const t = name.replace(/\s+/g, " ").trim().slice(0, MAX_TOOL_LENGTH);
+      if (!t) return;
+      const list = guideToolList ?? DEFAULT_GUIDE_TOOLS;
+      const known = GUIDE_TOOLS.find(g => g.label.toLowerCase() === t.toLowerCase());
+      if (list.some(x => x.toLowerCase() === t.toLowerCase()) || (known && list.includes(known.id))) return status(`${t} is on the list already.`);
+      if (known) return toggleGuideTool(known.id);
+      setGuideTools([...list, t]);
+      props.querySelector<HTMLInputElement>("[data-guide-tool-add]")?.focus();
     }
 
     function renderStepsList(): void {
@@ -6675,9 +6733,13 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     }
     strip.addEventListener("click", e => {
       const t = e.target as HTMLElement;
-      const b = t.closest<HTMLElement>("[data-steps], [data-step-add], [data-step-card]");
+      const b = t.closest<HTMLElement>("[data-steps], [data-step-add], [data-step-insert], [data-step-card]");
       if (!b) return;
       if (b.dataset.steps) stepsAction(b.dataset.steps);
+      else if (b.dataset.stepInsert) {
+        stopStepPlay();
+        newStep(Number(b.dataset.stepInsert));
+      }
       else if (b.dataset.stepAdd) toggleInStep(b.dataset.stepAdd);
       else if (b.dataset.stepCard) {
         stopStepPlay();
@@ -6732,9 +6794,10 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     });
     props.addEventListener("click", e => {
       if (!stepsOn) return;
-      const b = (e.target as HTMLElement).closest<HTMLElement>("[data-steps], [data-step-part], [data-rec-part]");
+      const b = (e.target as HTMLElement).closest<HTMLElement>("[data-steps], [data-step-part], [data-rec-part], [data-guide-tool]");
       if (!b) return;
-      if (b.dataset.steps) stepsAction(b.dataset.steps);
+      if (b.dataset.guideTool) toggleGuideTool(b.dataset.guideTool);
+      else if (b.dataset.steps) stepsAction(b.dataset.steps);
       else if (b.dataset.stepPart) toggleInStep(b.dataset.stepPart);
       else if (b.dataset.recPart) recordClick(b.dataset.recPart);
     });
@@ -6781,7 +6844,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     function cancel(): void {
       commit();
       if (stepsOn) setMode(false);
-      if ((JSON.stringify(scene) !== start || JSON.stringify(steps) !== startSteps) && !window.confirm("Leave the 3D scene without keeping your changes?")) return;
+      if ((JSON.stringify(scene) !== start || stepsChanged()) && !window.confirm("Leave the 3D scene without keeping your changes?")) return;
       close(null);
     }
 
@@ -6811,7 +6874,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           }
         }
         steps = tidySteps(steps, out.parts.filter(p => !p.wire), views);
-        const viewsChanged = shared && (JSON.stringify([views, defaultView]) !== startViews || JSON.stringify(steps) !== startSteps);
+        const viewsChanged = shared && (JSON.stringify([views, defaultView]) !== startViews || stepsChanged());
         // The project's model still carrying unpacked models is saved again, packed, as the same version.
         const repack = linked() && !!projectModel && projectModel.parts.some(p => p.data && !isPacked(p.data));
         if (linked() && opts.saveModel && (scene.parts.length || projectModel) && (!projectModel || partsDiffer(projectModel.parts, scene.parts))) {
