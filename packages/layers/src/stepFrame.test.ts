@@ -16,6 +16,12 @@ describe("partsInStep", () => {
     expect(partsInStep(s).map(g => [g.part.name, g.count])).toEqual([["a", 1], ["b", 1]]);
   });
 
+  it("counts a track as its pieces", () => {
+    const track = { link: "l", count: 32, start: [0, 0, 0], end: [1, 0, 0], axis: [0, 1, 0], wheels: [], offset: 0, lift: 0, side: 0 };
+    const s = { ...blankScene(), parts: [part("l", "link.stl", { hidden: true }), part("t", "", { data: "m1:x", track, highlight: true }), part("u", "", { data: "m1:y", track: { ...track, count: 30 }, highlight: true })] };
+    expect(partsInStep(s).map(g => [g.part.name, g.count])).toEqual([["l", 62]]);
+  });
+
   it("follows a highlighted branch", () => {
     const s = { ...blankScene(), parts: [part("a", "plate.stl", { highlight: true }), part("b", "screw.stl", { parent: "a" }), part("c", "nut.stl")] };
     expect(partsInStep(s).map(g => g.part.name)).toEqual(["a", "b"]);
@@ -44,6 +50,10 @@ describe("fixings and the inventory", () => {
     expect(isFastener([3, 60, 3])).toBe(true); // an axle
     const list = inventoryOf([part("a", "plate.stl", { hidden: true }), part("b", "screw.stl", { ghost: true }), part("c", "screw.stl"), part("d", "plate.stl")]);
     expect(list.map(g => [g.part.url, g.count])).toEqual([["plate.stl", 2], ["screw.stl", 2]]);
+    // A track's piece is counted once per piece in it, not as a part of its own.
+    const track = { link: "l", count: 32, start: [0, 0, 0], end: [1, 0, 0], axis: [0, 1, 0], wheels: [], offset: 0, lift: 0, side: 0 };
+    const withTrack = inventoryOf([part("l", "link.stl", { hidden: true }), part("t", "", { data: "m1:x", track })]);
+    expect(withTrack.map(g => [g.part.url, g.count])).toEqual([["link.stl", 32]]);
   });
 });
 

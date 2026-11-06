@@ -20,6 +20,31 @@ export function partKey(p: ScenePart): string {
 }
 
 /**
+ * Parts counted by kind. A track (Make track) counts as its piece, once
+ * per piece in it, so a step or parts list says "32x" of the link, not
+ * "1x" of the whole track. `all` is where its piece is looked up.
+ */
+function countByKind(list: ScenePart[], all: ScenePart[]): PartCount[] {
+  const byId = new Map(all.map(p => [p.id, p]));
+  const groups = new Map<string, PartCount>();
+  for (const p of list) {
+    const piece = p.track ? byId.get(p.track.link) : undefined;
+    const part = piece || p;
+    const n = piece ? Math.max(1, p.track!.count) : 1;
+    const key = partKey(part);
+    const g = groups.get(key);
+    if (g) g.count += n;
+    else groups.set(key, { key, part, count: n });
+  }
+  return [...groups.values()];
+}
+
+/** The pieces tracks are made from: parts that stand for the track's pieces, not parts of their own. */
+function trackPieces(parts: ScenePart[]): Set<string> {
+  return new Set(parts.flatMap(p => (p.track ? [p.track.link] : [])));
+}
+
+/**
  * The parts a step uses: the highlighted parts, counted by kind, in the
  * order they appear. With nothing highlighted, every part shown (not a
  * ghost) counts instead, so a one-part first step still lists it.
@@ -27,16 +52,11 @@ export function partKey(p: ScenePart): string {
 export function partsInStep(scene: SceneData): PartCount[] {
   const lit = highlightedParts(scene.parts);
   // A wire isn't a part to fetch: it's laid between them (wiring steps come later).
-  const shown = scene.parts.filter(p => !p.hidden && !p.ghost && !p.wire);
+  // A track's piece, shown while its track is, counts with the track.
+  const pieces = trackPieces(scene.parts);
+  const shown = scene.parts.filter(p => !p.hidden && !p.ghost && !p.wire && !pieces.has(p.id));
   const list = shown.some(p => lit.has(p.id)) ? shown.filter(p => lit.has(p.id)) : shown;
-  const groups = new Map<string, PartCount>();
-  for (const p of list) {
-    const key = partKey(p);
-    const g = groups.get(key);
-    if (g) g.count++;
-    else groups.set(key, { key, part: p, count: 1 });
-  }
-  return [...groups.values()];
+  return countByKind(list, scene.parts);
 }
 
 /** The angle, in degrees, between where two cameras look from. */
@@ -68,15 +88,8 @@ export function isFastener(size: [number, number, number]): boolean {
 
 /** Every part, counted by kind, in model order: the parts list for a whole project. */
 export function inventoryOf(parts: ScenePart[]): PartCount[] {
-  const groups = new Map<string, PartCount>();
-  for (const p of parts) {
-    if (p.wire) continue;
-    const key = partKey(p);
-    const g = groups.get(key);
-    if (g) g.count++;
-    else groups.set(key, { key, part: p, count: 1 });
-  }
-  return [...groups.values()];
+  const pieces = trackPieces(parts);
+  return countByKind(parts.filter(p => !p.wire && !pieces.has(p.id)), parts);
 }
 
 /** One kind of screw (or heat-set insert) in the project, with how many it uses. */
