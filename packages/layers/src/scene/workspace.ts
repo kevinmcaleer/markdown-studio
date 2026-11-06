@@ -30,6 +30,7 @@ import { EXPLODE_DIRS, explodeChooser, explodeDirLabel, explodeVector, type Expl
 import { partJoints } from "./jointList";
 import { sitDelta } from "./sit";
 import { renderStepsMovie } from "./stepsAnimation";
+import { growsFromTo, seeThroughParts } from "./seeThrough";
 import { emptyModel, frame, frameAll, frameTight, LineArt, modelFromPositions, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
 import { MAX_EMBED, parseStl, stlFaces, toBinaryStl, tooBigToCarry } from "./stl";
 import { isPacked, packMesh, packParts } from "./mesh";
@@ -776,7 +777,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         const r = canvasEl.getBoundingClientRect();
         art.scene.updateMatrixWorld(true);
         raycaster.setFromCamera(new Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
-        const hit = raycaster.intersectObjects(art.meshes(), false).find(h => art.keeps(h.point));
+        const hit = partHit(raycaster.intersectObjects(art.meshes(), false));
         const id = hit ? String(hit.object.userData.partId || "") : "";
         if (!id) return;
         stopStepPlay();
@@ -795,7 +796,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       if ((e.button === 2 || (e.button === 0 && e.ctrlKey && mac)) && !joining && !screwing && !trackPick && !wiringOn) {
         art.scene.updateMatrixWorld(true);
         raycaster.setFromCamera(ndc, camera);
-        const hit = raycaster.intersectObjects(art.meshes(), false).find(h => art.keeps(h.point));
+        const hit = partHit(raycaster.intersectObjects(art.meshes(), false));
         const id = hit ? String(hit.object.userData.partId || "") : "";
         if (id && partById(id)) {
           if (selectedId !== id || shownJoint) select(id);
@@ -843,9 +844,15 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       }
       art.scene.updateMatrixWorld(true);
       raycaster.setFromCamera(ndc, camera);
-      const hit = raycaster.intersectObjects(art.meshes(), false).find(h => art.keeps(h.point));
+      const hit = partHit(raycaster.intersectObjects(art.meshes(), false));
       select(hit ? String(hit.object.userData.partId || "") : "");
     });
+
+    /** The part a click lands on: the nearest one not cut away, looking through the see-through view's glass to the electronics. */
+    function partHit<T extends { point: Vector3; object: Object3D }>(hits: T[]): T | undefined {
+      const kept = hits.filter(h => art.keeps(h.point));
+      return kept.find(h => !art.isGlass(String(h.object.userData.partId || ""))) || kept[0];
+    }
 
     function select(id: string, keepJoint = false): void {
       selectedId = id;
@@ -3912,6 +3919,13 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     }
 
     /** The wiring diagram's settings for the picked part, plug or wire (and the scene's, under them). */
+    /** In the see-through view: whether a part is drawn solid or see-through, worked out or set. */
+    function xrayRow(p: ScenePart): string {
+      if (!scene.seeThrough || isWiring(p)) return "";
+      const auto = seeThroughParts(scene.parts.map(q => (q.id === p.id ? { ...q, xray: undefined } : q))).has(p.id) ? "see-through" : "solid";
+      return `<label class="lyr-scene-namebox" title="How the see-through view draws it. Automatic: electronics (on the wiring diagram, with sockets, wired to, or named like a board or motor) solid, the rest see-through">See-through view <select data-xray><option value="">Automatic (${auto})</option><option value="solid"${p.xray === "solid" ? " selected" : ""}>Solid</option><option value="glass"${p.xray === "glass" ? " selected" : ""}>See-through</option></select></label>`;
+    }
+
     function diagramSection(p: ScenePart | undefined): string {
       if (diagramState === "off") return "";
       const head = `<div class="lyr-panel-title">Wiring diagram</div>`;
@@ -4002,7 +4016,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     // ------------------------------------------------------------ the wires going in
 
     // "Assemble n wires": each wire (in the model's order) appears with its
-    // plugs and grows along its route from its first plug, one after another,
+    // plugs and grows along its route out of its component, up to where it
+    // ends (see growsFromTo), one after another,
     // as they'd be put in. A play bar sets the speed, skips a wire or stops.
     const playBar = $(".lyr-play-bar");
     let playing: { order: ScenePart[]; at: number; grown: number; speed: number; rest: number; frame: number; last: number } | null = null;
@@ -4054,9 +4069,10 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           renderPlayBar();
         }
         // About 120 mm a second, each wire a second or two.
-        const len = wireLength(w, worldMatrices(scene.parts, scene.explode), loomsOf(scene.parts)) || 60;
+        const world = worldMatrices(scene.parts, scene.explode);
+        const len = wireLength(w, world, loomsOf(scene.parts)) || 60;
         pl.grown = Math.min(1, pl.grown + dt / Math.max(0.6, Math.min(2.5, len / 120)));
-        art.growWire(w, scene.parts, scene.explode, pl.grown);
+        art.growWire(w, scene.parts, scene.explode, pl.grown, growsFromTo(w, scene.parts, world), world);
         if (pl.grown >= 1) {
           pl.at++;
           pl.grown = 0;
@@ -5252,6 +5268,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
             </div>
             </fieldset>
             <label class="lyr-scene-check" title="Draw it faint, for a part fitted in an earlier step"><input type="checkbox" data-ghost${p.ghost ? " checked" : ""}> Ghost (fitted earlier)</label>
+            ${xrayRow(p)}
             <p class="lyr-note">Arrow keys in a box: ±1 step, Shift ×10, Alt ×0.1. Or drag a label sideways.</p>`
           : `<p class="lyr-note">${scene.parts.length ? "Click a part, in the view or the list, to place it." : "Add a part to start."}</p>`}
         </section>
@@ -5277,8 +5294,9 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           ${scene.style.draft === false ? "" : `<label class="lyr-scene-check" title="Thin solid lines, as on a flat-pack sheet, instead of dashed ones"><input type="checkbox" data-draft-solid${scene.style.draftSolid ? " checked" : ""}> Solid draft lines</label>`}
           <label class="lyr-scene-check" title="Solid arrows in the picture along each exploded part's gap, from the part to where it fits, as on a flat-pack sheet"><input type="checkbox" data-arrows${scene.arrows ? " checked" : ""}> Arrows when exploded</label>
           ${scene.parts.some(isWiring) || scene.wiring || scene.hideWiring ? `
-          <label class="lyr-scene-check" title="Ghost every part but the wires and plugs, so the wiring reads"><input type="checkbox" data-wiring${scene.wiring ? " checked" : ""}${scene.hideWiring ? " disabled" : ""}> Wiring view</label>
+          <label class="lyr-scene-check" title="Ghost every part but the wires and plugs, so the wiring reads"><input type="checkbox" data-wiring${scene.wiring && !scene.seeThrough ? " checked" : ""}${scene.hideWiring ? " disabled" : ""}> Wiring view</label>
           <label class="lyr-scene-check" title="Leave the wires and plugs out of this picture (they stay in the model)"><input type="checkbox" data-hide-wiring${scene.hideWiring ? " checked" : ""}> Hide wiring</label>` : ""}
+          ${scene.parts.length ? `<label class="lyr-scene-check" title="The printed parts drawn as glass, so the electronics inside and the wires between them show. Set a part's own in its settings"><input type="checkbox" data-see-through${scene.seeThrough ? " checked" : ""}> See-through (show the electronics)</label>` : ""}
           ${wiresInOrder(scene.parts).length ? `
           <label class="lyr-scene-namebox" title="A wiring step: this wire is put in, the ones before it ghosted, the ones after it left out">Wiring step <select data-wire-step><option value="">None</option>${wiresInOrder(scene.parts).map((w, i) => `<option value="${esc(w.id)}"${w.id === scene.wireStep ? " selected" : ""}>${i + 1}. ${esc(w.name)}</option>`).join("")}</select></label>
           <button type="button" class="lyr-wide-btn" data-act="wires-play" title="Watch the wires go in, one after another, in their order">${icon("play", 14)} Assemble ${wiresInOrder(scene.parts).length} wire${wiresInOrder(scene.parts).length === 1 ? "" : "s"}</button>` : ""}
@@ -5312,10 +5330,13 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         renderProps();
         draw();
         commit();
-      } else if (t.dataset.wiring !== undefined || t.dataset.hideWiring !== undefined) {
-        const key = t.dataset.wiring !== undefined ? "wiring" : "hideWiring";
+      } else if (t.dataset.wiring !== undefined || t.dataset.hideWiring !== undefined || t.dataset.seeThrough !== undefined) {
+        const key = t.dataset.wiring !== undefined ? "wiring" : t.dataset.hideWiring !== undefined ? "hideWiring" : "seeThrough";
         if (t.checked) scene[key] = true;
         else delete scene[key];
+        // The wiring view ghosts the electronics too; the see-through view keeps them: one or the other.
+        if (t.checked && key === "wiring") delete scene.seeThrough;
+        if (t.checked && key === "seeThrough") delete scene.wiring;
         rebuild();
         renderProps();
         commit();
@@ -5331,6 +5352,13 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         else delete p.arrow;
         renderProps();
         follow();
+        commit();
+      } else if (t.dataset.xray !== undefined) {
+        const p = partById(selectedId);
+        if (!p) return;
+        if (t.value === "solid" || t.value === "glass") p.xray = t.value;
+        else delete p.xray;
+        rebuild();
         commit();
       } else if (t.dataset.ghost !== undefined) {
         const p = partById(selectedId);

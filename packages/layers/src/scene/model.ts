@@ -75,6 +75,11 @@ export interface ScenePart {
   plug?: PlugSpec;
   /** The part of the 2D wiring diagram this is ("servo1"), so its sockets' wires can be the diagram's (see wiring2d.ts). */
   wiringPart?: string;
+  /**
+   * How the see-through view draws it, instead of working it out (see
+   * seeThrough.ts): "solid" as electronics, "glass" see-through.
+   */
+  xray?: "solid" | "glass";
 }
 
 export interface PartArrow {
@@ -183,6 +188,11 @@ export interface SceneData {
   wiring?: boolean;
   /** The wires and plugs left out of this picture. */
   hideWiring?: boolean;
+  /**
+   * The see-through view: the printed parts drawn as glass, so the
+   * electronics inside them and the wires between them show.
+   */
+  seeThrough?: boolean;
   /**
    * A wiring step of the assembly guide: the wire (or cable) put in at this
    * step, by id. It's drawn as it is, the wires before it (in the model's
@@ -336,6 +346,7 @@ export function normalizeScene(value: unknown): SceneData {
         if (plug) part.plug = plug;
         const linked = text(p.wiringPart, 40);
         if (linked && !part.wire && !part.plug) part.wiringPart = linked;
+        if ((p.xray === "solid" || p.xray === "glass") && !part.wire && !part.plug) part.xray = p.xray;
         if (p.arrow && typeof p.arrow === "object") {
           const a = p.arrow as { from?: unknown; to?: unknown; off?: unknown };
           const arrow: PartArrow = {};
@@ -431,6 +442,7 @@ export function normalizeScene(value: unknown): SceneData {
   if (v.arrows === true) out.arrows = true;
   if (v.wiring === true) out.wiring = true;
   if (v.hideWiring === true) out.hideWiring = true;
+  if (v.seeThrough === true) out.seeThrough = true;
   if (typeof v.wireStep === "string" && out.parts.some(p => p.id === v.wireStep && p.wire)) out.wireStep = v.wireStep;
   return out;
 }
@@ -616,7 +628,7 @@ export function shownAs(p: ScenePart, scene: SceneLook): ScenePart {
     if (scene.step.ghost.has(p.id) && !p.ghost) return { ...p, ghost: true };
     return p;
   }
-  if (scene.wiring && !isWiring(p) && !p.ghost) return { ...p, ghost: true };
+  if (scene.wiring && !scene.seeThrough && !isWiring(p) && !p.ghost) return { ...p, ghost: true };
   return p;
 }
 
@@ -626,6 +638,8 @@ export interface SceneLook {
   /** The one part shown as it is, the rest ghosted (the workspace's pin mapping; never in the picture). */
   focus?: string;
   hideWiring?: boolean;
+  /** The printed parts drawn as glass (see seeThrough.ts). */
+  seeThrough?: boolean;
   step?: { ghost: Set<string>; hidden: Set<string> };
 }
 
@@ -637,8 +651,9 @@ export const wiresInOrder = (parts: ScenePart[]) => parts.filter(p => p.wire);
  * step's wire and its plugs ghosted, with the wires before it (and their
  * plugs) ghosted too, and those after it left out.
  */
-export function lookOf(scene: Pick<SceneData, "parts" | "wiring" | "hideWiring" | "wireStep">): SceneLook {
+export function lookOf(scene: Pick<SceneData, "parts" | "wiring" | "hideWiring" | "wireStep"> & { seeThrough?: boolean }): SceneLook {
   const look: SceneLook = { wiring: scene.wiring, hideWiring: scene.hideWiring };
+  if (scene.seeThrough) look.seeThrough = true;
   const wires = wiresInOrder(scene.parts);
   const at = scene.wireStep ? wires.findIndex(w => w.id === scene.wireStep) : -1;
   if (at < 0) return look;

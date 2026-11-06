@@ -29,7 +29,7 @@ import { sectionRemovers } from "../blockRemove";
 import { completeTodo, findTodos, todoMarks, type Todo } from "../todos";
 import { cardPicturePicker } from "../cardsWidget";
 import { hostBlocks } from "../hostBlock";
-import { animatedModelCommand, assemblyGuideCommand, droppingModelCommand, layersBlocks, layersCommand, screwInventoryCommand, wireListCommand, type LayersHost } from "../layersBlock";
+import { animatedModelCommand, assemblyGuideCommand, droppingModelCommand, wiringShowcaseCommand, layersBlocks, layersCommand, screwInventoryCommand, wireListCommand, type LayersHost } from "../layersBlock";
 import { videoRenderers } from "../videosWidget";
 import { speechEditor } from "../speech/speechEditor";
 import { useDictation } from "../speech/useDictation";
@@ -257,7 +257,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
       const at = list.findIndex((c) => c.id === "image");
       const cmd = layersCommand(layersHost);
       // With a project model to draw from, "/Assembly guide", "/Screw inventory", "/Wire list", "/Animated model" and "/Dropping model" follow it.
-      const cmds = layersHost.loadModel && layersHost.saveModel ? [cmd, assemblyGuideCommand(layersHost), screwInventoryCommand(layersHost), wireListCommand(layersHost), animatedModelCommand(layersHost), droppingModelCommand(layersHost)] : [cmd];
+      const cmds = layersHost.loadModel && layersHost.saveModel ? [cmd, assemblyGuideCommand(layersHost), screwInventoryCommand(layersHost), wireListCommand(layersHost), animatedModelCommand(layersHost), droppingModelCommand(layersHost), wiringShowcaseCommand(layersHost)] : [cmd];
       list = at < 0 ? [...list, ...cmds] : [...list.slice(0, at + 1), ...cmds, ...list.slice(at + 1)];
     }
     // With somewhere to get images from, "/image" opens the picker.
