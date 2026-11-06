@@ -9,7 +9,7 @@
 
 import { Matrix4, OrthographicCamera, Vector3 } from "three";
 import { GifWriter, indexFrame, paletteFor } from "../gif";
-import { mp4Config, Mp4Writer } from "../mp4";
+import { mp4Configs, Mp4Writer } from "../mp4";
 import { blankScene, type ProjectModel, type SceneCamera, type SceneStyle, type Vec3 } from "./model";
 import { cameraFor, LineArt, type ModelStore } from "./render";
 import { trackPieces } from "./trackSpec";
@@ -186,6 +186,8 @@ export interface Animation {
   width: number;
   height: number;
   frames: number;
+  /** Why it's a GIF when an MP4 was wanted ("auto"): the browser has no H.264 encoder, or it failed. */
+  gifBecause?: string;
 }
 
 /**
@@ -309,9 +311,10 @@ export async function encodeFrames(canvas: HTMLCanvasElement, delays: number[], 
     if (i % 4 === 3) await new Promise(r => setTimeout(r, 0));
   };
   const format = options.format ?? "auto";
-  const config = format === "gif" ? null : await mp4Config(width, height, options.fps ?? 15);
-  if (format === "mp4" && !config) throw new Error("This browser can't make an MP4 video.");
-  if (config) {
+  const configs = format === "gif" ? [] : await mp4Configs(width, height, options.fps ?? 15);
+  if (format === "mp4" && !configs.length) throw new Error("This browser can't make an MP4 video.");
+  let because = format === "gif" ? undefined : typeof VideoEncoder === "undefined" ? "this browser has no video encoder" : "this browser can't encode H.264";
+  for (const config of configs) {
     const mp4 = new Mp4Writer(config);
     try {
       for (let i = 0; i < n; i++) {
@@ -323,8 +326,10 @@ export async function encodeFrames(canvas: HTMLCanvasElement, delays: number[], 
       return { blob: await mp4.finish(), type: "video/mp4", width, height, frames: n };
     } catch (e) {
       mp4.close();
-      // The encoder gave up part way (a GPU hiccup, say): a GIF still works, unless an MP4 was asked for.
-      if (format === "mp4" || options.cancelled?.()) throw e;
+      if (options.cancelled?.()) throw e;
+      // The encoder gave up part way (a GPU hiccup, a hardware encoder that said yes): the next one, then a GIF, unless an MP4 was asked for.
+      because = `the video encoder failed (${e instanceof Error && e.message ? e.message : String(e)})`;
+      if (format === "mp4" && config === configs[configs.length - 1]) throw e;
     }
   }
   const rgb = hexRgb(bg);
@@ -336,7 +341,7 @@ export async function encodeFrames(canvas: HTMLCanvasElement, delays: number[], 
     await step(i);
   }
   const bytes = gif.finish();
-  return { blob: new Blob([bytes as BlobPart], { type: "image/gif" }), type: "image/gif", width, height, frames: n };
+  return { blob: new Blob([bytes as BlobPart], { type: "image/gif" }), type: "image/gif", width, height, frames: n, ...(because ? { gifBecause: because } : {}) };
 }
 
 function hexRgb(hex: string): [number, number, number] {
