@@ -64,7 +64,7 @@ export interface Anchor {
  * the side it comes from (`from`, the point before). None when the other
  * wire can't be laid.
  */
-function alongside(along: WireAlong, loom: WireSpec, mats: Map<string, Matrix4>, r: number, from: Vector3): Anchor[] {
+export function alongside(along: WireAlong, loom: WireSpec, mats: Map<string, Matrix4>, r: number, from: Vector3): Anchor[] {
   const route = wireRoute(loom, mats);
   if (!route || route.centre.length < 2) return [];
   const c = route.centre;

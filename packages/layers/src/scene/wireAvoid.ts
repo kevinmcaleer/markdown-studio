@@ -19,9 +19,9 @@ import { Matrix4, Vector3 } from "three";
 /** Mm of room kept between a wire and the parts, over its radius. */
 export const WIRE_ROOM = 1.5;
 /** Most cubes in the grid: the cube size grows to keep under it. */
-const MAX_CELLS = 1_500_000;
+const MAX_CELLS = 3_000_000;
 /** Smallest cube, mm. */
-const MIN_CELL = 0.6;
+const MIN_CELL = 0.5;
 /** Mm the grid reaches past the model all round, so a wire can go round its outside. */
 const MARGIN = 20;
 
@@ -214,29 +214,41 @@ export function clearRun(g: SolidGrid, a: Vector3, b: Vector3, keep: number): bo
   const p = new Vector3();
   for (let s = 0; s <= n; s++) {
     p.copy(a).lerp(b, s / n);
-    // Half a cube's slack: the grid only knows distance to a cube's middle.
-    if (clearance(g, p) + g.cell * 0.5 < keep) return false;
+    // Half a cube's slack: the grid only knows distance to a cube's middle. Never through a surface.
+    const c = clearance(g, p);
+    if (c <= 0 || c + g.cell * 0.5 < keep) return false;
   }
   return true;
 }
 
-/** From `p`, out along `n` (or, failing that, the nearest way) to where it's `keep` mm clear. Null if nowhere near. */
+/**
+ * From `p`, out along `n` (or, failing that, the nearest way) to where it's
+ * `keep` mm clear, never through a part: once off the face it started on,
+ * a surface stops it. Null if there's nowhere near.
+ */
 function escape(g: SolidGrid, p: Vector3, n: Vector3 | null, keep: number): Vector3 | null {
   if (clearance(g, p) >= keep) return p.clone();
+  const want = Math.ceil((keep / g.cell) * 10);
   if (n) {
     const q = new Vector3();
+    let left = false;
     for (let s = g.cell * 0.5; s <= 40; s += g.cell * 0.5) {
       q.copy(p).addScaledVector(n, s);
-      if (clearance(g, q) >= keep + g.cell * 0.5) return q.clone();
+      const c = clearance(g, q);
+      if (c >= keep + g.cell * 0.5) return q.clone();
+      // Off its own face, then into another: blocked that way.
+      if (c > 0) left = true;
+      else if (left) break;
     }
   }
-  // The nearest clear cube, breadth first.
-  const want = Math.ceil((keep / g.cell) * 10);
+  // The nearest clear cube, breadth first, through cubes that aren't a surface.
   const [i0, j0, k0] = cellOf(g, p);
   if (!inside(g, i0, j0, k0)) return null;
   const start = i0 + g.nx * (j0 + g.ny * k0);
   const seen = new Set([start]);
   let ring = [start];
+  // The first cube or two may be the face it starts on.
+  const own = Math.ceil(1.5 / g.cell) + 1;
   for (let r = 0; r < Math.ceil(30 / g.cell) && ring.length; r++) {
     const next: number[] = [];
     for (const at of ring) {
@@ -247,8 +259,8 @@ function escape(g: SolidGrid, p: Vector3, n: Vector3 | null, keep: number): Vect
         const o = X + g.nx * (Y + g.ny * Z);
         if (seen.has(o)) continue;
         seen.add(o);
-        if (g.dist[o] >= want && g.dist[o] !== FAR) return centreOf(g, o);
-        if (g.dist[o] === FAR) return centreOf(g, o);
+        if (g.dist[o] >= want) return centreOf(g, o);
+        if (g.dist[o] === 0 && r >= own) continue;
         next.push(o);
       }
     }
@@ -400,16 +412,46 @@ export interface RouteEnd {
  * straight stretch (shorter ones bow less with slack).
  */
 export function routeRound(g: SolidGrid, a: RouteEnd, b: RouteEnd, keep: number, maxRun = Infinity): Vector3[] | null {
-  if (clearRun(g, a.p, b.p, keep) && a.p.distanceTo(b.p) <= maxRun) return [];
-  const a1 = escape(g, a.p, a.n, keep);
-  const b1 = escape(g, b.p, b.n, keep);
-  if (!a1 || !b1) return null;
-  const path = search(g, a1, b1, keep);
-  if (!path) return null;
-  const tight = pullTight(g, path, keep, maxRun);
-  const out = tight.slice();
+  const found = findWay(g, a, b, keep);
+  return found ? tighten(g, found, maxRun) : null;
+}
+
+/** A way found round the solids: the run of cubes, how much room it keeps, and where it starts and ends. */
+export interface Way {
+  a: RouteEnd;
+  b: RouteEnd;
+  /** Null: the straight run is clear. */
+  path: Vector3[] | null;
+  keep: number;
+}
+
+/**
+ * The shortest way from `a` to `b` keeping `keep` mm off the solids; in a
+ * tight spot, as close as the grid can tell, but never through a part.
+ * Null when there's no way at all.
+ */
+export function findWay(g: SolidGrid, a: RouteEnd, b: RouteEnd, keep: number): Way | null {
+  if (clearRun(g, a.p, b.p, keep)) return { a, b, path: null, keep };
+  for (const k of [keep, Math.max(g.cell * 0.6, keep * 0.6), g.cell * 0.15]) {
+    const a1 = escape(g, a.p, a.n, k);
+    const b1 = escape(g, b.p, b.n, k);
+    if (!a1 || !b1) continue;
+    const path = search(g, a1, b1, k);
+    if (path) return { a, b, path, keep: k };
+  }
+  return null;
+}
+
+/** A way pulled tight into the corners a wire passes, none of its straight stretches over `maxRun`. */
+export function tighten(g: SolidGrid, way: Way, maxRun = Infinity): Vector3[] {
+  if (!way.path) {
+    if (way.a.p.distanceTo(way.b.p) <= maxRun) return [];
+    const n = Math.ceil(way.a.p.distanceTo(way.b.p) / maxRun);
+    return Array.from({ length: n - 1 }, (_, i) => way.a.p.clone().lerp(way.b.p, (i + 1) / n));
+  }
+  const out = pullTight(g, way.path, way.keep, maxRun);
   // The way out from each end, kept: it rises clear before it turns.
-  if (a1.distanceTo(a.p) < g.cell * 0.5) out.shift();
-  if (b1.distanceTo(b.p) < g.cell * 0.5) out.pop();
+  if (out[0].distanceTo(way.a.p) < g.cell * 0.5) out.shift();
+  if (out.length && out[out.length - 1].distanceTo(way.b.p) < g.cell * 0.5) out.pop();
   return out;
 }
