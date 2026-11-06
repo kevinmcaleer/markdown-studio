@@ -79,6 +79,7 @@ const P: Record<string, string> = {
   plug: "M9 3v4M15 3v4M6 7h12v4a6 6 0 0 1-12 0zM12 17v4",
   track: "M7 8h10a4 4 0 0 1 0 8H7a4 4 0 0 1 0-8zM7 12h.01M17 12h.01M10 8v-2M14 8v-2M10 16v2M14 16v2",
   play: "M7 4v16l13-8z",
+  film: "M3 3h18v18H3zM7 3v18M17 3v18M3 7.5h4M3 12h18M3 16.5h4M17 7.5h4M17 16.5h4",
   chevronUp: "m6 15 6-6 6 6",
   chevronDown: "m6 9 6 6 6-6",
   chevronRight: "m9 6 6 6-6 6",

@@ -29,6 +29,7 @@ import { applyJoint } from "./joint";
 import { EXPLODE_DIRS, explodeChooser, explodeDirLabel, explodeVector, type ExplodeChoice, type ExplodeShape } from "./explode";
 import { partJoints } from "./jointList";
 import { sitDelta } from "./sit";
+import { renderStepsMovie } from "./stepsAnimation";
 import { emptyModel, frame, frameAll, frameTight, LineArt, modelFromPositions, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
 import { MAX_EMBED, parseStl, stlFaces, toBinaryStl, tooBigToCarry } from "./stl";
 import { isPacked, packMesh, packParts } from "./mesh";
@@ -153,6 +154,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     let kept: { parts: Map<string, Showing>; explode: number; arrows?: boolean; historyAt: number } | null = null;
     let recording: { steps: string[][] } | null = null;
     let stepPlay: { frame: number; at: number; t0: number } | null = null;
+    /** The steps movie being made (Save as movie): how far it's got, and whether it's been stopped. */
+    let movie: { pct: number; stopped: boolean } | null = null;
 
     const overlay = document.createElement("div");
     overlay.className = "lyr-overlay lyr-scene-overlay";
@@ -6327,7 +6330,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
             <span class="lyr-grow"></span>
             <button type="button" class="lyr-btn" data-steps="suggest" title="Work out steps from the joints: one per part, fixings with their part">${icon("wand", 16)}<span>Suggest steps</span></button>
             <button type="button" class="lyr-btn" data-steps="record" title="Click the parts in the order they go on, pressing Next step between steps">${icon("pencil", 16)}<span>Record steps</span></button>
-            <button type="button" class="lyr-btn" data-steps="play" title="Watch the steps go together, one after another"${steps.length ? "" : " disabled"}>${icon("play", 16)}<span>${stepPlay ? "Stop" : "Play steps"}</span></button>`}
+            <button type="button" class="lyr-btn" data-steps="play" title="Watch the steps go together, one after another"${steps.length ? "" : " disabled"}>${icon("play", 16)}<span>${stepPlay ? "Stop" : "Play steps"}</span></button>
+            <button type="button" class="lyr-btn" data-steps="movie" title="${movie ? "Stop making the movie" : "Save the steps going together as a video file (MP4)"}"${steps.length ? "" : " disabled"}>${icon("film", 16)}<span>${movie ? `Saving… ${movie.pct}%` : "Save as movie"}</span></button>`}
         </div>
         <div class="lyr-steps-cards">
           ${cards}
@@ -6353,22 +6357,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     async function drawThumbs(): Promise<void> {
       const gen = ++thumbGen;
       const at = stepsAt();
-      const pieces = trackPieces(scene.parts);
-      const sceneFor = (i: number): SceneData => ({
-        ...clone(scene),
-        explode: 0,
-        arrows: true,
-        section: undefined,
-        parts: scene.parts.map(p => {
-          const k = at.get(p.id);
-          const out: ScenePart = { ...p };
-          for (const f of ["hidden", "ghost", "highlight", "explode"] as const) delete out[f];
-          if (p.wire || pieces.has(p.id) || k === undefined || k > i) out.hidden = true;
-          else if (k === i) Object.assign(out, { highlight: true, explode: 1 });
-          else Object.assign(out, { ghost: true, highlight: false, explode: 0 });
-          return out;
-        }),
-      });
+      const sceneFor = (i: number): SceneData => ({ ...clone(scene), explode: 0, arrows: true, section: undefined, parts: stepParts(i, at) });
       const todo = steps.map((_, i) => i).filter(i => !stepThumbs.has(thumbKey(i)));
       if (!todo.length) return;
       const W = 132, H = 84;
@@ -6388,6 +6377,65 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         } catch {
           // A step whose picture can't be drawn keeps its plain card.
         }
+      }
+    }
+
+    /** Every part as step `i` shows it: earlier steps' ghosted and fitted, this step's highlighted and apart, later ones hidden. */
+    function stepParts(i: number, at = stepsAt()): ScenePart[] {
+      const pieces = trackPieces(scene.parts);
+      return scene.parts.map(p => {
+        const k = at.get(p.id);
+        const out: ScenePart = { ...p };
+        for (const f of ["hidden", "ghost", "highlight", "explode"] as const) delete out[f];
+        if (p.wire || pieces.has(p.id) || k === undefined || k > i) out.hidden = true;
+        else if (k === i) Object.assign(out, { highlight: true, explode: 1 });
+        else Object.assign(out, { ghost: true, highlight: false, explode: 0 });
+        return out;
+      });
+    }
+
+    /** Save as movie: the steps going together, as Play steps shows them, made into a video and downloaded. */
+    async function saveMovie(): Promise<void> {
+      if (movie) {
+        movie.stopped = true;
+        return;
+      }
+      if (!steps.length) return;
+      stopStepPlay();
+      const me = (movie = { pct: 0, stopped: false });
+      renderStrip();
+      status("Making the movie of the steps…");
+      try {
+        const at = stepsAt();
+        const list = steps.map((_, i) => {
+          const parts = stepParts(i, at);
+          return { parts, moving: parts.filter(p => !p.hidden && at.get(p.id) === i).map(p => p.id) };
+        });
+        const made = await renderStepsMovie(list, scene.style, scene.camera.direction, opts.store, {
+          progress: (done, total) => {
+            const pct = Math.floor((done / total) * 100);
+            if (pct === me.pct) return;
+            me.pct = pct;
+            const label = strip.querySelector('[data-steps="movie"] span');
+            if (label) label.textContent = `Saving… ${pct}%`;
+          },
+          cancelled: () => me.stopped || closed,
+        });
+        const name = `assembly-steps.${made.type === "video/mp4" ? "mp4" : "gif"}`;
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(made.blob);
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+        const mb = (made.blob.size / 1024 / 1024).toFixed(1);
+        status(made.type === "video/mp4" ? `Downloaded ${name} (${mb} MB).` : `Downloaded ${name} (${mb} MB): this browser can't make an MP4, so it's an animated GIF.`);
+      } catch (e) {
+        if (!closed) status(me.stopped ? "Stopped: no movie saved." : `The movie couldn't be made: ${e instanceof Error ? e.message : String(e)}`, !me.stopped);
+      } finally {
+        if (movie === me) movie = null;
+        if (!closed) renderStrip();
       }
     }
 
@@ -6764,6 +6812,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         case "suggest": suggest(); break;
         case "record": startRecording(); break;
         case "play": playSteps(); break;
+        case "movie": void saveMovie(); break;
         case "new": newStep(); break;
         case "delete": deleteStep(stepAt); break;
         case "earlier": moveStep(stepAt, stepAt - 1); break;
