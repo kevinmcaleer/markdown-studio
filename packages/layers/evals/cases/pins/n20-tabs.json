@@ -1,0 +1,16 @@
+{
+  "title": "N20 motor: VCC and GND on the ends of its two brass tabs",
+  "why": "The N20's picture is 12 x 35 mm with VCC at 75% across and GND at 26%, both 95% down: the motor's back end. Its tabs stand on the end cap, 0.4 mm thick, 1.5 mm tall (z 4.25 to 5.75), out to y = -17 at x = +-4.18 to 4.57. Nothing is straight below the pins' spots (they're just past the cap), so each lands on the tab nearest, at the middle of its end (x +-4.38, y -17, z 5), the wire leaving backwards (-y). VCC is the +x tab as on the picture. The model's 13 mm shaft overhangs +y by 4.6 mm, moving the box's middle, which mustn't move the pins.",
+  "input": {
+    "shape": { "stl": "meshes/n20-motor.stl" },
+    "size": [12, 35],
+    "pins": [{ "name": "VCC", "x": 0.748, "y": 0.95 }, { "name": "GND", "x": 0.262, "y": 0.949 }]
+  },
+  "expect": {
+    "pins": {
+      "VCC": { "at": [4.38, -17, 5], "normal": [0, -1, 0] },
+      "GND": { "at": [-4.38, -17, 5], "normal": [0, -1, 0] }
+    },
+    "tol": 0.3
+  }
+}

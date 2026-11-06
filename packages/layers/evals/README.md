@@ -23,6 +23,7 @@ They cover the parts of 3D scenes that rely on guesses:
 | `cases/wire/` | A wire leaves each plug straight out, lies on the faces it's routed over (not in them), takes up its slack, sags or bows the right way, and its ends stay on their parts when exploded; a cable's wires meet each plug at its pins, lie touching (flat or round) and never run through each other |
 | `cases/mirror/` | Mirror a wire finds each part's partner across the middle of the model (not x 0), and puts each point where the mirror does, its face turned the mirror's way |
 | `cases/diagram/` | Add missing wires makes a 3D cable for each of the 2D diagram's with sockets at both ends, its wires in the plug's pin order and the diagram's colours |
+| `cases/pins/` | Finding a part's pins on its model from its 2D picture puts each where its wire ends (a header pin's tip, a motor tab's end), facing the way the wire leaves, and guesses nothing for a model drawn another way round |
 | `cases/pictures/` | Whole scenes drawn with the real renderer, compared with approved pictures |
 
 ## Running them

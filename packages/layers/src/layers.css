@@ -913,6 +913,18 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 .lyr-pin-chip:hover { border-color: #2e9e4f; }
 .lyr-pin-chip.lyr-on { background: #2e9e4f; border-color: #2e9e4f; color: #fff; }
 .lyr-pin-chip.lyr-pin-plugged:not(.lyr-on) { border-style: dashed; }
+.lyr-primary-btn { background: var(--lyr-accent); color: #fff; font-weight: 600; margin-bottom: 8px; }
+.lyr-primary-btn:hover { background: #6a2fd0; }
+/* Pins on the model: the part's picture with its pins on it. */
+.lyr-pin-map { display: block; width: 100%; max-height: 180px; border-radius: 6px; background: var(--lyr-rail); }
+.lyr-pin-board { fill: #e3e7ec; stroke: var(--lyr-line); stroke-width: 0.5; }
+.lyr-pin-dot { cursor: pointer; outline: none; }
+.lyr-pin-dot text { font: 600 7px/1 var(--lyr-font); fill: var(--lyr-ink); paint-order: stroke; stroke: #fff; stroke-width: 2px; pointer-events: none; }
+.lyr-pin-dot .lyr-pin-hit { fill: transparent; stroke: none; }
+.lyr-pin-dot .lyr-pin-mark { fill: #fff; stroke: #2e9e4f; stroke-width: 0.8; }
+.lyr-pin-dot.lyr-on .lyr-pin-mark { fill: #2e9e4f; stroke: #fff; }
+.lyr-pin-dot:hover .lyr-pin-mark, .lyr-pin-dot:focus-visible .lyr-pin-mark { stroke: var(--lyr-accent); stroke-width: 1.2; }
+.lyr-pin-dot.lyr-picking .lyr-pin-mark { fill: var(--lyr-accent); stroke: #fff; stroke-width: 1.2; }
 .lyr-pins-acts { display: flex; gap: 4px; align-items: center; }
 .lyr-pins-acts .lyr-btn { display: inline-flex; align-items: center; justify-content: center; gap: 4px; font-size: 12px; }
 .lyr-pins-acts .lyr-btn svg { width: auto; flex: none; }

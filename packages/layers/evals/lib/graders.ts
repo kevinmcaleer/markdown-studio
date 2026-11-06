@@ -14,7 +14,8 @@ import { layTrack, type TrackSpec } from "../../src/scene/track";
 import { cableRadius, coreLines, leadLength, MIN_BEND, ringRadius, tightestBend, wireRoute } from "../../src/scene/wire";
 import { mirrorPartner, mirrorPlane, mirrorPoint } from "../../src/scene/wireMirror";
 import { coresOf, normalizeWire, type Looms } from "../../src/scene/wireSpec";
-import { missingWires, type WiringInfo } from "../../src/scene/wiring2d";
+import { missingWires, type WiringInfo, type WiringPart } from "../../src/scene/wiring2d";
+import { guessPins } from "../../src/scene/pinGuess";
 import { atLeast, type Check, near, nearPoint, same, show, yes } from "./score";
 import { centred, type ReadFile, shapeTriangles, type ShapeSpec } from "./shapes";
 
@@ -540,6 +541,41 @@ export const GRADERS: Record<string, Grader> = {
    * rests on the part it's joined to. Shapes are where they're written (not
    * centred); the parent may be several shapes (a tray's floor and walls).
    */
+  /**
+   * Finding a part's pins on its model from its 2D picture: each pin (x, y
+   * fractions of the picture, top view) lands where a person would put the
+   * wire's end, in the model file's own frame, facing the way the wire
+   * leaves. `expect.pins: null`: the model isn't drawn the picture's way
+   * round, so none are guessed.
+   */
+  pins(
+    input: { shape: ShapeSpec; size: [number, number]; pins: { name: string; x: number; y: number }[] },
+    expect: { pins: Record<string, { at: Vec3; normal?: Vec3 }> | null; tol?: number },
+    ctx,
+  ) {
+    const raw = shapeTriangles(input.shape, ctx.read);
+    const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < raw.length; i += 3) for (let k = 0; k < 3; k++) {
+      lo[k] = Math.min(lo[k], raw[i + k]);
+      hi[k] = Math.max(hi[k], raw[i + k]);
+    }
+    const centre = lo.map((v, k) => (v + hi[k]) / 2) as Vec3;
+    const size = lo.map((v, k) => hi[k] - v) as Vec3;
+    const part: WiringPart = { id: "p", name: "Part", size: input.size, ports: [{ id: "header-1", name: "Header", pins: input.pins }] };
+    const got = guessPins(part, centred(raw), centre, size);
+    if (expect.pins === null) return [yes("leaves the pins to be placed by hand", got === null, got ? `guessed ${got.length}` : "none")];
+    if (!got) return [yes("finds the pins", false, "the model wasn't taken as drawn the picture's way round")];
+    const tol = expect.tol ?? 0.3;
+    return Object.entries(expect.pins).flatMap(([name, want]) => {
+      const g = got.find(x => x.pin === name);
+      if (!g) return [yes(`${name} found`, false, "not found")];
+      const at = g.point.map((v, k) => v + centre[k]);
+      const checks = [nearPoint(`${name} where the wire ends (mm)`, at, want.at, tol, 2)];
+      if (want.normal) checks.push(nearPoint(`${name} faces the way the wire leaves`, g.normal, want.normal, 0.1));
+      return checks;
+    });
+  },
+
   sit(input: { parent: ShapeSpec[]; child: ShapeSpec; position: Vec3; rotation?: Vec3; normal: Vec3 }, expect: { move: number | null; tol?: number }, ctx) {
     const pieces = input.parent.map(s => shapeTriangles(s, ctx.read));
     const pp = new Float32Array(pieces.reduce((n, p) => n + p.length, 0));

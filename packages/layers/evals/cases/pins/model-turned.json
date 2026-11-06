@@ -1,0 +1,10 @@
+{
+  "title": "A model drawn the other way round from its picture: no guesses",
+  "why": "The picture is 30 wide by 20 tall but the model's box is 20 by 30 (a file exported on its side or turned): a pin's spot on the picture isn't over the right place on the model, so none are guessed and the person places them on the picture-and-model pin map.",
+  "input": {
+    "shape": { "box": [20, 30, 1.6] },
+    "size": [30, 20],
+    "pins": [{ "name": "D1", "x": 0.25, "y": 0.25 }]
+  },
+  "expect": { "pins": null }
+}

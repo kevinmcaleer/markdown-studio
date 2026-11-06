@@ -1,0 +1,21 @@
+{
+  "title": "A board's header pins: on each pin's tip, and a pad on the board's face",
+  "why": "A 30 x 20 mm board, 1.6 mm thick, with two 0.64 mm square header pins 8 mm tall at (-7.5, 5) and (-5, 5): 25% and 33% across, 25% down the picture. A wire (or a Dupont plug) goes on the tip, z = 9.6, facing up. A pad at 75% across, 75% down has nothing on it: its wire ends on the board's top, z = 1.6, at (7.5, -5).",
+  "input": {
+    "shape": { "parts": [
+      { "box": [30, 20, 1.6] },
+      { "box": [0.64, 0.64, 8], "at": [-7.5, 5, 1.6] },
+      { "box": [0.64, 0.64, 8], "at": [-5, 5, 1.6] }
+    ] },
+    "size": [30, 20],
+    "pins": [{ "name": "D1", "x": 0.25, "y": 0.25 }, { "name": "D2", "x": 0.3333, "y": 0.25 }, { "name": "PAD", "x": 0.75, "y": 0.75 }]
+  },
+  "expect": {
+    "pins": {
+      "D1": { "at": [-7.5, 5, 9.6], "normal": [0, 0, 1] },
+      "D2": { "at": [-5, 5, 9.6], "normal": [0, 0, 1] },
+      "PAD": { "at": [7.5, -5, 1.6], "normal": [0, 0, 1] }
+    },
+    "tol": 0.1
+  }
+}
