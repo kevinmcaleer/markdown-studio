@@ -160,12 +160,15 @@ export function animationCameras(frames: AnimationFrame[], direction: Vec3, poin
 /** Bigger than this, the animation is drawn again smaller (picture uploads stop at 10 MB). */
 export const MAX_GIF_BYTES = 8 * 1024 * 1024;
 
+/** The Assembly step template's page grey, so the animation sits with the step pictures. */
+export const ANIMATION_BACKGROUND = "#ececec";
+
 export interface AnimationOptions {
   /** The picture's size, in pixels. */
   width?: number;
   height?: number;
   fps?: number;
-  /** The background; white by default. */
+  /** The background; the Assembly step template's grey by default. */
   background?: string;
   /** Says how far it has got. */
   progress?(done: number, total: number): void;
@@ -240,7 +243,7 @@ export async function renderAnimation(model: Pick<ProjectModel, "parts">, store:
   const style = animationStyle();
   const frames = animationFrames(options.fps ?? 15);
   const art = new LineArt();
-  const bg = options.background || "#ffffff";
+  const bg = options.background || ANIMATION_BACKGROUND;
   const out = document.createElement("canvas");
   out.width = width;
   out.height = height;
