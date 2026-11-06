@@ -209,6 +209,8 @@ export interface TrackLayout extends ChainLayout {
   /** Each piece's place: from its own frame to the world. */
   pieces: Matrix4[];
   pitch: number;
+  /** The plane the track runs in (the pivots are in its u, v; the loop runs anticlockwise about its normal). */
+  plane?: { origin: Vector3; normal: Vector3; u: Vector3; v: Vector3 };
 }
 
 /** Where every piece of the track goes, round the wheels' circles (in the world). */
@@ -250,7 +252,7 @@ export function layTrack(t: TrackSpec, wheels: WorldCircle[]): TrackLayout {
     const at = P.sub(start.clone().applyMatrix4(R));
     return R.setPosition(at);
   });
-  return { pieces, pivots: chain.pivots, length: chain.length, fits: chain.fits, pitch };
+  return { pieces, pivots: chain.pivots, length: chain.length, fits: chain.fits, pitch, plane: { origin: O.clone().addScaledVector(W, t.side), normal: W, u, v } };
 }
 
 /**

@@ -9,7 +9,8 @@ import { connectorMesh } from "../../src/scene/connectors";
 import { applyJoint } from "../../src/scene/joint";
 import { wireTriangles } from "../../src/scene/wire";
 import { loomsOf } from "../../src/scene/wireSpec";
-import { BufferAttribute, BufferGeometry as Geometry, Matrix4 } from "three";
+import { BufferAttribute, BufferGeometry as Geometry, Matrix4, Vector3 } from "three";
+import { layTrack, trackTriangles, type WorldCircle } from "../../src/scene/track";
 
 interface PictureCase {
   scene: {
@@ -37,7 +38,7 @@ async function render(c: PictureCase): Promise<string> {
   const meshes: { part: ScenePart; geometry: BufferGeometry }[] = [];
   scene.parts = c.scene.parts.map(({ shape, ...rest }) => {
     const part: ScenePart = { name: rest.id, position: [0, 0, 0], rotation: [0, 0, 0], ...rest };
-    if (part.wire) return part;
+    if (part.wire || part.track) return part;
     let tris: Float32Array;
     if (part.plug) {
       const m = connectorMesh(part.plug.connector);
@@ -52,6 +53,20 @@ async function render(c: PictureCase): Promise<string> {
     meshes.push({ part, geometry: model.geometry });
     return part;
   });
+  // A track is laid round its wheels from its piece, as Make track lays it (count 0: as many as fit).
+  for (const part of scene.parts.filter(p => p.track)) {
+    const t = part.track!;
+    const world = worldMatrices(scene.parts, 0, false);
+    const circles: WorldCircle[] = t.wheels.map(w => ({ centre: new Vector3(...w.point).applyMatrix4(world.get(w.id)!), normal: new Vector3(...w.normal).transformDirection(world.get(w.id)!), radius: w.radius }));
+    if (!t.count) t.count = Math.round(layTrack({ ...t, count: 1 }, circles).fits);
+    const lay = layTrack(t, circles);
+    const piece = (await store.get(scene.parts.find(p => p.id === t.link)!)).geometry.attributes.position.array as Float32Array;
+    const toParent = part.parent ? world.get(part.parent)!.clone().invert() : new Matrix4();
+    const model = modelFromPositions(trackTriangles(piece, lay.pieces, toParent));
+    part.position = model.centre;
+    store.put(part, model);
+    meshes.push({ part, geometry: model.geometry });
+  }
   const cam = { direction: c.scene.camera.direction, target: c.scene.camera.target || [0, 0, 0], size: c.scene.camera.size || 60 } as SceneData["camera"];
   if (c.scene.camera.fit) {
     const m = worldMatrices(scene.parts, scene.explode);
