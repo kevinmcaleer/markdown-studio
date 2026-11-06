@@ -22,7 +22,7 @@ import {
 import { connectorFile, connectorMesh, connectorOf, CONNECTOR_FAMILIES, DEFAULT_CONNECTOR, plugLift } from "./connectors";
 import { cableRadius, MIN_BEND, tightestBend, wireLength, wireRoute, wireTriangles } from "./wire";
 import { solidGrid, type Solid, type SolidGrid } from "./wireAvoid";
-import { followRoom, routeOrder, routeWire, wireHitsParts } from "./wireRouting";
+import { followRoom, othersFor, routeOrder, routeWire, wireHitsParts, type LaidWire } from "./wireRouting";
 import { mirrorPartner, mirrorPlane, mirrorPoint } from "./wireMirror";
 import { guessedSockets, guessPins, fitsPicture } from "./pinGuess";
 import { cableBetween, catalogSocketsFor, coloursFromDiagram, connectionsFor, diagramLabels, freePort, linkByName, missingWires, movedConnections, partsNotInScene, portById, portPlacements, routedCount, type DiagramEnd, type PortPlacement, type WiringPart, type WiringHost, type WiringInfo } from "./wiring2d";
@@ -4115,15 +4115,28 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         let moved = 0, stuck = 0, close = 0;
         // Each wire after the ones it runs beside, so it follows their new way; those beside a routed wire come too.
         const movedIds = new Set<string>();
-        for (const w of routeOrder(wires, scene.parts)) {
+        const order = routeOrder(wires, scene.parts);
+        const routing = new Set(order.map(w => w.id));
+        // Wires laid so far: each next one goes beside them, not through them.
+        const laid = new Map<string, LaidWire>();
+        const lay = (q: ScenePart) => {
+          const r = wireRoute(q.wire!, assembled, loomsOf(scene.parts));
+          if (r) laid.set(q.id, { centre: r.centre, r: cableRadius(q.wire!) });
+        };
+        for (const q of scene.parts) if (q.wire && !routing.has(q.id)) lay(q);
+        for (const w of order) {
           if (closed) return;
           const looms = loomsOf(scene.parts);
           const follows = w.wire!.waypoints.some(x => x.along && movedIds.has(x.along.wire));
           // Already clear with no routing of its own: left as it is.
-          if (!follows && !w.wire!.waypoints.some(x => x.auto) && !wireHitsParts(w.wire!, assembled, g, looms)) continue;
-          const got = routeWire(w.wire!, assembled, g, looms, followRoom(w.id, looms));
+          if (!follows && !w.wire!.waypoints.some(x => x.auto) && !wireHitsParts(w.wire!, assembled, g, looms)) {
+            lay(w);
+            continue;
+          }
+          const got = routeWire(w.wire!, assembled, g, looms, followRoom(w.id, looms), othersFor(w.id, w.wire!, laid, looms));
           if (!got) continue;
           w.wire = { ...w.wire!, waypoints: got.waypoints };
+          lay(w);
           relay(w);
           movedIds.add(w.id);
           moved++;
