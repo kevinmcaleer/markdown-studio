@@ -33,6 +33,7 @@ import { coresOf, loomsOf, type Looms } from "./wireSpec";
 import { readStep, isStepFile, mergeBodies, type StepBody } from "./step";
 import { bounds, fromBase64, parseStl, stlFaces } from "./stl";
 import { isPacked, unpackMesh } from "./mesh";
+import { roundEdges } from "./rounds";
 
 const DEG = Math.PI / 180;
 
@@ -74,15 +75,29 @@ export function modelFromPositions(pos: Float32Array, faces?: Uint16Array | null
   return model;
 }
 
-/** The fold lines at a crease angle, worked out once per angle. */
-function edgesOf(model: Model, crease: number): LineSegmentsGeometry | null {
+/**
+ * The fold lines at a crease angle, worked out once per angle; with `rounds`,
+ * the tangent lines of rounded edges too (see rounds.ts).
+ */
+function edgesOf(model: Model, crease: number, rounds = false): LineSegmentsGeometry | null {
   if (crease >= 180) return null;
-  const key = Math.round(crease);
+  const angle = Math.round(crease);
+  const key = rounds ? -angle : angle;
   let g = model.edges.get(key);
   if (!g) {
-    const e = new EdgesGeometry(model.geometry, key);
-    g = new LineSegmentsGeometry().setPositions(e.attributes.position.array as Float32Array);
+    const e = new EdgesGeometry(model.geometry, angle);
+    let lines = e.attributes.position.array as Float32Array;
     e.dispose();
+    if (rounds) {
+      const r = roundEdges(model.geometry.attributes.position.array as Float32Array, angle);
+      if (r.length) {
+        const both = new Float32Array(lines.length + r.length);
+        both.set(lines);
+        both.set(r, lines.length);
+        lines = both;
+      }
+    }
+    g = new LineSegmentsGeometry().setPositions(lines);
     model.edges.set(key, g);
   }
   return g;
@@ -395,7 +410,7 @@ export class LineArt {
       const group = new Group();
       group.add(fill);
       // A wire is round: its outline only, no fold lines.
-      const edges = own.wire ? null : edgesOf(model, style.crease);
+      const edges = own.wire ? null : edgesOf(model, style.crease, style.rounds !== false);
       let lines: LineSegments2 | null = null;
       if (edges && style.lineWidth > 0) {
         lines = new LineSegments2(edges, this.lineMaterial(part.ghost ? style.ghost : style.line));
