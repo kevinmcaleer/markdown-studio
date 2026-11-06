@@ -3,12 +3,13 @@
 // (each part the way its joint's "Comes off" sends it, tracks opening into
 // chains), turning once round while apart, then going back together, on a
 // loop. Drawn in the line-art style, a frame at a time, kept fitted to the
-// picture as it comes apart, and saved as an animated GIF, which plays
-// wherever a picture shows (the published page, a phone, a feed) with no
-// 3D viewer to load.
+// picture as it comes apart, and saved as an MP4 video (H.264, encoded by
+// the browser) or, where the browser can't, an animated GIF: either plays
+// on the published page with no 3D viewer to load.
 
 import { Matrix4, OrthographicCamera, Vector3 } from "three";
 import { GifWriter, indexFrame, paletteFor } from "../gif";
+import { mp4Config, Mp4Writer } from "../mp4";
 import { blankScene, type ProjectModel, type SceneCamera, type SceneStyle, type Vec3 } from "./model";
 import { cameraFor, LineArt, type ModelStore } from "./render";
 import { trackPieces } from "./trackSpec";
@@ -157,8 +158,8 @@ export function animationCameras(frames: AnimationFrame[], direction: Vec3, poin
   });
 }
 
-/** Bigger than this, the animation is drawn again smaller (picture uploads stop at 10 MB). */
-export const MAX_GIF_BYTES = 8 * 1024 * 1024;
+/** Bigger than this, the animation is drawn again smaller (uploads stop at 10 MB). */
+export const MAX_ANIMATION_BYTES = 8 * 1024 * 1024;
 
 /** The Assembly step template's page grey, so the animation sits with the step pictures. */
 export const ANIMATION_BACKGROUND = "#ececec";
@@ -170,6 +171,8 @@ export interface AnimationOptions {
   fps?: number;
   /** The background; the Assembly step template's grey by default. */
   background?: string;
+  /** "auto" (the default): an MP4 where the browser can encode one, else a GIF. */
+  format?: "auto" | "mp4" | "gif";
   /** Says how far it has got. */
   progress?(done: number, total: number): void;
   /** True once the caller has gone (the editor closed): it stops. */
@@ -177,7 +180,9 @@ export interface AnimationOptions {
 }
 
 export interface Animation {
-  gif: Blob;
+  /** The animation: an MP4 video, or a GIF where the browser can't make one. */
+  blob: Blob;
+  type: "video/mp4" | "image/gif";
   width: number;
   height: number;
   frames: number;
@@ -229,8 +234,9 @@ function samplePoints(art: LineArt, max = 40000): Float32Array {
 }
 
 /**
- * Draws the project's model as the looping animation and encodes it as a
- * GIF. `direction` is the view it starts (and ends) from.
+ * Draws the project's model as the looping animation and encodes it: an
+ * MP4 (H.264) where the browser can encode one, else a GIF. `direction` is
+ * the view it starts (and ends) from.
  */
 export async function renderAnimation(model: Pick<ProjectModel, "parts">, store: ModelStore, direction: Vec3, options: AnimationOptions = {}): Promise<Animation> {
   const width = Math.round(options.width ?? 800);
@@ -265,7 +271,8 @@ export async function renderAnimation(model: Pick<ProjectModel, "parts">, store:
     // Drawn twice the size and shrunk, so its lines are smooth.
     const ss = Math.max(1, Math.min(2, max / Math.max(width, height)));
     const radius = (cam: SceneCamera) => cam.size * 4 + Math.hypot(...cam.target);
-    const draw = (i: number): Uint8ClampedArray => {
+    /** Frame `i`, drawn on the `out` canvas. */
+    const draw = (i: number): void => {
       const f = frames[i];
       art.move(shown, f.explode);
       const camera: OrthographicCamera = cameraFor(cameras[i], width / height, radius(cameras[i]));
@@ -273,22 +280,47 @@ export async function renderAnimation(model: Pick<ProjectModel, "parts">, store:
       ctx.fillStyle = bg;
       ctx.fillRect(0, 0, width, height);
       ctx.drawImage(art.renderer.domElement, 0, 0, width, height);
+    };
+    const pixels = (i: number) => {
+      draw(i);
       return ctx.getImageData(0, 0, width, height).data;
     };
-    const rgb = hexRgb(bg);
-    // One palette from a few telling frames: assembled, apart, part way round.
-    const samples = [0, frames.findIndex(f => f.phase === "pause"), ...[0.25, 0.5, 0.75].map(t => frames.findIndex(f => f.phase === "turn" && f.turn >= t))].filter(i => i >= 0);
-    const palette = paletteFor(samples.map(i => draw(i).slice()), rgb);
-    const gif = new GifWriter(width, height, palette);
-    for (let i = 0; i < frames.length; i++) {
-      if (options.cancelled?.()) throw new Error("Stopped.");
-      gif.add({ indices: indexFrame(draw(i), palette, rgb), delay: frames[i].delay });
+    const step = async (i: number) => {
       options.progress?.(i + 1, frames.length);
       // Let the page breathe between frames.
       if (i % 4 === 3) await new Promise(r => setTimeout(r, 0));
+    };
+    const format = options.format ?? "auto";
+    const config = format === "gif" ? null : await mp4Config(width, height, options.fps ?? 15);
+    if (format === "mp4" && !config) throw new Error("This browser can't make an MP4 video.");
+    if (config) {
+      const mp4 = new Mp4Writer(config);
+      try {
+        for (let i = 0; i < frames.length; i++) {
+          if (options.cancelled?.()) throw new Error("Stopped.");
+          draw(i);
+          await mp4.add(out, frames[i].delay);
+          await step(i);
+        }
+        return { blob: await mp4.finish(), type: "video/mp4", width, height, frames: frames.length };
+      } catch (e) {
+        mp4.close();
+        // The encoder gave up part way (a GPU hiccup, say): a GIF still works, unless an MP4 was asked for.
+        if (format === "mp4" || options.cancelled?.()) throw e;
+      }
+    }
+    const rgb = hexRgb(bg);
+    // One palette from a few telling frames: assembled, apart, part way round.
+    const samples = [0, frames.findIndex(f => f.phase === "pause"), ...[0.25, 0.5, 0.75].map(t => frames.findIndex(f => f.phase === "turn" && f.turn >= t))].filter(i => i >= 0);
+    const palette = paletteFor(samples.map(i => pixels(i).slice()), rgb);
+    const gif = new GifWriter(width, height, palette);
+    for (let i = 0; i < frames.length; i++) {
+      if (options.cancelled?.()) throw new Error("Stopped.");
+      gif.add({ indices: indexFrame(pixels(i), palette, rgb), delay: frames[i].delay });
+      await step(i);
     }
     const bytes = gif.finish();
-    return { gif: new Blob([bytes as BlobPart], { type: "image/gif" }), width, height, frames: frames.length };
+    return { blob: new Blob([bytes as BlobPart], { type: "image/gif" }), type: "image/gif", width, height, frames: frames.length };
   } finally {
     art.dispose();
   }
