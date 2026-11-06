@@ -141,6 +141,8 @@ export interface SceneStyle {
   draft?: boolean;
   /** Draft lines drawn solid and thin, as on printed flat-pack sheets, instead of dashed. */
   draftSolid?: boolean;
+  /** Tangent lines where a flat face turns into a rounded edge, so fillets aren't blank. On unless false. */
+  rounds?: boolean;
 }
 
 export interface SceneData {
@@ -388,6 +390,7 @@ export function normalizeScene(value: unknown): SceneData {
   };
   if (s.draft === false) style.draft = false;
   if (s.draftSolid === true) style.draftSolid = true;
+  if (s.rounds === false) style.rounds = false;
   const out: SceneData = { version: 1, parts, camera, style, explode: num(v.explode, 0, 0, 1) };
   if (v.model && typeof v.model === "object") out.model = { stamp: num((v.model as { stamp?: unknown }).stamp, 0, 0) };
   const views = normalizeViews(v.views);
@@ -554,7 +557,7 @@ export function highlightedParts(parts: ScenePart[]): Set<string> {
 /** The style a preset gives, keeping the highlight colour already chosen. */
 export function applyPreset(style: SceneStyle, id: string): SceneStyle {
   const p = STYLE_PRESETS.find(x => x.id === id);
-  return p ? { ...p.style, highlight: style.highlight, ghost: style.ghost, ...(style.draft === false ? { draft: false } : {}), ...(style.draftSolid ? { draftSolid: true } : {}), preset: p.id } : style;
+  return p ? { ...p.style, highlight: style.highlight, ghost: style.ghost, ...(style.draft === false ? { draft: false } : {}), ...(style.draftSolid ? { draftSolid: true } : {}), ...(style.rounds === false ? { rounds: false } : {}), preset: p.id } : style;
 }
 
 /** Whether a part is wiring: a wire, or a plug on the end of one. */

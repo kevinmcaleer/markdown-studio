@@ -1,0 +1,10 @@
+{
+  "title": "Rounded edges: tangent lines on the SMARS range finder cover",
+  "why": "The cover's ends are half circles and its rim is filleted: every facet turns only a few degrees, so no fold reaches the 30° crease. An illustrator shows each round with its tangent lines, a thin line where a flat face turns into the curve, so there are vertical lines where the front meets each rounded end and a double line round the filleted rim, and nothing on the plain curved surfaces between them.",
+  "scene": {
+    "parts": [{ "id": "cover", "shape": { "stl": "meshes/smars-range-finder-cover.stl" } }],
+    "camera": { "direction": [-1, -1.3, 0.8], "fit": true },
+    "style": "line-art"
+  },
+  "size": [800, 600]
+}
