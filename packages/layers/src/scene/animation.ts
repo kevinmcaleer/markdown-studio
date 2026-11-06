@@ -11,6 +11,7 @@ import { Matrix4, OrthographicCamera, Vector3 } from "three";
 import { GifWriter, indexFrame, paletteFor } from "../gif";
 import { blankScene, type ProjectModel, type SceneCamera, type SceneStyle, type Vec3 } from "./model";
 import { cameraFor, LineArt, type ModelStore } from "./render";
+import { trackPieces } from "./trackSpec";
 
 /** How long each part of the loop lasts, in seconds. */
 export interface AnimationTiming {
@@ -179,10 +180,15 @@ export interface Animation {
   frames: number;
 }
 
-/** The parts as the animation shows them: every part the model shows, none ghosted or picked out, all coming apart together. */
+/**
+ * The parts as the animation shows them: every part the model shows, none
+ * ghosted or picked out, all coming apart together. A track's piece (the
+ * one Make track repeated) is left out: the track stands for it.
+ */
 export function animationParts(model: Pick<ProjectModel, "parts">) {
+  const pieces = trackPieces(model.parts);
   return model.parts
-    .filter(p => !p.hidden)
+    .filter(p => !p.hidden && !pieces.has(p.id))
     .map(p => {
       const out = structuredClone(p);
       delete out.hidden;

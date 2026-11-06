@@ -107,6 +107,17 @@ describe("animationParts", () => {
     expect(out[1].joint?.explodeDir).toBe("+x");
   });
 
+  it("leaves out the pieces tracks are made from, but keeps the tracks", () => {
+    const parts: ScenePart[] = [
+      { id: "chassis", name: "Chassis", position: [0, 0, 0], rotation: [0, 0, 0] },
+      { id: "piece", name: "Track link", position: [0, -60, 0], rotation: [0, 0, 0] },
+      { id: "piece2", name: "Track link", position: [0, 60, 0], rotation: [0, 0, 0] },
+      { id: "left", name: "Track", position: [0, 0, 0], rotation: [0, 0, 0], parent: "chassis", track: { link: "piece" } as ScenePart["track"] },
+      { id: "right", name: "Track", position: [0, 0, 0], rotation: [0, 0, 0], parent: "chassis", track: { link: "piece2" } as ScenePart["track"] },
+    ];
+    expect(animationParts({ parts }).map(p => p.id)).toEqual(["chassis", "left", "right"]);
+  });
+
   it("draws without draft lines", () => {
     expect(animationStyle().draft).toBe(false);
   });
