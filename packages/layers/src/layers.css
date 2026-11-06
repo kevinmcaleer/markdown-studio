@@ -869,6 +869,11 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 }
 .lyr-wire-point:hover { background: #1f6fe0; box-shadow: 0 0 0 3px rgb(31 111 224 / 0.25); }
 .lyr-wire-handles.lyr-dragging .lyr-wire-point { cursor: grabbing; }
+/* A wire's ends: pick one up and put it on another socket or pin. */
+.lyr-wire-point.lyr-wire-end { width: 15px; height: 15px; margin: -7.5px 0 0 -7.5px; border-color: #2e9e4f; border-radius: 3px; }
+.lyr-wire-point.lyr-wire-end:hover { background: #2e9e4f; box-shadow: 0 0 0 3px rgb(46 158 79 / 0.25); }
+.lyr-snap-wire-end { width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border-color: #1f6fe0; border-radius: 50%; background: #fff; }
+.lyr-snap-wire-end.lyr-on { width: 15px; height: 15px; margin: -7.5px 0 0 -7.5px; background: #1f6fe0; box-shadow: 0 0 0 3px rgb(31 111 224 / 0.25); }
 .lyr-wire-swatches { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 8px; }
 .lyr-wire-swatch {
   position: relative;

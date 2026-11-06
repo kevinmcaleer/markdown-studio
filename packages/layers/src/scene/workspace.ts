@@ -23,8 +23,8 @@ import { connectorFile, connectorMesh, connectorOf, CONNECTOR_FAMILIES, DEFAULT_
 import { cableRadius, MIN_BEND, tightestBend, wireLength, wireRoute, wireTriangles } from "./wire";
 import { mirrorPartner, mirrorPlane, mirrorPoint } from "./wireMirror";
 import { guessedSockets, guessPins, fitsPicture } from "./pinGuess";
-import { cableBetween, catalogSocketsFor, coloursFromDiagram, connectionsFor, diagramLabels, freePort, linkByName, missingWires, partsNotInScene, portById, portPlacements, routedCount, type DiagramEnd, type PortPlacement, type WiringPart, type WiringHost, type WiringInfo } from "./wiring2d";
-import { BARE_PIN, BUNDLE_TWIST, cableColours, coresOf, isBarePin, loomsOf, newSocketId, nextWireColour, WIRE_COLOURS, WIRE_DEFAULTS, WIRE_LIMITS, wireColourName, type PartSocket, type WireCore, type WireEnd, type WireSpec, type WireWaypoint } from "./wireSpec";
+import { cableBetween, catalogSocketsFor, coloursFromDiagram, connectionsFor, diagramLabels, freePort, linkByName, missingWires, movedConnections, partsNotInScene, portById, portPlacements, routedCount, type DiagramEnd, type PortPlacement, type WiringPart, type WiringHost, type WiringInfo } from "./wiring2d";
+import { BARE_PIN, BUNDLE_TWIST, cableColours, connectionsOf, coresOf, isBarePin, loomsOf, newSocketId, nextWireColour, WIRE_COLOURS, WIRE_DEFAULTS, WIRE_LIMITS, wireColourName, type PartSocket, type WireCore, type WireEnd, type WireSpec, type WireWaypoint } from "./wireSpec";
 import { applyJoint } from "./joint";
 import { EXPLODE_DIRS, explodeChooser, explodeDirLabel, explodeVector, type ExplodeChoice, type ExplodeShape } from "./explode";
 import { partJoints } from "./jointList";
@@ -2305,13 +2305,32 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
             socketHover = { part: so.part, socket: so.socket };
           }
         }
+        // A placed wire's end nearer than any socket is picked up by a click.
+        endHover = null;
+        if (!wireDraft && !endCarry && !pinPick) {
+          let bestEnd = Math.min(best, 16);
+          const ends = wireEndsOnView();
+          for (const en of ends) {
+            const d = Math.hypot(en.x - pointer.x, en.y - pointer.y);
+            if (d < bestEnd) {
+              bestEnd = d;
+              endHover = { wire: en.wire, end: en.end };
+            }
+          }
+          if (endHover) socketHover = null;
+          for (const en of ends) {
+            const on = endHover?.wire === en.wire && endHover.end === en.end;
+            marks.push(`<span class="lyr-snap lyr-snap-wire-end${on ? " lyr-on" : ""}" style="left:${en.x}px;top:${en.y}px"></span>`);
+            if (on) marks.push(`<span class="lyr-snap-label" style="left:${en.x}px;top:${en.y}px">${esc(`Pick up this end · ${partById(en.wire)?.name || "wire"}`)}</span>`);
+          }
+        }
         for (const so of socketsOnView()) {
           const on = socketHover?.socket === so.socket && socketHover.part === so.part;
           marks.push(`<span class="lyr-snap lyr-snap-socket${on ? " lyr-on" : ""}" style="left:${so.x}px;top:${so.y}px"></span>`);
           if (on) {
             const c = connectorOf(so.socket.connector);
             const busy = plugIn(so.part, so.socket.id);
-            marks.push(`<span class="lyr-snap-label" style="left:${so.x}px;top:${so.y}px">${esc(isBarePin(so.socket) ? `Pin ${so.socket.name || so.socket.pin || ""} · bare, no plug` : `${so.socket.name || "Socket"}${c ? ` · ${c.family.label} ${c.ways}-way` : ""}${busy ? " · has a plug" : ""}`)}</span>`);
+            marks.push(`<span class="lyr-snap-label" style="left:${so.x}px;top:${so.y}px">${endCarry ? "Drop the end here · " : ""}${esc(isBarePin(so.socket) ? `Pin ${so.socket.name || so.socket.pin || ""} · bare, no plug` : `${so.socket.name || "Socket"}${c ? ` · ${c.family.label} ${c.ways}-way` : ""}${busy ? " · has a plug" : ""}`)}</span>`);
           }
         }
         if (wireDraft) {
@@ -2329,7 +2348,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           }
         }
       }
-      if (hover && !socketHover) {
+      if (hover && !socketHover && !endHover) {
         const snaps = hoverSnaps();
         const m = hover.mesh.matrixWorld;
         const screen = snaps.map(s => project(s.p, m));
@@ -2348,7 +2367,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         }
         if (on) {
           const p = screen[hover.snap];
-          const text = pinPick ? `${pinPickLabel(pinPick)} · ${ROLE_LABEL[on.role]}` : wiringOn ? `${wireDraft ? (shiftDown ? "End the wire here" : "Waypoint") : "First plug"} · ${ROLE_LABEL[on.role]}` : screwing ? screwHint(hover.id, on) : trackPick === "wheel" && on.radius ? `Ø${round(on.radius * 2, 1)} mm circle` : `${ROLE_LABEL[on.role]}${faceHeld ? " · face held" : ""}`;
+          const text = pinPick ? `${pinPickLabel(pinPick)} · ${ROLE_LABEL[on.role]}` : endCarry ? `Drop the end here · ${ROLE_LABEL[on.role]}` : wiringOn ? `${wireDraft ? (shiftDown ? "End the wire here" : "Waypoint") : "First plug"} · ${ROLE_LABEL[on.role]}` : screwing ? screwHint(hover.id, on) : trackPick === "wheel" && on.radius ? `Ø${round(on.radius * 2, 1)} mm circle` : `${ROLE_LABEL[on.role]}${faceHeld ? " · face held" : ""}`;
           marks.push(`<span class="lyr-snap-label" style="left:${p.x}px;top:${p.y}px">${esc(text)}</span>`);
         }
         if (on?.radius && (on.role === "hole" || on.role === "rim" || on.role === "centre")) {
@@ -2685,6 +2704,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     let wireDraft: { from: DraftEnd; waypoints: WireWaypoint[] } | null = null;
     /** The socket under the pointer while wiring, if any. */
     let socketHover: { part: string; socket: PartSocket } | null = null;
+    /** A wire end being moved: picked up off its plug or pin, dropped on another socket or face. */
+    interface EndCarry { wire: string; end: "from" | "to"; armed: boolean; justPicked: boolean }
+    let endCarry: EndCarry | null = null;
+    /** A placed wire's end under the pointer (wire tool, nothing being made): a click picks it up. */
+    let endHover: { wire: string; end: "from" | "to" } | null = null;
     const wireBar = $(".lyr-wire-bar");
     const connectorOptions = (on: string) => CONNECTOR_FAMILIES.map(f => `<optgroup label="${esc(f.label)}">${f.ways.map(n => {
       const id = `${f.id}-${n}`;
@@ -2743,14 +2767,16 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       canvasEl.classList.add("lyr-scene-picking");
       attachGizmo();
       layout();
-      status("Click a part where the first plug goes: a socket's face, or a dot for a socket already there.", false, true);
+      status("Click a part where the first plug goes: a socket's face, or a dot for a socket already there. To move a wire's end, drag it (or click it, then click where it goes).", false, true);
     }
 
     function stopWires(message = ""): void {
       if (!wiringOn) return;
+      if (endCarry) putEndBack();
       wiringOn = false;
       wireDraft = null;
       socketHover = null;
+      endHover = null;
       if (pinPick) {
         pinPick = null;
         renderProps();
@@ -2790,7 +2816,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const pick = hoverPick();
       const p = pick ? partById(pick.id) : undefined;
       if (!pick || !p || isWiring(p)) return null;
-      const socket: PartSocket = { id: newSocketId(p.sockets), point: pick.point, normal: pick.normal, connector: wireChoice.connector };
+      const socket: PartSocket = { id: newSocketId(p.sockets), point: pick.point, normal: pick.normal, connector: endCarry ? carriedConnector(endCarry) : wireChoice.connector };
       return { part: p.id, socket, fresh: true };
     }
 
@@ -2806,6 +2832,17 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     function wireClick(shift: boolean): void {
       if (wireBusy) return;
       if (pinPick) return pinClick();
+      if (endCarry) {
+        // The click that picked it up isn't the drop.
+        if (endCarry.justPicked) return;
+        const t = wireTarget();
+        if (!t) {
+          status("Click a socket, a pin or a face to drop the end there, or Esc to put it back.", true, true);
+          return;
+        }
+        void dropEnd(t);
+        return;
+      }
       if (!wireDraft) {
         const t = wireTarget();
         if (!t) {
@@ -2844,6 +2881,251 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       }
       const p = partById(last.part)!;
       void finishWire({ part: p.id, socket: { id: newSocketId(p.sockets), point: last.point, normal: last.normal, connector: wireChoice.connector }, fresh: true });
+    }
+
+    // ------------------------------------------------------------ moving a wire's end
+
+    // As in the 2D wiring editor, a placed wire's end can be picked up and
+    // put somewhere else: with the wire tool, click (or drag) an end; with a
+    // wire picked, its end handles do the same. The end then follows the
+    // pointer, snapping to sockets and pins as a new wire's does, and a click
+    // drops it there (a new socket on a face, Shift not needed). Its
+    // waypoints stay; a plug no wire is in any more goes. Esc puts it back.
+
+    /** Where a wire end is on the view. */
+    function wireEndsOnView(): { wire: string; end: "from" | "to"; x: number; y: number }[] {
+      const out: { wire: string; end: "from" | "to"; x: number; y: number }[] = [];
+      const world = worldMatrices(scene.parts, scene.explode);
+      for (const p of scene.parts) {
+        if (!p.wire || p.hidden) continue;
+        for (const end of ["from", "to"] as const) {
+          const e = p.wire[end];
+          const m = world.get(e.part);
+          if (!m) continue;
+          const v = new Vector3(...e.point).applyMatrix4(m).project(camera);
+          if (v.z > 1) continue;
+          out.push({ wire: p.id, end, x: ((v.x + 1) / 2) * viewW, y: ((1 - v.y) / 2) * viewH });
+        }
+      }
+      return out;
+    }
+
+    /** The part a wire end is on: its plug's part, or the part with the bare pin. */
+    function endHost(e: WireEnd): ScenePart | undefined {
+      const on = partById(e.part);
+      return on?.plug && on.parent ? partById(on.parent) : on;
+    }
+
+    /** The connector the carried end has (its plug's), so a new socket takes the same. */
+    function carriedConnector(c: EndCarry): string {
+      const e = wireById(c.wire)?.wire?.[c.end];
+      const on = e ? partById(e.part) : undefined;
+      return on?.plug?.connector || BARE_PIN;
+    }
+
+    /** Which of its plug's pins a wire of its own leaves from (pin 1 is 0); none for a whole cable or a bare pin. */
+    function endPinIndex(e: WireEnd): number | undefined {
+      const plug = partById(e.part);
+      if (!plug?.plug) return undefined;
+      const exit = plugExit(plug);
+      const row = exit.row || [1, 0, 0];
+      // Out of the plug's back as a whole (a cable, or a lone wire): no one pin.
+      if (e.row) return undefined;
+      const k = e.point.reduce((sum, v, i) => sum + (v - exit.point[i]) * row[i], 0);
+      const n = connectorOf(plug.plug.connector)?.ways || 1;
+      return Math.round(k / (exit.pitch || 2.54) + (n - 1) / 2);
+    }
+
+    /** Picks up a wire's end: it follows the pointer until dropped. `armed`: the wire tool was armed for this. */
+    function pickUpEnd(wireId: string, end: "from" | "to", armed: boolean): void {
+      const p = wireById(wireId);
+      if (!p?.wire) return;
+      if (selectedId !== wireId) select(wireId);
+      endCarry = { wire: wireId, end, armed, justPicked: true };
+      endHover = null;
+      showCarried(false);
+      renderWireBar();
+      status(`Moving the ${end === "from" ? "first" : "far"} end of ${p.name}: click a socket, a pin or a face to drop it there. Esc puts it back.`, false, true);
+      drawWirePreview();
+    }
+
+    /**
+     * The press that picked an end up: dragged, the end drops where it's
+     * let go; a click leaves it on the pointer for the next click to drop.
+     */
+    function carryPress(e: PointerEvent): void {
+      const x0 = e.clientX, y0 = e.clientY;
+      let dragged = false;
+      orbit.enabled = false;
+      const onMove = (m: PointerEvent) => {
+        if (!endCarry) return;
+        if (!dragged && Math.hypot(m.clientX - x0, m.clientY - y0) <= 4) return;
+        dragged = true;
+        hoverAt(m);
+        drawWirePreview();
+      };
+      const onUp = (u: PointerEvent) => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onUp);
+        orbit.enabled = true;
+        if (!endCarry) return;
+        endCarry.justPicked = false;
+        if (!dragged || u.type === "pointercancel") return;
+        hoverAt(u);
+        const t = wireTarget();
+        if (t) void dropEnd(t);
+        else status("Not on a part: click a socket, a pin or a face to drop the end, or Esc to put it back.", true, true);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onUp);
+    }
+
+    // With the wire tool, pressing on a placed wire's end picks it up.
+    canvasEl.addEventListener("pointerdown", e => {
+      if (!wiringOn || e.button !== 0 || wireDraft || endCarry || pinPick || wireBusy) return;
+      hoverAt(e);
+      if (!endHover) return;
+      pickUpEnd(endHover.wire, endHover.end, false);
+      carryPress(e);
+    });
+
+    /** Puts the carried end back as it was. */
+    /** The carried wire, and the plug it's leaving when no other wire is in it, shown or left out as it moves. */
+    function showCarried(shown: boolean): void {
+      if (!endCarry) return;
+      art.setShown(endCarry.wire, shown);
+      const e = wireById(endCarry.wire)?.wire?.[endCarry.end];
+      const plug = e && partById(e.part)?.plug ? partById(e.part) : undefined;
+      if (plug && !scene.parts.some(w => w.wire && w.id !== endCarry!.wire && (w.wire.from.part === plug.id || w.wire.to.part === plug.id))) art.setShown(plug.id, shown);
+    }
+
+    function putEndBack(): void {
+      if (!endCarry) return;
+      showCarried(true);
+      endCarry = null;
+      preview.visible = false;
+      renderWireBar();
+      draw();
+    }
+
+    /** Whether a draft end is where a wire end is now (the same socket, or the same bare pin). */
+    function endIsAt(e: WireEnd, t: DraftEnd): boolean {
+      if (t.fresh) return false;
+      const on = partById(e.part);
+      if (on?.plug) return on.parent === t.part && on.plug.socket === t.socket.id;
+      return e.part === t.part && e.point.every((v, i) => Math.abs(v - t.socket.point[i]) < 0.01);
+    }
+
+    /** Drops the carried end on this socket (or a new one), and lays the wire again. */
+    async function dropEnd(t: DraftEnd): Promise<void> {
+      const c = endCarry;
+      const p = c ? wireById(c.wire) : undefined;
+      if (!c || !p?.wire || wireBusy) return;
+      const other = p.wire[c.end === "from" ? "to" : "from"];
+      if (endIsAt(other, t)) {
+        status("The wire's other end is there: drop this one somewhere else.", true);
+        return;
+      }
+      const old = p.wire[c.end];
+      if (endIsAt(old, t)) {
+        putEndBack();
+        if (c.armed) stopWires("The end is where it was.");
+        else status("The end is where it was.", false, true);
+        return;
+      }
+      wireBusy = true;
+      try {
+        const oldName = wireName(p.wire, endHost(p.wire.from)?.name || "", endHost(p.wire.to)?.name || "");
+        const oldPlug = partById(old.part)?.plug ? partById(old.part) : undefined;
+        // Where it was in the 2D wiring diagram (before its plug goes).
+        const wasOn = diagramEnd(old);
+        let index = endPinIndex(old);
+        const ways = isBarePin(t.socket) ? 1 : connectorOf(t.socket.connector)?.ways || 1;
+        if (index !== undefined) index = Math.max(0, Math.min(ways - 1, index));
+        const moved = await wireEndAt(t, index);
+        if (closed) return;
+        p.wire = { ...p.wire, [c.end]: moved };
+        const unlinked = await afterEndMoved(p, wasOn, moved);
+        if (closed) return;
+        if (p.name === oldName) p.name = wireName(p.wire, endHost(p.wire.from)?.name || "", endHost(p.wire.to)?.name || "");
+        // The plug it left goes, when no other wire is in it.
+        if (oldPlug && oldPlug.id !== moved.part && !scene.parts.some(w => w.wire && (w.wire.from.part === oldPlug.id || w.wire.to.part === oldPlug.id))) {
+          scene.parts = scene.parts.filter(x => x.id !== oldPlug.id);
+          models.delete(oldPlug.id);
+        }
+        endCarry = null;
+        preview.visible = false;
+        renderWireBar();
+        clearHover();
+        rebuild();
+        commit();
+        renderProps();
+        const msg = `Moved the end of ${p.name} to ${endHost(moved)?.name || "the part"}.${unlinked}`;
+        if (c.armed) stopWires(msg);
+        else status(`${msg} Click a part to start a wire, or a wire's end to move it.`, false, true);
+      } finally {
+        wireBusy = false;
+      }
+    }
+
+    /**
+     * After an end has moved: the wire's 2D wiring links, as its new ends
+     * have them (the diagram's cable between its ports, if there is one).
+     * Says what changed, or "".
+     */
+    async function afterEndMoved(p: ScenePart, wasOn: DiagramEnd | null, moved: WireEnd): Promise<string> {
+      if (!p.wire) return "";
+      const had = connectionsOf(p.wire);
+      // Linked to the diagram: its connections move to the new pins there too.
+      const nowOn = diagramEnd(moved);
+      let failed = "";
+      if (had.length && diagram && wasOn && nowOn) {
+        if (wasOn.part === nowOn.part && wasOn.port === nowOn.port) return "";
+        const changes = movedConnections(diagram, had, wasOn, nowOn, endPinIndex(moved));
+        if (changes && wiringHost?.updateConnections) {
+          if (!changes.length) return "";
+          try {
+            const saved = await wiringHost.updateConnections(changes);
+            const byId = new Map(saved.map(x => [x.id, x]));
+            diagram = { ...diagram, connections: diagram.connections.map(x => byId.get(x.id) || x) };
+            return ` The wiring diagram has it on ${portName(nowOn)} now too.`;
+          } catch (err) {
+            failed = ` Couldn't change the wiring diagram (${(err as Error).message || err}).`;
+          }
+        }
+      }
+      const plain = withCoreList(p.wire, coresOf(p.wire).map(k => ({ color: k.color })));
+      p.wire = plain;
+      const linked = linkToDiagram(p);
+      if (linked) return `${failed} It's the wiring diagram's ${linked} now.`;
+      if (!had.length) return failed;
+      return `${failed} It's no longer linked to the wiring diagram, which is unchanged: ${nowOn ? "its pins there don't fit" : "it isn't on one of the diagram's pins now"}.`;
+    }
+
+    /** The carried end's wire drawn to the pointer (or as it was, off the parts). */
+    function drawCarryPreview(): void {
+      const c = endCarry!;
+      const p = wireById(c.wire);
+      if (!p?.wire) return draw();
+      const t = wireTarget();
+      if (!t) {
+        showCarried(true);
+        return draw();
+      }
+      showCarried(false);
+      const lead = (s: PartSocket) => (isBarePin(s) ? 0 : connectorMesh(s.connector).size[2]);
+      const to: WireEnd = { part: t.part, point: t.socket.point.map((v, i) => v + t.socket.normal[i] * lead(t.socket)) as Vec3, normal: t.socket.normal };
+      const spec: WireSpec = { ...p.wire, [c.end]: to };
+      const world = worldMatrices(scene.parts, scene.explode);
+      const tris = wireTriangles({ id: "", name: "", position: [0, 0, 0], rotation: [0, 0, 0], wire: spec }, world, loomsOf(scene.parts.filter(x => x.id !== p.id)));
+      preview.geometry.dispose();
+      preview.geometry = new BufferGeometry();
+      preview.geometry.setAttribute("position", new BufferAttribute(tris, 3));
+      previewMaterial.color.set(spec.color);
+      preview.visible = tris.length > 0;
+      draw();
     }
 
     // ------------------------------------------------------------ the pins on a part's model
@@ -3219,6 +3501,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     art.overlay.add(preview);
     function drawWirePreview(): void {
       preview.visible = false;
+      if (wiringOn && endCarry) return drawCarryPreview();
       if (!wiringOn || !wireDraft) return draw();
       const world = worldMatrices(scene.parts, scene.explode);
       const d = wireDraft;
@@ -3282,16 +3565,26 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         const v = at.project(camera);
         return { x: ((v.x + 1) / 2) * viewW, y: ((1 - v.y) / 2) * viewH };
       });
+      // Its two ends, to pick up and put somewhere else.
+      const ends = (["from", "to"] as const).map(end => {
+        const e = p.wire![end];
+        const m = world.get(e.part);
+        if (!m) return null;
+        const v = new Vector3(...e.point).applyMatrix4(m).project(camera);
+        return { x: ((v.x + 1) / 2) * viewW, y: ((1 - v.y) / 2) * viewH };
+      });
+      const all = [...spots, ...ends];
       // The same handles moved, not made again (one may be held by a drag).
-      const have = [...wireLayer.querySelectorAll<HTMLElement>("[data-wp]")];
-      if (have.length === spots.length) {
-        spots.forEach((sp, i) => {
+      const have = [...wireLayer.querySelectorAll<HTMLElement>("[data-wp],[data-end]")];
+      if (have.length === all.length) {
+        all.forEach((sp, i) => {
           have[i].hidden = !sp;
           if (sp) Object.assign(have[i].style, { left: `${sp.x}px`, top: `${sp.y}px` });
         });
         return;
       }
-      wireLayer.innerHTML = spots.map((sp, i) => `<button type="button" class="lyr-wire-point" data-wp="${i}"${sp ? ` style="left:${sp.x}px;top:${sp.y}px"` : " hidden"} title="Drag over the parts to move this point; click to take it out" aria-label="Waypoint ${i + 1}"></button>`).join("");
+      wireLayer.innerHTML = spots.map((sp, i) => `<button type="button" class="lyr-wire-point" data-wp="${i}"${sp ? ` style="left:${sp.x}px;top:${sp.y}px"` : " hidden"} title="Drag over the parts to move this point; click to take it out" aria-label="Waypoint ${i + 1}"></button>`).join("")
+        + ends.map((sp, i) => `<button type="button" class="lyr-wire-point lyr-wire-end" data-end="${i ? "to" : "from"}"${sp ? ` style="left:${sp.x}px;top:${sp.y}px"` : " hidden"} title="Pick up this end and put it on another socket or pin (drag it, or click it then click where it goes)" aria-label="${i ? "Far" : "First"} end"></button>`).join("");
     }
 
     /** The part's face under a point on the view, as a waypoint (wires and plugs aren't faces to run over). */
@@ -3342,6 +3635,16 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     }
 
     wireLayer.addEventListener("pointerdown", e => {
+      const endEl = (e.target as HTMLElement).closest<HTMLElement>("[data-end]");
+      if (endEl && wireById(selectedId) && e.button === 0) {
+        e.preventDefault();
+        e.stopPropagation();
+        const wire = selectedId;
+        startWires();
+        pickUpEnd(wire, endEl.dataset.end === "to" ? "to" : "from", true);
+        carryPress(e);
+        return;
+      }
       const h = (e.target as HTMLElement).closest<HTMLElement>("[data-wp]");
       const p = wireById(selectedId);
       if (!h || !p?.wire) return;
@@ -6091,7 +6394,12 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         else if (playing) stopPlayback("Stopped putting the wires in.");
         else if (section.picking()) section.stop(scene.section ? "" : "Section stopped.");
         else if (screwing) stopScrews();
-        else if (wiringOn && wireDraft) {
+        else if (wiringOn && endCarry) {
+          const armed = endCarry.armed;
+          putEndBack();
+          if (armed) stopWires("The wire end is back where it was.");
+          else status("The wire end is back where it was. Click a part to start a wire, or a wire's end to move it.", false, true);
+        } else if (wiringOn && wireDraft) {
           wireDraft = null;
           renderWireBar();
           drawWirePreview();

@@ -12,6 +12,7 @@ import {
   freePort,
   linkByName,
   missingWires,
+  movedConnections,
   netOfPin,
   partsNotInScene,
   portById,
@@ -216,6 +217,35 @@ describe("the 2D wiring, in 3D", () => {
       expect([...tabs.pins.keys()]).toEqual(["M+", "M-"]);
       // A bare pin doesn't count as the port's plug socket.
       expect(freePort(pins.parts[0], 2, parts[0].sockets)).toBe("tabs");
+    });
+  });
+
+  describe("moving a wire's end to another port", () => {
+    it("moves the connections' ends on that side, pin for pin", () => {
+      // The lead's servo 2 end goes from its bus port 1 to bus port 2.
+      expect(movedConnections(info, ["c1", "c2", "c3"], { part: "s2", port: "bus-1" }, { part: "s2", port: "bus-2" })).toEqual([
+        { id: "c1", from: "s2.G2" },
+        { id: "c2", to: "s2.D2" },
+        { id: "c3", to: "s2.V2" },
+      ]);
+    });
+
+    it("moves them to another part", () => {
+      expect(movedConnections(info, ["c1", "c2", "c3"], { part: "s1", port: "bus-2" }, { part: "s2", port: "bus-2" })).toEqual([
+        { id: "c1", to: "s2.G2" },
+        { id: "c2", from: "s2.D2" },
+        { id: "c3", from: "s2.V2" },
+      ]);
+    });
+
+    it("takes a lone wire to the plug pin it now leaves from, or a bare pin", () => {
+      expect(movedConnections(info, ["c4"], { part: "s1", port: "bus-1" }, { part: "s2", port: "bus-1" }, 2)).toEqual([{ id: "c4", to: "s2.G1" }]);
+      expect(movedConnections(info, ["c4"], { part: "pico", port: "pin:GP0" }, { part: "s2", port: "pin:D2" })).toEqual([{ id: "c4", from: "s2.D2" }]);
+    });
+
+    it("won't when the new port is too small or a connection isn't there", () => {
+      expect(movedConnections(info, ["c1", "c2", "c3"], { part: "s2", port: "bus-1" }, { part: "s2", port: "pin:D2" })).toBeNull();
+      expect(movedConnections(info, ["gone"], { part: "s2", port: "bus-1" }, { part: "s2", port: "bus-2" })).toBeNull();
     });
   });
 });
