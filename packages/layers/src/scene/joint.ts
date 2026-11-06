@@ -25,6 +25,8 @@ export interface JointPicks {
   spin: number;
   /** Millimetres the child stands off the parent's face. */
   gap: number;
+  /** A nudge in the parent's own X, Y and Z (mm), after the rest. */
+  offset?: Vec3;
 }
 
 export function jointPlace(j: JointPicks): { position: Vec3; rotation: Vec3 } {
@@ -37,6 +39,7 @@ export function jointPlace(j: JointPicks): { position: Vec3; rotation: Vec3 } {
   // So that position + R·childPoint = point + gap·normal.
   const rc = new Vector3(...j.childPoint).applyQuaternion(q);
   const target = new Vector3(...j.point).addScaledVector(pn, j.gap);
+  if (j.offset) target.add(new Vector3(...j.offset));
   const e = new Euler().setFromQuaternion(q, "ZYX");
   const r = (n: number) => Math.round(n * 1000) / 1000 + 0;
   return {
@@ -49,7 +52,7 @@ export function jointPlace(j: JointPicks): { position: Vec3; rotation: Vec3 } {
 export function applyJoint(part: ScenePart): void {
   const j = part.joint;
   if (!j || !j.point || !j.childPoint || !j.childNormal) return;
-  const at = jointPlace({ point: j.point, normal: j.normal, childPoint: j.childPoint, childNormal: j.childNormal, spin: j.spin || 0, gap: j.gap || 0 });
+  const at = jointPlace({ point: j.point, normal: j.normal, childPoint: j.childPoint, childNormal: j.childNormal, spin: j.spin || 0, gap: j.gap || 0, offset: j.offset });
   part.position = at.position;
   part.rotation = at.rotation;
 }

@@ -1,0 +1,80 @@
+{
+  "title": "Side of a pin hanging under a board (a shield's stacking header leg)",
+  "why": "A shield's leg is its own little box standing against the board's underside. Its base is where it leaves the board, on its axis (5, 2) at the board's bottom z = 9; its tip is its far end, z = 0. Both look down the pin, the way it plugs in, so the base can sit on the header it goes into.",
+  "input": {
+    "shape": {
+      "parts": [
+        {
+          "box": [
+            30,
+            20,
+            1.6
+          ],
+          "at": [
+            0,
+            0,
+            9
+          ]
+        },
+        {
+          "box": [
+            0.64,
+            0.64,
+            9
+          ],
+          "at": [
+            5,
+            2,
+            0
+          ]
+        }
+      ]
+    },
+    "click": {
+      "at": [
+        5.32,
+        2,
+        5
+      ],
+      "looking": [
+        -1,
+        0,
+        0
+      ]
+    }
+  },
+  "expect": {
+    "roles": [
+      "pin",
+      "tip"
+    ],
+    "snaps": [
+      {
+        "role": "pin",
+        "p": [
+          5,
+          2,
+          9
+        ],
+        "n": [
+          0,
+          0,
+          -1
+        ]
+      },
+      {
+        "role": "tip",
+        "p": [
+          5,
+          2,
+          0
+        ],
+        "n": [
+          0,
+          0,
+          -1
+        ]
+      }
+    ]
+  }
+}

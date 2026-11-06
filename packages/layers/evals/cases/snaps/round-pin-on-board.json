@@ -1,0 +1,88 @@
+{
+  "title": "Side of a round pin standing on a board",
+  "why": "A 0.8 mm round pin 5 mm tall stands on the board's top (z = 1.6) at (3, 0). Its base is there, looking up the pin, the way it plugs in. Its end circles (rims) are offered as before: the top one already is the tip, looking up, so no second snap is laid on it; the bottom one looks down, into the board.",
+  "input": {
+    "shape": {
+      "parts": [
+        {
+          "box": [
+            30,
+            20,
+            1.6
+          ]
+        },
+        {
+          "cylinder": [
+            0.4,
+            5
+          ],
+          "at": [
+            3,
+            0,
+            1.6
+          ]
+        }
+      ]
+    },
+    "click": {
+      "at": [
+        3.4,
+        0,
+        4
+      ],
+      "looking": [
+        -1,
+        0,
+        0
+      ]
+    }
+  },
+  "expect": {
+    "roles": [
+      "pin",
+      "tip",
+      "rim"
+    ],
+    "snaps": [
+      {
+        "role": "pin",
+        "p": [
+          3,
+          0,
+          1.6
+        ],
+        "n": [
+          0,
+          0,
+          1
+        ]
+      },
+      {
+        "role": "rim",
+        "p": [
+          3,
+          0,
+          6.6
+        ],
+        "n": [
+          0,
+          0,
+          1
+        ]
+      },
+      {
+        "role": "rim",
+        "p": [
+          3,
+          0,
+          1.6
+        ],
+        "n": [
+          0,
+          0,
+          -1
+        ]
+      }
+    ]
+  }
+}

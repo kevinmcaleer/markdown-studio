@@ -1,0 +1,48 @@
+{
+  "title": "Side of a header's long body is not a pin",
+  "why": "A 10-way header's plastic body (2.54 \u00d7 25.4 \u00d7 8.5) is long and stands on the board, but it's a block, not a pin: much wider one way across than the other. Clicking its side offers its own face's points, and no pin base.",
+  "input": {
+    "shape": {
+      "parts": [
+        {
+          "box": [
+            30,
+            30,
+            1.6
+          ]
+        },
+        {
+          "box": [
+            2.54,
+            25.4,
+            8.5
+          ],
+          "at": [
+            0,
+            0,
+            1.6
+          ]
+        }
+      ]
+    },
+    "click": {
+      "at": [
+        1.27,
+        0,
+        5
+      ],
+      "looking": [
+        -1,
+        0,
+        0
+      ]
+    }
+  },
+  "expect": {
+    "roles": [
+      "pin",
+      "tip"
+    ],
+    "snaps": []
+  }
+}

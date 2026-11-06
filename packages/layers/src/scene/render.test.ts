@@ -53,6 +53,15 @@ describe("jointPlace", () => {
     expect(at(m, [4, 0, 0])).toEqual([0, 0, 5]);
     expect(at(m, [5, 0, 0])).toEqual([0, 0, 4]);
   });
+
+  it("nudges the child by an offset in the parent's X, Y and Z, after the spin and gap", async () => {
+    const { jointPlace } = await import("./joint");
+    const j = { point: [0, 0, 5], normal: [0, 0, 1], childPoint: [0, 0, -2], childNormal: [0, 0, -1], spin: 90, gap: 3 } as const;
+    const plain = jointPlace({ ...j, point: [...j.point], normal: [...j.normal], childPoint: [...j.childPoint], childNormal: [...j.childNormal] });
+    const nudged = jointPlace({ ...j, point: [...j.point], normal: [...j.normal], childPoint: [...j.childPoint], childNormal: [...j.childNormal], offset: [2.54, -1, 0.5] });
+    expect(nudged.rotation).toEqual(plain.rotation);
+    expect(nudged.position).toEqual([plain.position[0] + 2.54, plain.position[1] - 1, plain.position[2] + 0.5]);
+  });
 });
 
 describe("pagePoints", () => {

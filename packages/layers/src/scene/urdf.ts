@@ -88,7 +88,7 @@ export function toUrdf(robot: string, parts: ScenePart[]): UrdfResult {
     let rotation: Vec3 = p.rotation;
     if (joined(p)) {
       // The zero pose: a turning joint at no spin, a sliding one at no gap.
-      const at = jointPlace({ point: j!.point!, normal: j!.normal, childPoint: j!.childPoint!, childNormal: j!.childNormal!, spin: type === "revolute" ? 0 : j!.spin || 0, gap: type === "prismatic" ? 0 : j!.gap || 0 });
+      const at = jointPlace({ point: j!.point!, normal: j!.normal, childPoint: j!.childPoint!, childNormal: j!.childNormal!, spin: type === "revolute" ? 0 : j!.spin || 0, gap: type === "prismatic" ? 0 : j!.gap || 0, offset: j!.offset });
       position = at.position;
       rotation = at.rotation;
     }

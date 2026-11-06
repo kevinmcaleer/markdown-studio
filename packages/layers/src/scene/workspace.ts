@@ -1381,6 +1381,9 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         case "crease": return s.crease;
         case "spin": return p?.joint?.spin || 0;
         case "gap": return p?.joint?.gap || 0;
+        case "offsetX": return p?.joint?.offset?.[0] || 0;
+        case "offsetY": return p?.joint?.offset?.[1] || 0;
+        case "offsetZ": return p?.joint?.offset?.[2] || 0;
         case "distance": return p?.joint?.distance || 0;
         case "lower": return p?.joint?.lower ?? 0;
         case "upper": return p?.joint?.upper ?? 0;
@@ -1430,6 +1433,14 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         if (key === "spin") p.joint.spin = round(wrapAngle(value));
         else p.joint.gap = round(Math.max(-100_000, Math.min(100_000, value)));
         keepInLimits(p.joint);
+        applyJoint(p);
+        follow();
+        syncFields();
+      } else if (key.startsWith("offset") && p?.joint?.point) {
+        const o: Vec3 = [...(p.joint.offset || [0, 0, 0])];
+        o["XYZ".indexOf(key.slice(6))] = round(Math.max(-100_000, Math.min(100_000, value)), 2);
+        if (o.some(v => v !== 0)) p.joint.offset = o;
+        else delete p.joint.offset;
         applyJoint(p);
         follow();
         syncFields();
@@ -1973,7 +1984,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       });
     }
 
-    const ROLE_LABEL: Record<Snap["role"], string> = { centre: "middle of the face", corner: "corner", edge: "middle of the edge", hole: "centre of the hole", rim: "centre of the rim", pocket: "middle of the recess" };
+    const ROLE_LABEL: Record<Snap["role"], string> = { centre: "middle of the face", corner: "corner", edge: "middle of the edge", hole: "centre of the hole", rim: "centre of the rim", pocket: "middle of the recess", pin: "base of the pin", tip: "end of the pin" };
 
     /** The meshes a join may pick now: the part being joined, then any part not on its branch. */
     function pickable(): Mesh[] {
@@ -3837,6 +3848,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       delete j.childNormal;
       delete j.spin;
       delete j.gap;
+      delete j.offset;
       return true;
     }
 
@@ -3868,6 +3880,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       before: string;
     }
     let draft: JointDraft | null = null;
+    /** Whether the joint dialog shows its X/Y/Z offset row (hidden until asked for, or the joint has one). */
+    let offsetOpen = false;
 
     const jointDialog = document.createElement("div");
     jointDialog.className = "lyr-joint-dialog";
@@ -3892,6 +3906,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         normal: j?.normal,
         before: snap(),
       };
+      offsetOpen = !!j?.offset;
       selectedId = childId;
       shownJoint = p.parent ? childId : "";
       renderList();
@@ -3938,6 +3953,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         childNormal: draft.childNormal,
         spin: was?.spin || 0,
         gap: was?.gap || 0,
+        ...(was?.offset ? { offset: was.offset } : {}),
       };
       keepInLimits(p.joint);
       applyJoint(p);
@@ -4008,12 +4024,18 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
               ${jf("lower", "From", turns ? "°" : "mm", j?.lower ?? 0, turns ? 1 : 0.5, turns ? "How far it can turn one way" : "The nearest it slides in")}
               ${jf("upper", "To", turns ? "°" : "mm", j?.upper ?? 0, turns ? 1 : 0.5, turns ? "How far it can turn the other way" : "The furthest it slides out")}
             </div>` : ""}
-            <div class="lyr-panel-title">Line-up</div>
+            <div class="lyr-panel-title lyr-joint-title">
+              <span>Line-up</span>
+              <button type="button" class="lyr-btn lyr-icon-btn${offsetOpen ? " lyr-on" : ""}" data-act="joint-offset" aria-pressed="${offsetOpen}" title="${offsetOpen ? "Hide the offset" : "Nudge it along X, Y and Z"}" aria-label="Offset along X, Y and Z">${icon("move", 16)}</button>
+            </div>
             <div class="lyr-scene-fields">
               ${jf("spin", turns ? "Angle" : "Spin", "°", j?.spin || 0, 1, "Turn it about the joint, keeping the faces together")}
               ${jf("gap", slides ? "Slide" : "Gap", "mm", j?.gap || 0, 0.1, "How far it stands off the face")}
               ${jf("distance", "Explode", "mm", j?.distance || 0, 1, "How far it slides out in the exploded view")}
             </div>
+            ${offsetOpen ? `<div class="lyr-scene-fields lyr-joint-offset" aria-label="Offset">
+              ${(["X", "Y", "Z"] as const).map(a => jf(`offset${a}`, `Offset ${a}`, "mm", fieldValue(`offset${a}`, p), 0.1, `Move it along ${partById(draft!.parentId)?.name || "the part"}'s ${a} axis, after the rest of the line-up`)).join("")}
+            </div>` : ""}
             <div class="lyr-scene-quick">
               <button type="button" class="lyr-btn" data-act="joint-flip" title="Turn the part over, so it sits on the other side of the face">${icon("flipV", 16)}<span>Flip</span></button>
               <button type="button" class="lyr-btn" data-act="joint-sit" title="Slide it along the joint until it rests on ${esc(partById(draft.parentId)?.name || "the part")} beneath it">${icon("sit", 16)}<span>Sit on part</span></button>
@@ -4146,6 +4168,10 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         showJoint(p.id);
         renderProps();
         renderJointDialog();
+      } else if (d.act === "joint-offset") {
+        offsetOpen = !offsetOpen;
+        renderJointDialog();
+        if (offsetOpen) jointDialog.querySelector<HTMLInputElement>('[data-joint-field="offsetX"]')?.focus();
       } else if (d.act === "joint-sit" && p?.joint?.point) {
         sitOnParent(p);
       } else if (d.act === "joint-unjoin" && p) {
