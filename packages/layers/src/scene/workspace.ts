@@ -27,7 +27,7 @@ import { BARE_PIN, BUNDLE_TWIST, cableColours, coresOf, isBarePin, loomsOf, newS
 import { applyJoint } from "./joint";
 import { EXPLODE_DIRS, explodeChooser, explodeDirLabel, explodeVector, type ExplodeChoice, type ExplodeShape } from "./explode";
 import { sitDelta } from "./sit";
-import { emptyModel, frame, frameTight, LineArt, modelFromPositions, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, localMatrix, worldMatrices, type FetchModel, type Model } from "./render";
+import { emptyModel, frame, frameTight, LineArt, modelFromPositions, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
 import { MAX_EMBED, parseStl, stlFaces, toBinaryStl, tooBigToCarry } from "./stl";
 import { isPacked, packMesh, packParts } from "./mesh";
 import { isStepFile, mergeBodies, readStep, type StepBody } from "./step";
@@ -4106,7 +4106,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
             </div>
             <div class="lyr-scene-quick">
               <button type="button" class="lyr-btn" data-act="joint-flip" title="Turn the part over, so it sits on the other side of the face">${icon("flipV", 16)}<span>Flip</span></button>
-              <button type="button" class="lyr-btn" data-act="joint-sit" title="Slide it along the joint until it rests on ${esc(partById(draft.parentId)?.name || "the part")} beneath it">${icon("sit", 16)}<span>Sit on part</span></button>
+              <button type="button" class="lyr-btn" data-act="joint-sit" title="Drop it straight down until it rests on the part beneath it (its joint's Offset takes up the move)">${icon("sit", 16)}<span>Sit on part</span></button>
               <button type="button" class="lyr-btn" data-act="joint-unjoin" title="Stand on its own again, where it is now">Remove joint</button>
             </div>`
           : `<p class="lyr-note">Pick a face on each part. They meet face to face, and you can then set how the joint moves.</p>`}
@@ -4280,37 +4280,69 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     });
 
     /**
-     * Slides a joined part along its joint (its Gap) until it rests on the
-     * part it's joined to: touching, not sunk into it or floating over it.
+     * Drops a joined part straight down (world -Z, as gravity would) until it
+     * rests on whatever is beneath it, keeping its joint's faces and Gap and
+     * taking up the move in the joint's Offset. A part floating over the
+     * chassis drops onto it; one sunk into it rises out.
      */
     function sitOnParent(p: ScenePart): void {
       const j = p.joint;
-      const parent = p.parent ? partById(p.parent) : undefined;
-      const pm = parent && models.get(parent.id);
       const cm = models.get(p.id);
-      if (!j?.point || !parent || !pm || pm instanceof Error || !cm || cm instanceof Error) {
-        status("Both parts' models need to be loaded first.", true);
+      if (!j?.point || !p.parent || !cm || cm instanceof Error) {
+        status("The part's model needs to be loaded first.", true);
         return;
       }
-      const m = localMatrix(p);
-      // Which side of the face the part is on: Flip turns it to the other.
-      const middle = new Vector3().setFromMatrixPosition(m).sub(new Vector3(...j.point));
-      const side = middle.dot(new Vector3(...j.normal)) < 0 ? -1 : 1;
-      const down = j.normal.map(v => v * side) as Vec3;
-      const move = sitDelta(pm.geometry.getAttribute("position").array, cm.geometry.getAttribute("position").array, m, down);
+      const world = worldMatrices(scene.parts, 0, false);
+      const cw = world.get(p.id);
+      const pw = world.get(p.parent);
+      if (!cw || !pw) return;
+      cm.geometry.computeBoundingBox();
+      const cb = cm.geometry.boundingBox!.clone().applyMatrix4(cw);
+      // Everything shown that isn't carried by this part, and is under it.
+      const own = branch(p.id);
+      const chunks: Float32Array[] = [];
+      const v = new Vector3();
+      for (const o of scene.parts) {
+        const m = models.get(o.id);
+        const mw = world.get(o.id);
+        if (own.has(o.id) || o.hidden || o.wire || !m || m instanceof Error || !mw) continue;
+        m.geometry.computeBoundingBox();
+        const ob = m.geometry.boundingBox!.clone().applyMatrix4(mw);
+        if (ob.max.x < cb.min.x || ob.min.x > cb.max.x || ob.max.y < cb.min.y || ob.min.y > cb.max.y) continue;
+        const pos = m.geometry.getAttribute("position").array;
+        const out = new Float32Array(pos.length);
+        for (let i = 0; i + 2 < pos.length; i += 3) {
+          v.set(pos[i], pos[i + 1], pos[i + 2]).applyMatrix4(mw);
+          out[i] = v.x;
+          out[i + 1] = v.y;
+          out[i + 2] = v.z;
+        }
+        chunks.push(out);
+      }
+      const all = new Float32Array(chunks.reduce((n, c) => n + c.length, 0));
+      chunks.reduce((at, c) => (all.set(c, at), at + c.length), 0);
+      const move = chunks.length ? sitDelta(all, cm.geometry.getAttribute("position").array, cw, [0, 0, 1]) : null;
       if (move === null) {
-        status(`Nothing of “${parent.name}” is beneath “${p.name}” along the joint.`, true);
+        status(`Nothing is beneath “${p.name}” for it to sit on.`, true);
         return;
       }
       if (Math.abs(move) < 0.01) {
-        status(`“${p.name}” already sits on “${parent.name}”.`);
+        status(`“${p.name}” already sits on what's beneath it.`);
         return;
       }
-      setField("gap", (j.gap || 0) + move * side);
-      syncJointFields();
+      // The move is straight up or down in the world; the Offset is in the parent's frame.
+      const up = new Vector3(0, 0, 1).transformDirection(new Matrix4().copy(pw).invert()).multiplyScalar(move);
+      const o: Vec3 = [...(j.offset || [0, 0, 0])];
+      const next = o.map((x, i) => round(x + up.getComponent(i), 2)) as Vec3;
+      if (next.some(x => x !== 0)) j.offset = next;
+      else delete j.offset;
+      applyJoint(p);
+      follow();
+      offsetOpen = true;
+      renderJointDialog();
       showJoint(p.id);
       renderProps();
-      status(`“${p.name}” sits on “${parent.name}” (moved ${round(Math.abs(move), 2)} mm ${move > 0 ? "out" : "in"}).`);
+      status(`“${p.name}” sits on what's beneath it (moved ${round(Math.abs(move), 2)} mm ${move > 0 ? "up" : "down"}).`);
     }
 
     // ------------------------------------------------------------ the track dialog
@@ -4940,6 +4972,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
             ${field("outline", "Outline", "px", scene.style.outline, 0.5, "The bold line round each part")}
             ${field("crease", "Folds", "°", scene.style.crease, 1, "How sharp a fold must be to get a line (180: none)")}
           </div>
+          <label class="lyr-scene-check" title="Thin lines where a flat face turns into a rounded edge, so fillets and rounded ends show"><input type="checkbox" data-rounds${scene.style.rounds === false ? "" : " checked"}> Rounded edges</label>
           <label class="lyr-scene-check" title="In an exploded view, a line from each part back to where it fits"><input type="checkbox" data-draft${scene.style.draft === false ? "" : " checked"}> Draft lines when exploded</label>
           ${scene.style.draft === false ? "" : `<label class="lyr-scene-check" title="Thin solid lines, as on a flat-pack sheet, instead of dashed ones"><input type="checkbox" data-draft-solid${scene.style.draftSolid ? " checked" : ""}> Solid draft lines</label>`}
           <label class="lyr-scene-check" title="Solid arrows in the picture along each exploded part's gap, from the part to where it fits, as on a flat-pack sheet"><input type="checkbox" data-arrows${scene.arrows ? " checked" : ""}> Arrows when exploded</label>
@@ -4962,6 +4995,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         else scene.style.draft = false;
         rebuild();
         renderProps();
+        commit();
+      } else if (t.dataset.rounds !== undefined) {
+        if (t.checked) delete scene.style.rounds;
+        else scene.style.rounds = false;
+        rebuild();
         commit();
       } else if (t.dataset.draftSolid !== undefined) {
         if (t.checked) scene.style.draftSolid = true;

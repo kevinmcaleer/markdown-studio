@@ -1,0 +1,11 @@
+{
+  "title": "Battery sunk into a raised step comes up onto it in one press",
+  "why": "The floor's top is at z = 2 and a raised block (x from 5 on) has its top at z = 10. The 17 mm battery's bottom is at z = 0, so it's inside the block: it has to rise 10 mm to rest on the block's top. A second press must then do nothing.",
+  "input": {
+    "parent": [{ "box": [100, 100, 2] }, { "box": [45, 100, 8], "at": [27.5, 0, 2] }],
+    "child": { "box": [48, 26, 17], "at": [0, 0, -8.5] },
+    "position": [0, 0, 8.5],
+    "normal": [0, 0, 1]
+  },
+  "expect": { "move": 10 }
+}
