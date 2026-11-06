@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { Matrix4, Vector3 } from "three";
 import { clearRun, routeRound, solidGrid, type Solid } from "./wireAvoid";
-import { roundCorners, routeWire, wireHitsParts } from "./wireRouting";
+import { followRoom, roundCorners, routeOrder, routeWire, wireHitsParts } from "./wireRouting";
+import { loomsOf } from "./wireSpec";
 import type { WireSpec } from "./wireSpec";
 import { wireRoute } from "./wire";
 
@@ -85,5 +86,37 @@ describe("routing round parts", () => {
     expect(pts[2].distanceTo(new Vector3(20, 5, 0))).toBeLessThan(1e-6);
     // A straight run isn't touched.
     expect(roundCorners([new Vector3(0, 0, 0), new Vector3(10, 0, 0), new Vector3(20, 0, 0)], 5).length).toBe(3);
+  });
+
+  it("routes the ends of a wire running beside another, after that one, with room for both", () => {
+    const mats = new Map([["base", I], ["wall", I]]);
+    const lead: WireSpec = {
+      from: { part: "base", point: [-30, 0, 0], normal: [0, 0, 1] },
+      to: { part: "base", point: [30, 0, 0], normal: [0, 0, 1] },
+      waypoints: [],
+      color: "#d22",
+      diameter: 1.6,
+      slack: 10,
+    };
+    const beside: WireSpec = {
+      ...lead,
+      from: { part: "base", point: [-30, 6, 0], normal: [0, 0, 1] },
+      to: { part: "base", point: [30, 6, 0], normal: [0, 0, 1] },
+      waypoints: [{ along: { wire: "a", from: 0.75, to: 0.9 } }],
+      color: "#222",
+    };
+    const parts = [{ id: "b", wire: beside }, { id: "a", wire: lead }];
+    // The one it runs beside first; and asking for just that one brings its follower.
+    expect(routeOrder(parts, parts).map(p => p.id)).toEqual(["a", "b"]);
+    expect(routeOrder([parts[1]], parts).map(p => p.id)).toEqual(["a", "b"]);
+    expect(followRoom("a", loomsOf(parts))).toBeCloseTo(1.6);
+    expect(followRoom("b", loomsOf(parts))).toBe(0);
+    const a = routeWire(lead, mats, g, loomsOf(parts), followRoom("a", loomsOf(parts)))!;
+    parts[1].wire = { ...lead, waypoints: a.waypoints };
+    const looms = loomsOf(parts);
+    expect(wireHitsParts(beside, mats, g, looms)).toBe(true);
+    const b = routeWire(beside, mats, g, looms)!;
+    expect(b.waypoints.filter(w => w.along)).toEqual(beside.waypoints);
+    expect(wireHitsParts({ ...beside, waypoints: b.waypoints }, mats, g, looms)).toBe(false);
   });
 });

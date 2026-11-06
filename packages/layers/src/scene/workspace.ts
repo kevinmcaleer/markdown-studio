@@ -22,7 +22,7 @@ import {
 import { connectorFile, connectorMesh, connectorOf, CONNECTOR_FAMILIES, DEFAULT_CONNECTOR, plugLift } from "./connectors";
 import { cableRadius, MIN_BEND, tightestBend, wireLength, wireRoute, wireTriangles } from "./wire";
 import { solidGrid, type Solid, type SolidGrid } from "./wireAvoid";
-import { routeWire, wireHitsParts } from "./wireRouting";
+import { followRoom, routeOrder, routeWire, wireHitsParts } from "./wireRouting";
 import { mirrorPartner, mirrorPlane, mirrorPoint } from "./wireMirror";
 import { guessedSockets, guessPins, fitsPicture } from "./pinGuess";
 import { cableBetween, catalogSocketsFor, coloursFromDiagram, connectionsFor, diagramLabels, freePort, linkByName, missingWires, movedConnections, partsNotInScene, portById, portPlacements, routedCount, type DiagramEnd, type PortPlacement, type WiringPart, type WiringHost, type WiringInfo } from "./wiring2d";
@@ -4112,16 +4112,20 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           return;
         }
         const assembled = worldMatrices(scene.parts, 0, false);
-        const looms = loomsOf(scene.parts);
         let moved = 0, stuck = 0, close = 0;
-        for (const w of wires) {
+        // Each wire after the ones it runs beside, so it follows their new way; those beside a routed wire come too.
+        const movedIds = new Set<string>();
+        for (const w of routeOrder(wires, scene.parts)) {
           if (closed) return;
+          const looms = loomsOf(scene.parts);
+          const follows = w.wire!.waypoints.some(x => x.along && movedIds.has(x.along.wire));
           // Already clear with no routing of its own: left as it is.
-          if (!w.wire!.waypoints.some(x => x.auto) && !wireHitsParts(w.wire!, assembled, g, looms)) continue;
-          const got = routeWire(w.wire!, assembled, g, looms);
+          if (!follows && !w.wire!.waypoints.some(x => x.auto) && !wireHitsParts(w.wire!, assembled, g, looms)) continue;
+          const got = routeWire(w.wire!, assembled, g, looms, followRoom(w.id, looms));
           if (!got) continue;
           w.wire = { ...w.wire!, waypoints: got.waypoints };
           relay(w);
+          movedIds.add(w.id);
           moved++;
           if (got.stuck) stuck++;
           else if (!got.clear) close++;
