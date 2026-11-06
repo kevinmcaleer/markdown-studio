@@ -8,9 +8,10 @@
 // is at any moment); the drawing and encoding are animation.ts's.
 
 import { type Box3, type Matrix4, type OrthographicCamera } from "three";
-import { GifWriter, indexFrame, paletteFor } from "../gif";
-import { ANIMATION_BACKGROUND, animationParts, animationStyle, fitPoints, samplePoints, type Animation, type AnimationOptions } from "./animation";
+import { ANIMATION_BACKGROUND, animationParts, animationStyle, encodeFrames, fitPoints, samplePoints, type Animation, type AnimationOptions } from "./animation";
+import { stepIndex } from "./buildSteps";
 import type { ProjectModel, ScenePart, Vec3 } from "./model";
+import type { BuildStep } from "./stepsSpec";
 import { cameraFor, LineArt, worldMatrices, type ModelStore } from "./render";
 
 /** How long each part of the loop lasts, in seconds. */
@@ -221,16 +222,13 @@ export function assembledSpans(parts: ScenePart[], world: Map<string, Matrix4>, 
   return out;
 }
 
-export interface DropAnimationOptions extends AnimationOptions {
-  /** The build steps, by part id (see buildSteps.ts stepIndex): parts fall step by step. */
-  steps?: Map<string, number>;
-}
-
 /**
- * Draws the project's model as the drop-in loop and encodes it as a GIF,
- * seen from `direction` the whole time.
+ * Draws the project's model as the drop-in loop and encodes it (an MP4,
+ * or a GIF where the browser can't make one),
+ * seen from `direction` the whole time. With build steps, the parts fall
+ * step by step.
  */
-export async function renderDropAnimation(model: Pick<ProjectModel, "parts">, store: ModelStore, direction: Vec3, options: DropAnimationOptions = {}): Promise<Animation> {
+export async function renderDropAnimation(model: Pick<ProjectModel, "parts"> & { steps?: BuildStep[] }, store: ModelStore, direction: Vec3, options: AnimationOptions = {}): Promise<Animation> {
   const width = Math.round(options.width ?? 800);
   const height = Math.round(options.height ?? 600);
   const parts = animationParts(model);
@@ -257,40 +255,23 @@ export async function renderDropAnimation(model: Pick<ProjectModel, "parts">, st
     // Framed round the finished model, with room over it for the bounces.
     const camera = fitPoints(direction, samplePoints(art), width / height, 1.12);
     const fall = dropHeight(direction, camera.size);
-    const order = dropOrder(shown, assembledSpans(shown, world, boxes), options.steps);
+    const order = dropOrder(shown, assembledSpans(shown, world, boxes), model.steps?.some(st => st.parts.length) ? stepIndex(model.steps) : undefined);
     const plan = dropPlan(order, DROP_TIMING, settleTime(DROP_TIMING, fall, camera.size));
     const frames = dropFrames(plan, options.fps ?? 15);
     const radius = camera.size * 4 + Math.hypot(...camera.target) + fall;
     const cam: OrthographicCamera = cameraFor(camera, width / height, radius);
     const max = Math.min(art.renderer.capabilities.maxTextureSize || 4096, 8192);
     const ss = Math.max(1, Math.min(2, max / Math.max(width, height)));
-    const draw = (i: number): Uint8ClampedArray => {
+    const draw = (i: number): void => {
       art.lift(world, liftsAt(plan, frames[i].t, fall, camera.size));
       art.draw(cam, width, height, ss);
       ctx.fillStyle = bg;
       ctx.fillRect(0, 0, width, height);
       ctx.drawImage(art.renderer.domElement, 0, 0, width, height);
-      return ctx.getImageData(0, 0, width, height).data;
     };
-    const rgb = hexRgb(bg);
-    const palette = paletteFor([draw(frames.length - 1).slice(), draw(Math.floor(frames.length / 2)).slice()], rgb);
-    const gif = new GifWriter(width, height, palette);
-    for (let i = 0; i < frames.length; i++) {
-      if (options.cancelled?.()) throw new Error("Stopped.");
-      gif.add({ indices: indexFrame(draw(i), palette, rgb), delay: frames[i].delay });
-      options.progress?.(i + 1, frames.length);
-      if (i % 4 === 3) await new Promise(r => setTimeout(r, 0));
-    }
-    const bytes = gif.finish();
-    return { gif: new Blob([bytes as BlobPart], { type: "image/gif" }), width, height, frames: frames.length };
+    // The GIF's palette from the finished model and part way through.
+    return await encodeFrames(out, frames.map(f => f.delay), draw, [frames.length - 1, Math.floor(frames.length / 2)], options);
   } finally {
     art.dispose();
   }
-}
-
-function hexRgb(hex: string): [number, number, number] {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
-  if (!m) return [255, 255, 255];
-  const n = parseInt(m[1], 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }

@@ -141,7 +141,9 @@ export interface LayersHandle {
   /**
    * The project's model as a looping animation (MP4, or a GIF where the browser can't make one): fully assembled, coming
    * apart (each part along its joint's "Comes off" way), turning once
-   * round, then going back together. Seen from the project's chosen view.
+   * round, then going back together; or, with style "drop", built up a
+   * part at a time, each falling in and bouncing into place. Seen from the
+   * project's chosen view.
    */
   animatedModel?(options?: AnimatedModelOptions): Promise<AnimatedModel>;
   focus(): void;
@@ -162,6 +164,8 @@ export interface AnimatedModelOptions {
   progress?(done: number, total: number): void;
   /** "gif" for a GIF even where an MP4 could be made (for a server that won't take video). Default "auto". */
   format?: "auto" | "gif";
+  /** "explode" (the default): coming apart and turning round. "drop": the parts falling in one at a time and bouncing into place. */
+  style?: "explode" | "drop";
 }
 
 export interface AnimatedModel {
@@ -3758,10 +3762,13 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       await opened;
       const model = await getProjectModel();
       if (!model?.parts.some(p => !p.hidden)) throw new Error("No project model yet: add a 3D scene with the project's parts first.");
-      const [t, a] = await Promise.all([sceneTools(), import("./scene/animation")]);
+      const [t, a, d] = await Promise.all([sceneTools(), import("./scene/animation"), o.style === "drop" ? import("./scene/dropAnimation") : null]);
       const view = model.defaultView ? model.views?.find(v => v.id === model.defaultView) : undefined;
       const direction = (view ? view.camera : blankScene().camera).direction;
-      const draw = (width?: number, height?: number) => a.renderAnimation(model, t.store, direction, { width, height, progress: o.progress, format: o.format, cancelled: () => destroyed });
+      const draw = (width?: number, height?: number) => {
+        const options = { width, height, progress: o.progress, format: o.format, cancelled: () => destroyed };
+        return d ? d.renderDropAnimation(model, t.store, direction, options) : a.renderAnimation(model, t.store, direction, options);
+      };
       let made = await draw(o.width, o.height);
       // A very detailed model: smaller, so it stays a picture a page can carry.
       // Even sizes, as H.264 wants.
