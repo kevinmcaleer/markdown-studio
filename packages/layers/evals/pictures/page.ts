@@ -23,6 +23,7 @@ interface PictureCase {
     arrows?: boolean;
     wiring?: boolean;
     hideWiring?: boolean;
+    seeThrough?: boolean;
     wireStep?: string;
   };
   size?: [number, number];
@@ -33,7 +34,7 @@ async function render(c: PictureCase): Promise<string> {
   for (const p of c.scene.parts) if (p.shape && "stl" in p.shape && !files.has(p.shape.stl)) files.set(p.shape.stl, await (await fetch(`../${p.shape.stl}`)).arrayBuffer());
   const store = new ModelStore(async () => new ArrayBuffer(0));
   const [w, h] = c.size || [640, 480];
-  const scene: SceneData = { ...blankScene(), explode: c.scene.explode || 0, arrows: !!c.scene.arrows, wiring: c.scene.wiring, hideWiring: c.scene.hideWiring, ...(c.scene.wireStep ? { wireStep: c.scene.wireStep } : {}) };
+  const scene: SceneData = { ...blankScene(), explode: c.scene.explode || 0, arrows: !!c.scene.arrows, wiring: c.scene.wiring, hideWiring: c.scene.hideWiring, ...(c.scene.seeThrough ? { seeThrough: true } : {}), ...(c.scene.wireStep ? { wireStep: c.scene.wireStep } : {}) };
   if (c.scene.style) scene.style = applyPreset(scene.style, c.scene.style);
   const meshes: { part: ScenePart; geometry: BufferGeometry }[] = [];
   scene.parts = c.scene.parts.map(({ shape, ...rest }) => {

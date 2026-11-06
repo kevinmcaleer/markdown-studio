@@ -930,18 +930,30 @@ export function wireListCommand(host: LayersHost): SlashCommand {
  * model (and view) it was drawn from.
  */
 const ANIMATION_MARK = /#animated-(?:model|video)(?:=([0-9a-z]*))?$/i;
-const ANIMATION_BUSY = /^\*Making the (?:animated|dropping) model[^\n]*\*$/m;
+const ANIMATION_BUSY = /^\*Making the (?:animated model|dropping model|wiring showcase)[^\n]*\*$/m;
 
-/** "explode": coming apart and turning round (/Animated model). "drop": parts falling into place (/Dropping model). */
-export type AnimationStyle = "explode" | "drop";
+/**
+ * "explode": coming apart and turning round (/Animated model). "drop": parts
+ * falling into place (/Dropping model). "wires": see-through, the wires
+ * growing out of their components (/Wiring showcase).
+ */
+export type AnimationStyle = "explode" | "drop" | "wires";
 
-/** A dropping model's key starts "drop" (the link's mark stays the same, so pages play it the same way). */
+/** A dropping model's key starts "drop", a wiring showcase's "wires" (the link's mark stays the same, so pages play them the same way). */
 const DROP_KEY = "drop";
+const WIRES_KEY = "wires";
 
 /** Which animation a key was drawn as. */
 export function animationStyleOf(key: string): AnimationStyle {
-  return key.startsWith(DROP_KEY) ? "drop" : "explode";
+  return key.startsWith(DROP_KEY) ? "drop" : key.startsWith(WIRES_KEY) ? "wires" : "explode";
 }
+
+/** Each animation's file name, what the editor calls it while making it, and its picture's alt text. */
+const ANIMATION_NAMES: Record<AnimationStyle, { file: string; what: string; alt: string }> = {
+  explode: { file: "animated-model", what: "animated model", alt: "Animated model" },
+  drop: { file: "dropping-model", what: "dropping model", alt: "Dropping model" },
+  wires: { file: "wiring-showcase", what: "wiring showcase", alt: "Wiring showcase" },
+};
 
 export function isAnimationUrl(url: string): boolean {
   return ANIMATION_MARK.test(url.trim());
@@ -951,6 +963,7 @@ export function isAnimationUrl(url: string): boolean {
 export function animationKey(model: LayersProjectModel, style: AnimationStyle = "explode"): string {
   const view = model.defaultView ? (model.views as { id?: string; camera?: { direction?: unknown } }[] | undefined)?.find(v => v?.id === model.defaultView) : undefined;
   if (style === "drop") return DROP_KEY + hashKey(JSON.stringify([model.stamp, view?.camera?.direction ?? null, model.steps ?? null]));
+  if (style === "wires") return WIRES_KEY + hashKey(JSON.stringify([model.stamp, view?.camera?.direction ?? null]));
   return hashKey(JSON.stringify([model.stamp, view?.camera?.direction ?? null]));
 }
 
@@ -1006,18 +1019,18 @@ async function drawAnimation(host: LayersHost, progress: (done: number, total: n
     if (!editor.animatedModel) throw new Error("this version of Layers can't animate the model");
     const upload = async (made: { blob: Blob; type: string }) => {
       const video = made.type === "video/mp4";
-      const name = style === "drop" ? "dropping-model" : "animated-model";
+      const name = ANIMATION_NAMES[style].file;
       const file = new File([made.blob], `${name}.${video ? "mp4" : "gif"}`, { type: made.type });
       const url = await host.uploadImage(file, replaces ? { replaces: replaces.replace(/#.*$/, "") } : undefined);
       return `${url.trim().replace(/#.*$/, "")}#animated-${video ? "video" : "model"}=${animationKey(model, style)}`;
     };
-    const made = await editor.animatedModel({ progress, ...(style === "drop" ? { style } : {}) });
+    const made = await editor.animatedModel({ progress, ...(style !== "explode" ? { style } : {}) });
     if (made.type !== "video/mp4") return await upload(made);
     try {
       return await upload(made);
     } catch {
       // A server that doesn't take video yet: the same animation as a GIF.
-      return await upload(await editor.animatedModel({ progress, format: "gif", ...(style === "drop" ? { style } : {}) }));
+      return await upload(await editor.animatedModel({ progress, format: "gif", ...(style !== "explode" ? { style } : {}) }));
     }
   } finally {
     editor?.destroy();
@@ -1033,8 +1046,7 @@ async function drawAnimation(host: LayersHost, progress: (done: number, total: n
 export async function makeAnimatedModel(view: EditorView, host: LayersHost, style: AnimationStyle = "explode"): Promise<void> {
   if (view.state.readOnly || !host.loadModel || !host.saveModel) return;
   const pos = view.state.selection.main.head;
-  const what = style === "drop" ? "dropping model" : "animated model";
-  const alt = style === "drop" ? "Dropping model" : "Animated model";
+  const { what, alt } = ANIMATION_NAMES[style];
   const mark = (s: string) => `*Making the ${what}${s}…*`;
   const change = newGraphicInsert(view.state.doc.toString(), pos, mark(""));
   view.dispatch({ changes: change, userEvent: "input.layers", selection: { anchor: change.from + change.insert.length } });
@@ -1076,7 +1088,7 @@ export async function refreshAnimatedModels(view: EditorView, host: LayersHost):
   let done = 0;
   try {
     // Each style drawn once, then every one of that style behind points at it.
-    for (const style of ["explode", "drop"] as const) {
+    for (const style of ["explode", "drop", "wires"] as const) {
       const these = behind.filter(b => animationStyleOf(b.key) === style);
       if (!these.length) continue;
       const url = await drawAnimation(host, () => {}, these[0].url, style);
@@ -1085,7 +1097,7 @@ export async function refreshAnimatedModels(view: EditorView, host: LayersHost):
         const changes = animationsIn(view.state.doc.toString())
           .filter(a => a.url === old)
           .map(a => imageAt(view.state, a.at))
-          .flatMap(c => (c ? [{ from: c.from, to: c.to, insert: imageMarkdown({ alt: c.alt || (style === "drop" ? "Dropping model" : "Animated model"), url, title: c.title }) }] : []));
+          .flatMap(c => (c ? [{ from: c.from, to: c.to, insert: imageMarkdown({ alt: c.alt || ANIMATION_NAMES[style].alt, url, title: c.title }) }] : []));
         if (!changes.length) continue;
         view.dispatch({ changes, userEvent: "input.layers" });
         host.onReplace?.(old, url);
@@ -1121,6 +1133,23 @@ export function droppingModelCommand(host: LayersHost): SlashCommand {
     icon: "M8 1.5v4M6 3.8 8 5.8l2-2M8 8.5 12.5 11 8 13.5 3.5 11zM1.5 15h13",
     block: true,
     run: (view) => void makeAnimatedModel(view, host, "drop"),
+  };
+}
+
+/**
+ * "/Wiring showcase": the project's model see-through (the printed parts as
+ * glass, the electronics solid), each wire growing out of its component to
+ * where it ends, on a loop.
+ */
+export function wiringShowcaseCommand(host: LayersHost): SlashCommand {
+  return {
+    id: "wiring-showcase",
+    label: "Wiring showcase",
+    keywords: ["wiring", "wires", "electronics", "see-through", "transparent", "x-ray", "xray", "animation", "animated", "gif", "mp4", "video", "model", "3d"],
+    group: "inline",
+    icon: "M2.5 13.5c2-5 4-1 5.5-5.5S11.5 4 13.5 2.5M2.5 13.5h0M13.5 2.5h0M1.5 12h2.5v3h-2.5zM12 1h2.5v3H12z",
+    block: true,
+    run: (view) => void makeAnimatedModel(view, host, "wires"),
   };
 }
 

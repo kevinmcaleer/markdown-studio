@@ -362,6 +362,29 @@ export function tubeTriangles(centre: Vector3[], radius: number, sides = TUBE_SI
   return new Float32Array(out);
 }
 
+/**
+ * The first `upto` (0 to 1) of a line, by its length, so a growing wire
+ * grows smoothly: its points spread evenly along that stretch, as many as
+ * the share of the line's own (so a cable's cores keep the same count).
+ */
+export function growLine(line: Vector3[], upto: number): Vector3[] {
+  if (upto >= 1 || line.length < 2) return line;
+  const run = [0];
+  for (let i = 1; i < line.length; i++) run.push(run[i - 1] + line[i].distanceTo(line[i - 1]));
+  const want = Math.max(0, upto) * run[run.length - 1];
+  const n = Math.max(2, Math.ceil(line.length * Math.max(0, upto)) + 1);
+  const out: Vector3[] = [];
+  let j = 1;
+  for (let k = 0; k < n; k++) {
+    // A hair along, so the tip never sits on the start.
+    const at = Math.max(want, 1e-3) * (k / (n - 1));
+    while (j < line.length - 1 && run[j] < at) j++;
+    const d = run[j] - run[j - 1];
+    out.push(line[j - 1].clone().lerp(line[j], d > 0 ? Math.min(1, (at - run[j - 1]) / d) : 0));
+  }
+  return out;
+}
+
 export interface WireMesh {
   /** Triangles in the world, nine numbers each. */
   positions: Float32Array;
@@ -370,14 +393,14 @@ export interface WireMesh {
 }
 
 /** The wire's (or cable's) model in the world, each wire in its colour, for the parts placed by `mats` (empty when it can't be laid). */
-export function wireMesh(part: ScenePart, mats: Map<string, Matrix4>, upto = 1, looms?: Looms): WireMesh {
+export function wireMesh(part: ScenePart, mats: Map<string, Matrix4>, upto = 1, looms?: Looms, fromTo = false): WireMesh {
   const empty = { positions: new Float32Array(0), colors: new Float32Array(0) };
   if (!part.wire || upto <= 0) return empty;
   const route = wireRoute(part.wire, mats, looms);
   if (!route) return empty;
   const cores = coresOf(part.wire);
-  // Grown part of the way along (as it's put in, in the assembly playback).
-  const cut = (line: Vector3[]) => (upto >= 1 ? line : line.slice(0, Math.max(2, Math.ceil(line.length * upto))));
+  // Grown part of the way along (as it's put in, in the assembly playback), from its `from` end or, `fromTo`, its `to` end.
+  const cut = (line: Vector3[]) => (upto >= 1 ? line : fromTo ? growLine([...line].reverse(), upto).reverse() : growLine(line, upto));
   const tubes = coreLines(part.wire, route).map(line => tubeTriangles(cut(line), part.wire!.diameter / 2));
   const total = tubes.reduce((t, x) => t + x.length, 0);
   const positions = new Float32Array(total);
