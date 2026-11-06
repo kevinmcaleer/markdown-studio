@@ -247,3 +247,21 @@ describe("code block editors", () => {
     view.destroy();
   });
 });
+
+describe("animated model video", () => {
+  it("shows an #animated-video picture as a looping, muted video and others as images", () => {
+    const doc = "Text\n\n![Animated model](/projects/1/images/2/view#animated-video=k1)\n\n![Animated model](/projects/1/images/3/view#animated-model=k2)\n";
+    const parent = document.createElement("div");
+    document.body.appendChild(parent);
+    const view = new EditorView({ state: EditorState.create({ doc, extensions: [markdown({ base: markdownLanguage, extensions: [Highlight] }), livePreview()] }), parent });
+    const video = view.dom.querySelector("video");
+    expect(video).not.toBeNull();
+    expect(video!.getAttribute("src")).toBe("/projects/1/images/2/view#animated-video=k1");
+    expect(video!.muted && video!.loop && video!.autoplay).toBe(true);
+    expect(video!.getAttribute("playsinline")).toBe("");
+    expect(video!.getAttribute("aria-label")).toBe("Animated model");
+    expect([...view.dom.querySelectorAll("img")].map(i => i.getAttribute("src"))).toContain("/projects/1/images/3/view#animated-model=k2");
+    view.destroy();
+    parent.remove();
+  });
+});

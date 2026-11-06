@@ -139,7 +139,7 @@ export interface LayersHandle {
    */
   wireList?(): Promise<string>;
   /**
-   * The project's model as a looping animated GIF: fully assembled, coming
+   * The project's model as a looping animation (MP4, or a GIF where the browser can't make one): fully assembled, coming
    * apart (each part along its joint's "Comes off" way), turning once
    * round, then going back together. Seen from the project's chosen view.
    */
@@ -160,10 +160,14 @@ export interface AnimatedModelOptions {
   height?: number;
   /** Says how far it has got, a frame at a time. */
   progress?(done: number, total: number): void;
+  /** "gif" for a GIF even where an MP4 could be made (for a server that won't take video). Default "auto". */
+  format?: "auto" | "gif";
 }
 
 export interface AnimatedModel {
-  gif: Blob;
+  /** An MP4 video where the browser can make one, else an animated GIF. */
+  blob: Blob;
+  type: "video/mp4" | "image/gif";
   width: number;
   height: number;
   /** The model's version it was drawn from. */
@@ -3757,11 +3761,12 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       const [t, a] = await Promise.all([sceneTools(), import("./scene/animation")]);
       const view = model.defaultView ? model.views?.find(v => v.id === model.defaultView) : undefined;
       const direction = (view ? view.camera : blankScene().camera).direction;
-      const draw = (width?: number, height?: number) => a.renderAnimation(model, t.store, direction, { width, height, progress: o.progress, cancelled: () => destroyed });
+      const draw = (width?: number, height?: number) => a.renderAnimation(model, t.store, direction, { width, height, progress: o.progress, format: o.format, cancelled: () => destroyed });
       let made = await draw(o.width, o.height);
       // A very detailed model: smaller, so it stays a picture a page can carry.
-      if (made.gif.size > a.MAX_GIF_BYTES) made = await draw(Math.round(made.width * 0.7), Math.round(made.height * 0.7));
-      return { gif: made.gif, width: made.width, height: made.height, stamp: model.stamp };
+      // Even sizes, as H.264 wants.
+      if (made.blob.size > a.MAX_ANIMATION_BYTES) made = await draw(Math.round(made.width * 0.35) * 2, Math.round(made.height * 0.35) * 2);
+      return { blob: made.blob, type: made.type, width: made.width, height: made.height, stamp: model.stamp };
     },
     focus: () => root.focus({ preventScroll: true }),
     destroy,

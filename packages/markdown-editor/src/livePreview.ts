@@ -16,7 +16,7 @@ import { galleryField, galleryTheme, openGalleryBlocks } from "./galleryWidget";
 import { videosField, videosTheme } from "./videosWidget";
 import { tableCursor, tableField } from "./tableWidget";
 import { sizePicture } from "./steadyScroll";
-import { isLayersUrl, LAYERS_MODEL_EVENT, LAYERS_UPDATE_EVENT, layersOpener, type LayersUpdateProgress } from "./layersFacet";
+import { isAnimationVideoUrl, isLayersUrl, LAYERS_MODEL_EVENT, LAYERS_UPDATE_EVENT, layersOpener, type LayersUpdateProgress } from "./layersFacet";
 import { historyButton } from "./layersHistory";
 import { closeImagePopover, imagePopover, imagePopoverAt, openImagePopover } from "./imagePopover";
 import { imageCaption } from "./imageCaption";
@@ -219,7 +219,22 @@ class FenceLabelWidget extends WidgetType {
 export const DOUBLE_CLICK_MS = 300;
 
 /** Whether a double-click on this picture opens an editor (data-md-double-click, set here or by the host). */
-const hasDoubleClick = (img: HTMLImageElement) => img.dataset.mdDoubleClick !== undefined;
+const hasDoubleClick = (img: HTMLElement) => img.dataset.mdDoubleClick !== undefined;
+
+/** A silent video that plays round and round by itself, like an animated picture. */
+export function loopingVideo(src: string, label: string): HTMLVideoElement {
+  const v = document.createElement("video");
+  v.src = src;
+  v.muted = true;
+  v.loop = true;
+  v.autoplay = true;
+  v.playsInline = true;
+  v.setAttribute("muted", "");
+  v.setAttribute("playsinline", "");
+  v.preload = "auto";
+  if (label) v.setAttribute("aria-label", label);
+  return v;
+}
 
 class ImageWidget extends WidgetType {
   constructor(
@@ -260,11 +275,14 @@ class ImageWidget extends WidgetType {
     const wrap = document.createElement("span");
     wrap.className = this.size ? `cm-md-image-wrap cm-md-image-sized ${imageSizeClass(this.size)}` : "cm-md-image-wrap";
     if (this.editing) wrap.classList.add("cm-md-image-editing");
-    const img = document.createElement("img");
+    // An animated model saved as an MP4 plays as a silent loop, as a GIF would.
+    const img: HTMLElement = isAnimationVideoUrl(this.src) ? loopingVideo(this.src, this.alt) : document.createElement("img");
     img.className = "cm-md-image";
-    img.src = this.src;
-    img.alt = this.alt;
-    sizePicture(img);
+    if (img instanceof HTMLImageElement) {
+      img.src = this.src;
+      img.alt = this.alt;
+      sizePicture(img);
+    }
     wrap.append(img);
     if (this.caption) {
       wrap.classList.add("cm-md-image-captioned");

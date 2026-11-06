@@ -57,8 +57,8 @@ export type LayersEditor = {
   screwInventory?(): Promise<boolean>;
   /** The project's wire list as a Markdown table, "" with no wires (Layers 3D scenes). */
   wireList?(): Promise<string>;
-  /** The project's model as a looping animated GIF: assembled, apart, once round, together again (Layers 3D scenes). */
-  animatedModel?(options?: { width?: number; height?: number; progress?(done: number, total: number): void }): Promise<{ gif: Blob; width: number; height: number; stamp: number }>;
+  /** The project's model as a looping MP4 (or GIF where the browser can't make one): assembled, apart, once round, together again (Layers 3D scenes). */
+  animatedModel?(options?: { width?: number; height?: number; progress?(done: number, total: number): void; format?: "auto" | "gif" }): Promise<{ blob: Blob; type: "video/mp4" | "image/gif"; width: number; height: number; stamp: number }>;
 };
 export type LayersResult = { png: Blob; title: string; width: number; height: number };
 
@@ -924,8 +924,12 @@ export function wireListCommand(host: LayersHost): SlashCommand {
 
 // ------------------------------------------------------------ the animated model
 
-/** An animated model's link ends in #animated-model=<key>: the model (and view) it was drawn from. */
-const ANIMATION_MARK = /#animated-model(?:=([0-9a-z]*))?$/i;
+/**
+ * An animated model's link ends in #animated-model=<key> (a GIF) or
+ * #animated-video=<key> (an MP4, played as a looping video): the key is the
+ * model (and view) it was drawn from.
+ */
+const ANIMATION_MARK = /#animated-(?:model|video)(?:=([0-9a-z]*))?$/i;
 const ANIMATION_BUSY = /^\*Making the animated model[^\n]*\*$/m;
 
 export function isAnimationUrl(url: string): boolean {
@@ -988,10 +992,20 @@ async function drawAnimation(host: LayersHost, progress: (done: number, total: n
       onCancel: () => {},
     });
     if (!editor.animatedModel) throw new Error("this version of Layers can't animate the model");
+    const upload = async (made: { blob: Blob; type: string }) => {
+      const video = made.type === "video/mp4";
+      const file = new File([made.blob], video ? "animated-model.mp4" : "animated-model.gif", { type: made.type });
+      const url = await host.uploadImage(file, replaces ? { replaces: replaces.replace(/#.*$/, "") } : undefined);
+      return `${url.trim().replace(/#.*$/, "")}#animated-${video ? "video" : "model"}=${animationKey(model)}`;
+    };
     const made = await editor.animatedModel({ progress });
-    const file = new File([made.gif], "animated-model.gif", { type: "image/gif" });
-    const url = await host.uploadImage(file, replaces ? { replaces: replaces.replace(/#.*$/, "") } : undefined);
-    return `${url.trim().replace(/#.*$/, "")}#animated-model=${animationKey(model)}`;
+    if (made.type !== "video/mp4") return await upload(made);
+    try {
+      return await upload(made);
+    } catch {
+      // A server that doesn't take video yet: the same animation as a GIF.
+      return await upload(await editor.animatedModel({ progress, format: "gif" }));
+    }
   } finally {
     editor?.destroy();
     box.remove();
@@ -1001,7 +1015,7 @@ async function drawAnimation(host: LayersHost, progress: (done: number, total: n
 /**
  * "/Animated model": the project's 3D model as a looping animation (fully
  * assembled, coming apart, turning once round, going back together), an
- * animated GIF put in where the cursor is. A line says how it's going.
+ * MP4 video (a GIF where the browser can't make one) put in where the cursor is. A line says how it's going.
  */
 export async function makeAnimatedModel(view: EditorView, host: LayersHost): Promise<void> {
   if (view.state.readOnly || !host.loadModel || !host.saveModel) return;
@@ -1071,7 +1085,7 @@ export function animatedModelCommand(host: LayersHost): SlashCommand {
   return {
     id: "animated-model",
     label: "Animated model",
-    keywords: ["animation", "animated", "explode", "exploded", "spin", "turntable", "rotate", "gif", "model", "3d"],
+    keywords: ["animation", "animated", "explode", "exploded", "spin", "turntable", "rotate", "gif", "mp4", "video", "model", "3d"],
     group: "inline",
     icon: "M8 2.5 12.5 5v5L8 12.5 3.5 10V5zM3.5 5 8 7.5 12.5 5M8 7.5v5M1.5 8.5a6.5 3 0 0 0 13 0",
     block: true,

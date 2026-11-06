@@ -16,6 +16,11 @@ export function layersUrl(url: string): string {
   return url.trim().replace(/#.*$/, "") + LAYERS_MARK;
 }
 
+/** An animated model saved as an MP4 (its link ends in #animated-video=<key>): shown as a looping, silent video, not a picture. */
+export function isAnimationVideoUrl(url: string): boolean {
+  return /#animated-video(?:=[0-9a-z]*)?$/i.test(url.trim());
+}
+
 /** Fired on window when the project's 3D model is saved, so graphics check whether they're out of date. */
 export const LAYERS_MODEL_EVENT = "layers-model-changed";
 

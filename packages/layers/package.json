@@ -34,6 +34,7 @@
   },
   "dependencies": {
     "fabric": "6.9.1",
+    "mp4-muxer": "5.2.2",
     "occt-import-js": "0.0.23",
     "three": "0.187.0"
   },
