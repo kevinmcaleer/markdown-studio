@@ -7017,15 +7017,20 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       showStep();
       stepPlay = { frame: 0, at: 0, t0: performance.now() };
       renderStrip();
-      const HOLD = 600, MOVE = 900, REST = 400;
+      const HOLD = 600, MOVE = 900, REST = 400, FADE = 500;
+      const ease = (f: number) => (f < 0.5 ? 2 * f * f : 1 - Math.pow(-2 * f + 2, 2) / 2);
       const tick = (now: number) => {
         if (!stepPlay || closed) return;
         const t = now - stepPlay.t0;
-        const f = Math.max(0, Math.min(1, (t - HOLD) / MOVE));
-        const e = 1 - (f < 0.5 ? 2 * f * f : 1 - Math.pow(-2 * f + 2, 2) / 2);
+        const e = 1 - ease(Math.max(0, Math.min(1, (t - HOLD) / MOVE)));
         const at = stepsAt();
         for (const p of scene.parts) if (at.get(p.id) === stepPlay.at) p.explode = e;
         art.move(scene.parts, scene.explode);
+        // The last step's parts fade from the highlight to plain as this step comes on.
+        if (stepPlay.at > 0 && t < FADE + 100) {
+          const last = stepPlay.at - 1;
+          art.fadeHighlight(scene.parts.filter(p => at.get(p.id) === last).map(p => p.id), 1 - ease(Math.min(1, t / FADE)));
+        }
         draw();
         if (t > HOLD + MOVE + REST) {
           if (stepPlay.at >= steps.length - 1) {

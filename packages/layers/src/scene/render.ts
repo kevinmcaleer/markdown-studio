@@ -818,6 +818,29 @@ export class LineArt {
     }
   }
 
+  /**
+   * Fills these parts `t` of the way from how they're shown now (0) back to
+   * the highlight colour (1), without rebuilding: the last step's parts
+   * fading from the highlight to plain as the next step comes on. Wires keep
+   * their own colours.
+   */
+  fadeHighlight(ids: Iterable<string>, t: number): void {
+    const style = this.style;
+    if (!style) return;
+    const want = new Set(ids);
+    if (!want.size) return;
+    const lit = highlightedParts(this.objects.map(o => o.part));
+    const k = Math.max(0, Math.min(1, t));
+    const c = new Color();
+    for (const o of this.objects) {
+      if (!want.has(o.part.id) || o.part.wire) continue;
+      c.set(this.fillOf(o.part, lit)).lerp(new Color(style.highlight), k);
+      (o.fill.material as MeshBasicMaterial).color.copy(c);
+      const cap = o.caps?.main.material as ShaderMaterial | undefined;
+      if (cap) (cap.uniforms.fill.value as Color).copy(c);
+    }
+  }
+
   /** Follows the parts' new places without rebuilding the scene. */
   move(parts: ScenePart[], explode = 0): void {
     const world = worldMatrices(parts, explode);

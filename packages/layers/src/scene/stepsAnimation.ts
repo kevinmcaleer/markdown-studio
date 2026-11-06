@@ -2,7 +2,8 @@
 // Play steps shows, drawn a frame at a time and saved as a video. Each step
 // is shown with its parts drawn apart (earlier steps' parts ghosted, later
 // ones not there yet), then its parts go together; the view glides from one
-// step's framing to the next. An MP4 where the browser can encode one, else
+// step's framing to the next, while the last step's parts fade from the
+// highlight to plain. An MP4 where the browser can encode one, else
 // an animated GIF.
 
 import { OrthographicCamera } from "three";
@@ -31,6 +32,8 @@ export interface StepsFrame {
   step: number;
   explode: number;
   glide: number;
+  /** How highlighted the last step's parts still are: 1 at the start of the glide, fading to 0 (plain) as it ends. */
+  fade: number;
   /** Milliseconds. */
   delay: number;
 }
@@ -42,11 +45,12 @@ export function stepsFrames(count: number, fps = 24, timing: StepsTiming = STEPS
   const n = (s: number) => Math.max(1, Math.round(s * fps));
   for (let step = 0; step < count; step++) {
     // The first step starts framed; later ones glide over from the last.
-    if (step) for (let i = 1, g = n(timing.glide); i <= g; i++) out.push({ step, explode: 1, glide: ease(i / g), delay: ms });
-    out.push({ step, explode: 1, glide: 1, delay: Math.max(ms, timing.hold * 1000) });
-    for (let i = 1, m = n(timing.move); i <= m; i++) out.push({ step, explode: 1 - ease(i / m), glide: 1, delay: ms });
+    // Meanwhile the last step's parts fade from the highlight to plain.
+    if (step) for (let i = 1, g = n(timing.glide); i <= g; i++) out.push({ step, explode: 1, glide: ease(i / g), fade: 1 - ease(i / g), delay: ms });
+    out.push({ step, explode: 1, glide: 1, fade: 0, delay: Math.max(ms, timing.hold * 1000) });
+    for (let i = 1, m = n(timing.move); i <= m; i++) out.push({ step, explode: 1 - ease(i / m), glide: 1, fade: 0, delay: ms });
     const last = step === count - 1;
-    out.push({ step, explode: 0, glide: 1, delay: Math.max(ms, (last ? timing.end : timing.rest) * 1000) });
+    out.push({ step, explode: 0, glide: 1, fade: 0, delay: Math.max(ms, (last ? timing.end : timing.rest) * 1000) });
   }
   // The same picture once more: a video's last frame often shows only for an instant, and the finished model should stay up.
   if (out.length) out.push({ ...out[out.length - 1], delay: ms });
@@ -137,6 +141,8 @@ export async function renderStepsMovie(steps: MovieStep[], style: SceneStyle, di
       const moving = new Set(steps[f.step].moving);
       for (const p of parts) if (moving.has(p.id)) p.explode = f.explode;
       art.move(parts, 0);
+      // The last step's parts, still part way highlighted as this one comes on.
+      if (f.step) art.fadeHighlight(steps[f.step - 1].moving, f.fade);
       const cam = f.step ? between(cameras[f.step - 1], cameras[f.step], f.glide) : cameras[0];
       const camera: OrthographicCamera = cameraFor(cam, aspect, cam.size * 4 + Math.hypot(...cam.target));
       art.draw(camera, width, height, ss);

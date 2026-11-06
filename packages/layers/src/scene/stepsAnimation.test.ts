@@ -23,6 +23,18 @@ describe("stepsFrames", () => {
     expect(glide.every(f => f.explode === 1)).toBe(true);
   });
 
+  it("fades the last step's parts from the highlight while it glides, and only then", () => {
+    const frames = stepsFrames(3, 10);
+    expect(frames.filter(f => f.step === 0).every(f => f.fade === 0)).toBe(true);
+    for (const step of [1, 2]) {
+      const fading = frames.filter(f => f.step === step && f.glide < 1).map(f => f.fade);
+      expect(fading.length).toBeGreaterThan(1);
+      expect(fading[0]).toBeGreaterThan(0.5);
+      fading.slice(1).forEach((v, i) => expect(v).toBeLessThan(fading[i]));
+      expect(frames.filter(f => f.step === step && f.glide === 1).every(f => f.fade === 0)).toBe(true);
+    }
+  });
+
   it("lasts about as long as Play steps", () => {
     const t = STEPS_TIMING;
     const ms = stepsFrames(4, 24).reduce((a, f) => a + f.delay, 0);
