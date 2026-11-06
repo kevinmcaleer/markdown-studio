@@ -4,11 +4,12 @@
 
 import { BufferAttribute, BufferGeometry, Matrix4, Quaternion, Vector3 } from "three";
 import { jointPlace } from "../../src/scene/joint";
-import { ARROW_FROM, ARROW_TO, lookOf, placeBeside, shownAs, type Box3, type ScenePart, type Vec3 } from "../../src/scene/model";
+import { ARROW_FROM, ARROW_TO, type ExplodeDir, lookOf, placeBeside, shownAs, type Box3, type ScenePart, type Vec3 } from "../../src/scene/model";
 import { arrowEnd, cameraFor, frameTight, localMatrix, worldMatrices, type Placed } from "../../src/scene/render";
 import { fitDiameter, fitLength, holeDepth, isHoleSnap, type ScrewHead } from "../../src/scene/screw";
 import { Topology, type Face, type Snap } from "../../src/scene/snaps";
 import { sitDelta } from "../../src/scene/sit";
+import { branchOf, smartExplode, type ExplodeShape } from "../../src/scene/explode";
 import { layTrack, type TrackSpec } from "../../src/scene/track";
 import { cableRadius, coreLines, leadLength, MIN_BEND, ringRadius, tightestBend, wireRoute } from "../../src/scene/wire";
 import { mirrorPartner, mirrorPlane, mirrorPoint } from "../../src/scene/wireMirror";
@@ -556,6 +557,65 @@ export const GRADERS: Record<string, Grader> = {
     return [
       near("moves along the joint (mm)", move, expect.move, tol, 2),
       near("then rests touching (a second press moves mm)", again, 0, tol),
+    ];
+  },
+
+  /**
+   * Smart explode: which way a joined part should come off so it doesn't
+   * run through the other parts. Parts are boxes (centred on their middle);
+   * a joined part's position is in its parent's frame, as a scene keeps it.
+   */
+  explode(
+    input: { parts: { id: string; box?: Vec3; shape?: ShapeSpec; position: Vec3; rotation?: Vec3; parent?: string; normal?: Vec3; distance?: number; hidden?: boolean }[]; part: string },
+    expect: { dir: ExplodeDir | ExplodeDir[] },
+    ctx,
+  ) {
+    const parts: ScenePart[] = input.parts.map(p => ({
+      id: p.id,
+      name: p.id,
+      position: p.position,
+      rotation: p.rotation || [0, 0, 0],
+      ...(p.hidden ? { hidden: true } : {}),
+      ...(p.parent ? { parent: p.parent, joint: { normal: p.normal || [0, 0, 1], distance: p.distance ?? 30 } } : {}),
+    }));
+    // Each part's model, centred on its middle as a scene keeps it.
+    const shapes = new Map(input.parts.map(p => {
+      const tri = centred(shapeTriangles(p.shape || { box: p.box! }, ctx.read));
+      const size: Vec3 = [0, 1, 2].map(k => {
+        let hi = -Infinity;
+        for (let i = k; i < tri.length; i += 3) hi = Math.max(hi, tri[i]);
+        return hi * 2;
+      }) as Vec3;
+      return [p.id, { size, triangles: tri }] as [string, ExplodeShape];
+    }));
+    const sizes = new Map([...shapes].map(([id, s]) => [id, s.size] as [string, Vec3]));
+    const choice = smartExplode(parts, worldMatrices(parts, 0, false), shapes, input.part);
+    if (!choice) return [yes("works out a way", false, "no answer")];
+    const want = Array.isArray(expect.dir) ? expect.dir : [expect.dir];
+    // Slid all the way out that way, it's clear of every other part.
+    const part = parts.find(p => p.id === input.part)!;
+    part.joint!.explodeDir = choice.dir;
+    const branch = branchOf(parts, input.part);
+    const box = (p: ScenePart, m: Matrix4) => {
+      const h = new Vector3(...sizes.get(p.id)!).multiplyScalar(0.5);
+      const corners = [0, 1, 2, 3, 4, 5, 6, 7].map(k => new Vector3(k & 1 ? h.x : -h.x, k & 2 ? h.y : -h.y, k & 4 ? h.z : -h.z).applyMatrix4(m));
+      return { min: corners.reduce((a, c) => a.min(c), corners[0].clone()), max: corners.reduce((a, c) => a.max(c), corners[0].clone()) };
+    };
+    const out = worldMatrices(parts.map(p => (branch.has(p.id) ? p : { ...p, explode: 0 })), 1);
+    const rest = worldMatrices(parts, 0, false);
+    let hits = "";
+    for (const q of parts) {
+      if (q.hidden || branch.has(q.id)) continue;
+      const b = box(q, rest.get(q.id)!);
+      for (const id of branch) {
+        const a = box(parts.find(p => p.id === id)!, out.get(id)!);
+        const o = ["x", "y", "z"].every(k => Math.min(a.max[k as "x"], b.max[k as "x"]) - Math.max(a.min[k as "x"], b.min[k as "x"]) > 1e-6);
+        if (o) hits = q.id;
+      }
+    }
+    return [
+      yes("comes off the way a person would", want.includes(choice.dir), `went ${choice.dir}, wanted ${want.join(" or ")}`, 2),
+      yes("ends clear of the other parts", !hits, hits ? `still in ${hits}` : ""),
     ];
   },
 };

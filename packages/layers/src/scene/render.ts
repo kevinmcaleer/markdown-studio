@@ -27,6 +27,7 @@ import {
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import type { SceneCamera, SceneData, ScenePart, SceneStyle, SectionPlane, Vec3 } from "./model";
+import { explodeVector } from "./explode";
 import { explodeOf, highlightedParts, lookOf, sectionKeeps, sectionOrigin, shownAs, type SceneLook } from "./model";
 import { wireMesh } from "./wire";
 import { coresOf, loomsOf, type Looms } from "./wireSpec";
@@ -300,7 +301,7 @@ export function worldMatrices(parts: ScenePart[], explode = 0, own = true): Map<
       m = visit(parent, depth + 1).clone();
       const f = own ? explodeOf(p, explode) : explode;
       if (p.joint && f > 0) {
-        const n = new Vector3(...p.joint.normal).normalize().multiplyScalar(p.joint.distance * f);
+        const n = explodeVector(p.joint, m).multiplyScalar(p.joint.distance * f);
         m.multiply(new Matrix4().makeTranslation(n.x, n.y, n.z));
       }
       m.multiply(local);
@@ -601,7 +602,7 @@ export class LineArt {
       if (!parent || parent.part.hidden || !m || !pm) continue;
       const from = new Vector3(...(p.joint.childPoint || [0, 0, 0])).applyMatrix4(m);
       // The slide, turned into the world by the parent's frame.
-      const slide = new Vector3(...p.joint.normal).transformDirection(pm).multiplyScalar(p.joint.distance * f);
+      const slide = explodeVector(p.joint, pm).transformDirection(pm).multiplyScalar(p.joint.distance * f);
       if (slide.lengthSq() < 1e-6) continue;
       // Start at the part's leading end (a screw's tip, not its neck), so
       // the line isn't hidden inside the part.

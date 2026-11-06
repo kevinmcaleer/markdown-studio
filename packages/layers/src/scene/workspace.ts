@@ -15,7 +15,7 @@ import {
   applyPreset, DEFAULT_LIMITS, JOINT_TYPES, normalizeScene, newPartId, partName, placeBeside, STYLE_PRESETS, VIEWS, wrapAngle,
   followModel, modelOf, partsDiffer,
   normalizeViews,
-  type JointType, type NamedView, type PartJoint, type ProjectModel,
+  type ExplodeDir, type JointType, type NamedView, type PartJoint, type ProjectModel,
   type Box3 as PlainBox, type SceneCamera, type SceneData, type ScenePart, type SceneStyle, type Vec3,
   explodeOf,
   highlightedParts, ARROW_FROM, ARROW_TO, isWiring, lookOf, wiresInOrder } from "./model";
@@ -25,6 +25,7 @@ import { mirrorPartner, mirrorPlane, mirrorPoint } from "./wireMirror";
 import { cableBetween, catalogSocketsFor, coloursFromDiagram, connectionsFor, diagramLabels, freePort, linkByName, missingWires, partsNotInScene, portById, portPlacements, routedCount, type DiagramEnd, type PortPlacement, type WiringPart, type WiringHost, type WiringInfo } from "./wiring2d";
 import { BARE_PIN, BUNDLE_TWIST, cableColours, coresOf, isBarePin, loomsOf, newSocketId, nextWireColour, WIRE_COLOURS, WIRE_DEFAULTS, WIRE_LIMITS, wireColourName, type PartSocket, type WireCore, type WireEnd, type WireSpec, type WireWaypoint } from "./wireSpec";
 import { applyJoint } from "./joint";
+import { EXPLODE_DIRS, explodeChooser, explodeDirLabel, explodeVector, type ExplodeChoice, type ExplodeShape } from "./explode";
 import { partJoints } from "./jointList";
 import { sitDelta } from "./sit";
 import { emptyModel, frame, frameTight, LineArt, modelFromPositions, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
@@ -179,6 +180,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
               <button type="button" class="lyr-btn" data-act="section" title="Section view: click a face, then drag its arrow to slide a cut through the parts">${icon("section", 16)}<span>Section</span></button>
               <span class="lyr-sep"></span>
               <label class="lyr-scene-explode" title="Slide joined parts apart along their joints, to show how they fit">${icon("expand", 16)}<span>Explode</span><input type="range" min="0" max="100" step="1" data-explode value="0" aria-label="Explode"><input type="number" class="lyr-scene-explode-num" min="0" max="100" step="1" data-explode-num value="0" aria-label="Explode, per cent"><span class="lyr-scene-explode-unit">%</span></label>
+              <button type="button" class="lyr-btn lyr-icon-btn lyr-scene-smart" data-act="explode-smart" title="Smart explode: point each joint the way it comes off clear of the other parts (leaves the ways you picked by hand)" aria-label="Smart explode">${icon("wand", 16)}</button>
               <button type="button" class="lyr-btn lyr-scene-explode-follow" data-act="explode-follow" hidden>${icon("rotate", 16)}<span></span></button>
             </div>
             <div class="lyr-screw-bar" role="toolbar" aria-label="Screw" hidden></div>
@@ -407,6 +409,58 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       draw();
     }
 
+    /** Smart explode's chooser for the scene as it stands (see explode.ts). */
+    function chooser(): (id: string) => ExplodeChoice | null {
+      const shapes = new Map<string, ExplodeShape>();
+      for (const q of scene.parts) {
+        const m = models.get(q.id);
+        if (!m || m instanceof Error) continue;
+        const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry;
+        shapes.set(q.id, { size: m.size, triangles: g.getAttribute("position")?.array as ArrayLike<number> | undefined });
+      }
+      return explodeChooser(scene.parts, worldMatrices(scene.parts, 0, false), shapes);
+    }
+
+    /**
+     * Works out which way a joint comes off clear of the other parts and
+     * keeps it as Smart's choice. False when it can't (not joined, or the
+     * models aren't loaded).
+     */
+    function smartOne(p: ScenePart, choose = chooser()): boolean {
+      if (!p.joint) return false;
+      const choice = choose(p.id);
+      if (!choice) return false;
+      if (choice.dir === "joint") delete p.joint.explodeDir;
+      else p.joint.explodeDir = choice.dir;
+      p.joint.explodeAuto = true;
+      return true;
+    }
+
+    /** Smart explode for every joint whose way wasn't picked by hand. */
+    function smartAll(): void {
+      let changed = 0, looked = 0, kept = 0;
+      const choose = chooser();
+      for (const p of scene.parts) {
+        if (!p.parent || !p.joint) continue;
+        if (p.joint.explodeDir && !p.joint.explodeAuto) {
+          kept++;
+          continue;
+        }
+        const was = p.joint.explodeDir || "joint";
+        if (!smartOne(p, choose)) continue;
+        looked++;
+        if ((p.joint.explodeDir || "joint") !== was) changed++;
+      }
+      if (!looked && !kept) return status("Join parts first: then Smart explode points each one the clear way.", true);
+      follow();
+      commit();
+      renderList();
+      renderProps();
+      if (draft) renderJointDialog();
+      const hand = kept ? ` ${kept} you picked by hand ${kept === 1 ? "was" : "were"} left alone.` : "";
+      status(changed ? `Smart explode turned ${changed} joint${changed === 1 ? "" : "s"} to come off clear of the other parts.${hand}` : `Every joint already comes off the clear way.${hand}`);
+    }
+
     /** Which file each loaded model came from (ModelStore.key), by part id. */
     const modelKeys = new Map<string, string>();
     function keepModel(part: ScenePart, model: Model | Error): void {
@@ -603,7 +657,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const m = world.get(part.parent)?.clone() || new Matrix4();
       const f = explodeOf(part, scene.explode);
       if (part.joint && f > 0) {
-        const n = new Vector3(...part.joint.normal).normalize().multiplyScalar(part.joint.distance * f);
+        const n = explodeVector(part.joint, m).multiplyScalar(part.joint.distance * f);
         m.multiply(new Matrix4().makeTranslation(n.x, n.y, n.z));
       }
       return m;
@@ -1626,6 +1680,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         gap: 0,
       };
       applyJoint(child);
+      smartOne(child);
       selectedId = child.id;
       stopJoin(`“${child.name}” is joined to “${parent.name}”.`);
       follow();
@@ -3964,9 +4019,12 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         spin: was?.spin || 0,
         gap: was?.gap || 0,
         ...(was?.offset ? { offset: was.offset } : {}),
+        // A way picked by hand stays; Smart's is worked out again for the new faces.
+        ...(was?.explodeDir && !was.explodeAuto ? { explodeDir: was.explodeDir } : {}),
       };
       keepInLimits(p.joint);
       applyJoint(p);
+      if (!p.joint.explodeDir) smartOne(p);
       shownJoint = p.id;
       showJoint(p.id);
       follow();
@@ -4041,11 +4099,21 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
             <div class="lyr-scene-fields">
               ${jf("spin", turns ? "Angle" : "Spin", "°", j?.spin || 0, 1, "Turn it about the joint, keeping the faces together")}
               ${jf("gap", slides ? "Slide" : "Gap", "mm", j?.gap || 0, 0.1, "How far it stands off the face")}
-              ${jf("distance", "Explode", "mm", j?.distance || 0, 1, "How far it slides out in the exploded view")}
             </div>
             ${offsetOpen ? `<div class="lyr-scene-fields lyr-joint-offset" aria-label="Offset">
               ${(["X", "Y", "Z"] as const).map(a => jf(`offset${a}`, `Offset ${a}`, "mm", fieldValue(`offset${a}`, p), 0.1, `Move it along ${partById(draft!.parentId)?.name || "the part"}'s ${a} axis, after the rest of the line-up`)).join("")}
             </div>` : ""}
+            <div class="lyr-panel-title">Explode</div>
+            <div class="lyr-scene-fields lyr-joint-explode">
+              <label class="lyr-scene-field lyr-joint-way" title="Which way it comes off in the exploded view">
+                <span>Comes off</span>
+                <select data-joint-explode-dir aria-label="Which way it comes off">
+                  <option value="smart"${j?.explodeAuto ? " selected" : ""}>Smart${j?.explodeAuto ? `: ${esc(explodeDirLabel(j.explodeDir))}` : ""}</option>
+                  ${EXPLODE_DIRS.map(o => `<option value="${o.id}" title="${esc(o.detail)}"${!j?.explodeAuto && (j?.explodeDir || "joint") === o.id ? " selected" : ""}>${esc(o.label)}</option>`).join("")}
+                </select>
+              </label>
+              ${jf("distance", "How far", "mm", j?.distance || 0, 1, "How far it slides out in the exploded view")}
+            </div>
             <div class="lyr-scene-quick">
               <button type="button" class="lyr-btn" data-act="joint-flip" title="Turn the part over, so it sits on the other side of the face">${icon("flipV", 16)}<span>Flip</span></button>
               <button type="button" class="lyr-btn" data-act="joint-sit" title="Drop it straight down until it rests on the part beneath it (its joint's Offset takes up the move)">${icon("sit", 16)}<span>Sit on part</span></button>
@@ -4122,6 +4190,25 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
 
     jointDialog.addEventListener("change", e => {
       const t = e.target as HTMLSelectElement;
+      if (draft && t.dataset.jointExplodeDir !== undefined) {
+        const p = partById(draft.childId);
+        if (!p?.joint) return;
+        if (t.value === "smart") {
+          if (!smartOne(p)) status("Smart explode needs the parts' models loaded first.", true);
+        } else {
+          delete p.joint.explodeAuto;
+          if (t.value === "joint") delete p.joint.explodeDir;
+          else p.joint.explodeDir = t.value as ExplodeDir;
+        }
+        // Show it coming off, so the change can be seen.
+        if (p.explode === undefined && scene.explode <= 0) {
+          scene.explode = 0.6;
+          syncExplode();
+        }
+        follow();
+        renderJointDialog();
+        return;
+      }
       if (!draft || !t.dataset.jointPart) return;
       if (t.dataset.jointPart === "parent") {
         draft.parentId = t.value;
@@ -5605,6 +5692,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         case "redo": redo(); break;
         case "cancel": cancel(); break;
         case "done": void finish(); break;
+        case "explode-smart": smartAll(); break;
         case "explode-follow": {
           const own = scene.parts.filter(p => p.explode !== undefined);
           own.forEach(p => delete p.explode);

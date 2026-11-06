@@ -107,7 +107,19 @@ export interface PartJoint {
   /** A moving joint's limits: degrees for turning, mm for sliding. */
   lower?: number;
   upper?: number;
+  /**
+   * Which way the part comes off in an exploded view, instead of along
+   * `normal` (see explode.ts): "joint" along it all the same, "reverse" the
+   * other way, or a world axis. Left out: along the joint.
+   */
+  explodeDir?: ExplodeDir;
+  /** `explodeDir` was worked out by Smart explode (so it may work it out again), not picked by hand. */
+  explodeAuto?: boolean;
 }
+
+/** Which way a joined part comes off when exploded (see explode.ts). */
+export type ExplodeDir = "joint" | "reverse" | "+x" | "-x" | "+y" | "-y" | "+z" | "-z";
+export const EXPLODE_DIR_IDS: readonly ExplodeDir[] = ["joint", "reverse", "+x", "-x", "+y", "-y", "+z", "-z"];
 
 export type JointType = "fixed" | "revolute" | "prismatic";
 export const JOINT_TYPES: { id: JointType; label: string; detail: string }[] = [
@@ -351,6 +363,8 @@ export function normalizeScene(value: unknown): SceneData {
             part.joint.lower = lower;
             part.joint.upper = upper;
           }
+          if (EXPLODE_DIR_IDS.includes(j.explodeDir as ExplodeDir)) part.joint.explodeDir = j.explodeDir as ExplodeDir;
+          if (j.explodeAuto === true) part.joint.explodeAuto = true;
         }
         return part;
       })

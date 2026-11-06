@@ -1,0 +1,12 @@
+{
+  "title": "Board on top of a base keeps coming off along its joint",
+  "why": "The board sits on the base's top face, joined to it with the face's +z normal: along the joint is straight up and clear, so it stays.",
+  "input": {
+    "parts": [
+      { "id": "base", "box": [60, 40, 10], "position": [0, 0, 5] },
+      { "id": "board", "box": [50, 30, 2], "position": [0, 0, 6], "parent": "base", "normal": [0, 0, 1], "distance": 20 }
+    ],
+    "part": "board"
+  },
+  "expect": { "dir": "joint" }
+}
