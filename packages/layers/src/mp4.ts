@@ -5,34 +5,58 @@
 
 import { ArrayBufferTarget, Muxer } from "mp4-muxer";
 
-/** H.264 profiles to try, most widely played first: Main, Baseline, High. */
-const CODECS = ["avc1.4d0028", "avc1.42001f", "avc1.640028"];
+/**
+ * H.264 profiles to try, most widely played first: Main, Constrained
+ * Baseline and Baseline (all some browsers' encoders do, Firefox's among
+ * them), High, each at level 4.0 (up to 1080p), then 5.1 for anything
+ * bigger, then Baseline 3.1 (up to 720p) for old encoders.
+ */
+const CODECS = ["avc1.4d0028", "avc1.42e028", "avc1.420028", "avc1.640028", "avc1.4d0033", "avc1.42e033", "avc1.640033", "avc1.42001f"];
 
 /** About this many bits a second for each pixel of the picture: line art on a flat grey needs little. */
 const BITS_PER_PIXEL_SECOND = 2.2;
 
 /** The encoder settings this browser can use for a `width`×`height` video, or null when it can't make an MP4. */
 export async function mp4Config(width: number, height: number, fps: number): Promise<VideoEncoderConfig | null> {
-  if (typeof VideoEncoder === "undefined" || typeof VideoFrame === "undefined") return null;
+  return (await mp4Configs(width, height, fps, 1))[0] ?? null;
+}
+
+/**
+ * Up to `max` encoder settings this browser can use, best first: the
+ * hardware's (or the browser's choice), then the browser's own software
+ * encoder, so an encoder that gives up part way has another to go to
+ * before the animation falls back to a GIF.
+ */
+export async function mp4Configs(width: number, height: number, fps: number, max = 3): Promise<VideoEncoderConfig[]> {
+  if (typeof VideoEncoder === "undefined" || typeof VideoFrame === "undefined") return [];
   // H.264 wants even sizes.
-  if (width % 2 || height % 2) return null;
-  for (const codec of CODECS) {
-    const config: VideoEncoderConfig = {
-      codec,
-      width,
-      height,
-      bitrate: Math.round(width * height * BITS_PER_PIXEL_SECOND),
-      framerate: fps,
-      avc: { format: "avc" },
-    };
-    try {
-      const { supported } = await VideoEncoder.isConfigSupported(config);
-      if (supported) return config;
-    } catch {
-      // Not this one.
+  if (width % 2 || height % 2) return [];
+  const out: VideoEncoderConfig[] = [];
+  for (const hardwareAcceleration of ["no-preference", "prefer-software"] as const) {
+    for (const codec of CODECS) {
+      const config: VideoEncoderConfig = {
+        codec,
+        width,
+        height,
+        bitrate: Math.round(width * height * BITS_PER_PIXEL_SECOND),
+        framerate: fps,
+        avc: { format: "avc" },
+        ...(hardwareAcceleration === "no-preference" ? {} : { hardwareAcceleration }),
+      };
+      try {
+        const { supported } = await VideoEncoder.isConfigSupported(config);
+        if (supported) {
+          out.push(config);
+          if (out.length >= max) return out;
+          // The next one with the other kind of encoder.
+          break;
+        }
+      } catch {
+        // Not this one.
+      }
     }
   }
-  return null;
+  return out;
 }
 
 /**
