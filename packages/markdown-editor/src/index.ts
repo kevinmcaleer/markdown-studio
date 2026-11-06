@@ -155,7 +155,7 @@ export {
   type Change,
 } from "./outline";
 export { htmlToMarkdown } from "./htmlToMarkdown";
-export { layersBlocks, layersCommand, assemblyGuideCommand, makeAssemblyGuide, screwInventoryCommand, makeScrewInventory, wireListCommand, makeWireList, animatedModelCommand, droppingModelCommand, wiringShowcaseCommand, makeAnimatedModel, refreshAnimatedModels, isAnimationUrl, inventorySpot, guideSection, GUIDE_HEADING, openLayers, layersOpen, graphicFileName, newGraphicInsert, type LayersApi, type LayersEditor, type LayersHost, type LayersOptions, type LayersResult } from "./layersBlock";
+export { layersBlocks, layersCommand, assemblyGuideCommand, makeAssemblyGuide, screwInventoryCommand, makeScrewInventory, wireListCommand, makeWireList, animatedModelCommand, droppingModelCommand, wiringShowcaseCommand, modelCommand, openModel, makeAnimatedModel, refreshAnimatedModels, isAnimationUrl, inventorySpot, guideSection, GUIDE_HEADING, openLayers, layersOpen, graphicFileName, newGraphicInsert, type LayersApi, type LayersEditor, type LayersHost, type LayersOptions, type LayersResult } from "./layersBlock";
 export { hostBlocks, openHostBlock, hostBlockRange, type HostBlock, type HostBlockOptions } from "./hostBlock";
 export { isAnimationVideoUrl, isLayersUrl, layersUrl, layersOpener, LAYERS_MARK, type LayersHistoryEntry, type LayersOpener } from "./layersFacet";
 export { parseDelimited } from "./delimited";
