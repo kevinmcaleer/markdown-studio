@@ -54,7 +54,6 @@ export function sitDelta(parent: ArrayLike<number>, child: ArrayLike<number>, ch
   const cell = Math.max((Math.max(u1 - u0, v1 - v0) || 1) / CELLS, 0.05);
   const nu = Math.max(1, Math.ceil((u1 - u0) / cell)), nv = Math.max(1, Math.ceil((v1 - v0) / cell));
   const low = new Float64Array(nu * nv).fill(Infinity);
-  const top = new Float64Array(nu * nv).fill(-Infinity);
 
   /** Calls `put` with each cell a triangle covers, and its height there. */
   const raster = (ax: number, ay: number, ah: number, bx: number, by: number, bh: number, cx: number, cy: number, ch: number, put: (k: number, h: number) => void) => {
@@ -89,33 +88,51 @@ export function sitDelta(parent: ArrayLike<number>, child: ArrayLike<number>, ch
     });
   }
 
+  // Every parent height in each cell the child covers.
+  const hits: number[][] = Array.from({ length: nu * nv }, () => []);
   const pu = new Float64Array(9);
   for (let i = 0; i + 8 < parent.length; i += 9) {
-    let lo = Infinity, lu = Infinity, hu = -Infinity, lv = Infinity, hv = -Infinity;
+    let lu = Infinity, hu = -Infinity, lv = Infinity, hv = -Infinity;
     for (let c = 0; c < 3; c++) {
       p.set(parent[i + c * 3], parent[i + c * 3 + 1], parent[i + c * 3 + 2]);
       const a = p.dot(u), b = p.dot(v), h = p.dot(n);
       pu[c * 3] = a;
       pu[c * 3 + 1] = b;
       pu[c * 3 + 2] = h;
-      lo = Math.min(lo, h);
       lu = Math.min(lu, a);
       hu = Math.max(hu, a);
       lv = Math.min(lv, b);
       hv = Math.max(hv, b);
     }
-    // Wholly above the child's middle, or off its footprint: not beneath it.
-    if (lo > middle || hu < u0 || lu > u1 || hv < v0 || lv > v1) continue;
+    // Off its footprint: not beneath it.
+    if (hu < u0 || lu > u1 || hv < v0 || lv > v1) continue;
     raster(pu[0], pu[1], pu[2], pu[3], pu[4], pu[5], pu[6], pu[7], pu[8], (k, h) => {
-      if (h <= middle && h > top[k]) top[k] = h;
+      if (low[k] !== Infinity) hits[k].push(h);
     });
   }
 
-  let move = -Infinity;
-  for (let k = 0; k < low.length; k++) {
-    if (low[k] === Infinity || top[k] === -Infinity) continue;
-    const need = top[k] - low[k];
-    if (need > move) move = need;
+  // How far to move from `at`: the parent points below the child's middle
+  // (moved by `at`) that it must clear. Rising can bring more of the parent
+  // under the middle (the part was sunk in deep), so it's done again until
+  // nothing is left to move: pressing twice moves it once.
+  const step = (at: number): number | null => {
+    const mid = middle + at;
+    let move = -Infinity;
+    for (let k = 0; k < low.length; k++) {
+      let top = -Infinity;
+      for (const h of hits[k]) if (h <= mid + 1e-6 && h > top) top = h;
+      if (top === -Infinity) continue;
+      const need = top - (low[k] + at);
+      if (need > move) move = need;
+    }
+    return move === -Infinity ? null : move;
+  };
+  let total = 0;
+  for (let i = 0; i < 20; i++) {
+    const d = step(total);
+    if (d === null) return i ? Math.round(total * 100) / 100 + 0 : null;
+    total += d;
+    if (Math.abs(d) < 1e-4) break;
   }
-  return move === -Infinity ? null : Math.round(move * 100) / 100 + 0;
+  return Math.round(total * 100) / 100 + 0;
 }

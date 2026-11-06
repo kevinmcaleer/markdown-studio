@@ -50,6 +50,17 @@ describe("sit on the part beneath", () => {
     expect(sitDelta(side(tray), battery, m, [1, 0, 0])).toBeCloseTo(2, 1);
   });
 
+  it("does nothing the second time (sunk deep into a step)", () => {
+    // A floor (top z = 2) with a raised block (top z = 10) under half the
+    // battery, whose bottom is at z = 0 and middle at 8.5: it's inside the
+    // block, so it comes up onto the block's top, all in one press.
+    const step = [...box([-50, -50, 0], [50, 50, 2]), ...box([5, -50, 2], [50, 50, 10])];
+    const tall = box([-12, -8, -8.5], [12, 8, 8.5]);
+    const first = sitDelta(step, tall, at(0, 0, 8.5), [0, 0, 1]);
+    expect(first).toBeCloseTo(10, 1);
+    expect(sitDelta(step, tall, at(0, 0, 8.5 + first!), [0, 0, 1])).toBeCloseTo(0, 2);
+  });
+
   it("says when nothing is beneath", () => {
     expect(sitDelta(tray, battery, at(200, 0, 5), [0, 0, 1])).toBeNull();
   });

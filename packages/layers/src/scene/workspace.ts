@@ -4221,7 +4221,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         if (own.has(o.id) || o.hidden || o.wire || !m || m instanceof Error || !mw) continue;
         m.geometry.computeBoundingBox();
         const ob = m.geometry.boundingBox!.clone().applyMatrix4(mw);
-        if (ob.max.x < cb.min.x || ob.min.x > cb.max.x || ob.max.y < cb.min.y || ob.min.y > cb.max.y || ob.min.z > cb.max.z) continue;
+        if (ob.max.x < cb.min.x || ob.min.x > cb.max.x || ob.max.y < cb.min.y || ob.min.y > cb.max.y) continue;
         const pos = m.geometry.getAttribute("position").array;
         const out = new Float32Array(pos.length);
         for (let i = 0; i + 2 < pos.length; i += 3) {
