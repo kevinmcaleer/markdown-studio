@@ -29,7 +29,7 @@ import { sectionRemovers } from "../blockRemove";
 import { completeTodo, findTodos, todoMarks, type Todo } from "../todos";
 import { cardPicturePicker } from "../cardsWidget";
 import { hostBlocks } from "../hostBlock";
-import { animatedModelCommand, assemblyGuideCommand, droppingModelCommand, wiringShowcaseCommand, layersBlocks, layersCommand, modelCommand, screwInventoryCommand, wireListCommand, type LayersHost } from "../layersBlock";
+import { animatedModelCommand, assemblyGuideCommand, droppingModelCommand, wiringShowcaseCommand, layersBlocks, layersCommand, modelCommand, openModel, screwInventoryCommand, wireListCommand, type LayersHost } from "../layersBlock";
 import { videoRenderers } from "../videosWidget";
 import { speechEditor } from "../speech/speechEditor";
 import { useDictation } from "../speech/useDictation";
@@ -517,6 +517,9 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
       case "guide":
         setGuide((g) => (g ? null : anchorOf(button)));
         break;
+      case "model":
+        if (v && layersHost) void openModel(v, layersHost);
+        break;
     }
   };
   const onCustom = (tool: ToolbarButton, button: HTMLButtonElement) => {
@@ -544,7 +547,7 @@ export function StandaloneEditor({ options, host, bridge }: { options: MountOpti
       {toolbar && active && (
         <Toolbar
           items={toolbar}
-          state={{ active, readOnly, pane, fullscreen, outline: outlineOpen, raw, lineNumbers: lineNumbersOn, previewEnabled, spelling: spellcheck !== "off" && !readOnly, canUndo: history.undo, canRedo: history.redo }}
+          state={{ active, readOnly, pane, fullscreen, outline: outlineOpen, raw, lineNumbers: lineNumbersOn, previewEnabled, spelling: spellcheck !== "off" && !readOnly, model: !!(layersHost?.loadModel && layersHost.saveModel) && !readOnly, canUndo: history.undo, canRedo: history.redo }}
           onFormat={onFormat}
           onHeading={(block) => view.current && runFormat(view.current, { block })}
           onTool={onTool}

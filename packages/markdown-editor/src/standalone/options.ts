@@ -46,6 +46,7 @@ export type BuiltInTool =
   | "table"
   | "image"
   | "divider"
+  | "model"
   | "clear"
   | "find"
   | "spelling"
@@ -439,6 +440,8 @@ export const DEFAULT_TOOLBAR: BuiltInTool[] = [
   "table",
   "image",
   "divider",
+  // The project's 3D model (shown when the host has one: Layers' loadModel and saveModel).
+  "model",
   "|",
   "preview",
   "side-by-side",
