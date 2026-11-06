@@ -579,7 +579,7 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 .lyr-scene-colours { grid-template-columns: repeat(2, 1fr); }
 
 /* Add a part: each project model as a tile with its picture. */
-.lyr-scene-models.lyr-scene-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; padding: 2px; }
+.lyr-scene-models.lyr-scene-tiles, .lyr-scene-diagram-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 6px; padding: 2px; }
 .lyr-scene-tile {
   display: flex;
   flex-direction: column;

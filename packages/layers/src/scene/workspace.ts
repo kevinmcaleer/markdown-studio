@@ -22,7 +22,7 @@ import {
 import { connectorFile, connectorMesh, connectorOf, CONNECTOR_FAMILIES, DEFAULT_CONNECTOR, plugLift } from "./connectors";
 import { cableRadius, MIN_BEND, tightestBend, wireLength, wireRoute, wireTriangles } from "./wire";
 import { mirrorPartner, mirrorPlane, mirrorPoint } from "./wireMirror";
-import { cableBetween, catalogSocketsFor, coloursFromDiagram, connectionsFor, diagramLabels, freePort, linkByName, missingWires, routedCount, type DiagramEnd, type WiringHost, type WiringInfo } from "./wiring2d";
+import { cableBetween, catalogSocketsFor, coloursFromDiagram, connectionsFor, diagramLabels, freePort, linkByName, missingWires, partsNotInScene, routedCount, type DiagramEnd, type WiringHost, type WiringInfo } from "./wiring2d";
 import { BUNDLE_TWIST, cableColours, coresOf, loomsOf, newSocketId, nextWireColour, WIRE_COLOURS, WIRE_DEFAULTS, WIRE_LIMITS, wireColourName, type PartSocket, type WireCore, type WireEnd, type WireSpec, type WireWaypoint } from "./wireSpec";
 import { applyJoint } from "./joint";
 import { emptyModel, frame, frameTight, LineArt, modelFromPositions, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
@@ -462,7 +462,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       status(`Downloaded robot-urdf.zip: ${parts.length} part${parts.length === 1 ? "" : "s"}${skipped ? ` (${skipped} not loaded, left out)` : ""}. Unzip it and open robot.urdf in Snakie.`);
     }
 
-    async function addModel(source: { url?: string; buffer?: ArrayBuffer; name: string; file?: string }): Promise<void> {
+    async function addModel(source: { url?: string; buffer?: ArrayBuffer; name: string; file?: string; wiringPart?: string }): Promise<void> {
       if (isStepFile(source.file || "") || isStepFile(source.url || "")) return addStep(source);
       status(`Adding ${source.name}…`, false, true);
       try {
@@ -491,6 +491,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         opts.store.put(part, model);
         keepModel(part, model);
         scene.parts.push(part);
+        // A part of the wiring diagram: linked to it, with its catalog sockets.
+        if (source.wiringPart) setWiringPart(part, source.wiringPart, false);
         selectedId = part.id;
         rebuild();
         if (first || boxes.length === 0) fitView();
@@ -508,7 +510,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
      * solid). An upload is carried in the graphic as binary STL, with its CAD
      * faces; a project file's is read from it.
      */
-    async function addStep(source: { url?: string; buffer?: ArrayBuffer; name: string; file?: string }): Promise<void> {
+    async function addStep(source: { url?: string; buffer?: ArrayBuffer; name: string; file?: string; wiringPart?: string }): Promise<void> {
       status(`Reading ${source.name}… (the first STEP file takes a moment to set up)`, false, true);
       try {
         const bodies: StepBody[] = source.buffer ? await readStep(source.buffer) : await opts.store.stepBodies(source.url!);
@@ -534,6 +536,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         opts.store.put(part, model);
         keepModel(part, model);
         scene.parts.push(part);
+        // A part of the wiring diagram: linked to it, with its catalog sockets.
+        if (source.wiringPart) setWiringPart(part, source.wiringPart, false);
         selectedId = part.id;
         rebuild();
         if (first || boxes.length === 0) fitView();
@@ -3415,8 +3419,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const { routed, total } = routedCount(d, scene.parts);
       const missing = missingWires(d, scene.parts);
       const byName = linkByName(d, scene.parts).length;
+      const away = partsNotInScene(d, scene.parts);
       return `<section class="lyr-scene-section">${head}
         ${mine}
+        ${away.withModel.length || away.noModel.length ? `<p class="lyr-note">Not in this scene yet: ${esc(listNames([...away.withModel, ...away.noModel].map(w => w.name)))}.</p>` : ""}
+        ${away.withModel.length ? `<button type="button" class="lyr-wide-btn" data-act="diagram-parts" title="Each from its catalog part's 3D model, linked to the diagram">${icon("plus", 14)} Add ${away.withModel.length === 1 ? esc(away.withModel[0].name) : `the diagram's ${away.withModel.length} parts`}</button>` : ""}
         <p class="lyr-note">${routed} of ${total} wire${total === 1 ? "" : "s"} in the diagram routed here.</p>
         ${missing.wires.length ? `<button type="button" class="lyr-wide-btn" data-act="diagram-missing" title="A cable for each of the diagram's with sockets at both ends, by the shortest smooth run">${icon("wire", 14)} Add missing wires (${missing.wires.length})</button>` : ""}
         ${byName ? `<button type="button" class="lyr-wide-btn" data-act="diagram-names" title="Link parts whose names match the diagram's">${icon("link", 14)} Link parts by name (${byName})</button>` : ""}
@@ -4759,6 +4766,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         }
       } else if (b.dataset.act === "diagram-missing") {
         void addMissingWires();
+      } else if (b.dataset.act === "diagram-parts") {
+        if (diagram) void addDiagramParts(partsNotInScene(diagram, scene.parts).withModel.map(w => w.id));
       } else if (b.dataset.act === "diagram-names") {
         linkPartsByName();
       } else if (b.dataset.act === "sockets-from-catalog") {
@@ -4854,7 +4863,17 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       menu.hidden = false;
       menu.innerHTML = `
         <button type="button" class="lyr-scene-menu-item" role="menuitem" data-act="upload">${icon("upload", 16)}<span>Upload an STL or STEP file…</span></button>
+        ${diagramMenu()}
         ${opts.listModels ? `<div class="lyr-panel-title">Your project's models</div><div class="lyr-scene-models"><span class="lyr-note">Loading…</span></div>` : ""}`;
+      menu.querySelectorAll<HTMLElement>("[data-diagram-part]").forEach(b => {
+        const w = diagram?.parts.find(x => x.id === b.dataset.diagramPart);
+        if (!w?.model) return;
+        b.addEventListener("click", () => {
+          closeMenu();
+          void addDiagramParts([w.id]);
+        });
+        showThumb(b.querySelector<HTMLElement>(".lyr-scene-thumb")!, { url: w.model.url, title: w.model.file, thumbnail: w.model.thumbnail });
+      });
       if (!opts.listModels) return;
       try {
         const found = (await opts.listModels()).filter(m => /\.(stl|step|stp)(\?|#|$)/i.test(m.url) || /\.(stl|step|stp)$/i.test(m.title || ""));
@@ -4879,6 +4898,27 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         const box = menu.querySelector(".lyr-scene-models");
         if (box) box.innerHTML = `<span class="lyr-note">Your models couldn't be loaded.</span>`;
       }
+    }
+    /** The Add a part menu's "From the wiring diagram": its parts not in the scene yet, those with catalog models as tiles. */
+    function diagramMenu(): string {
+      if (!diagram) return "";
+      const { withModel, noModel } = partsNotInScene(diagram, scene.parts);
+      if (!withModel.length && !noModel.length) return "";
+      return `<div class="lyr-panel-title">From the wiring diagram</div>
+        ${withModel.length ? `<div class="lyr-scene-diagram-tiles">${withModel.map(w => `<button type="button" class="lyr-scene-tile" role="menuitem" data-diagram-part="${esc(w.id)}" title="${esc(`${w.name}: the catalog part's model, linked to the diagram`)}"><span class="lyr-scene-thumb">${icon("cube", 24)}</span><span class="lyr-scene-tile-name">${esc(w.name)}</span></button>`).join("")}</div>` : ""}
+        ${noModel.length ? `<p class="lyr-note">No 3D model in the catalog for ${esc(listNames(noModel.map(w => w.name)))}. Add one to the catalog part, or its STL or STEP file to the project.</p>` : ""}`;
+    }
+    const listNames = (names: string[]) => (names.length <= 3 ? names.join(", ") : `${names.slice(0, 3).join(", ")} and ${names.length - 3} more`);
+
+    /** Adds the diagram's parts with these ids, each from its catalog model, linked to the diagram. */
+    async function addDiagramParts(ids: string[]): Promise<void> {
+      for (const id of ids) {
+        const w = diagram?.parts.find(x => x.id === id);
+        if (!w?.model || closed) continue;
+        await addModel({ url: w.model.url, file: w.model.file, name: w.name, wiringPart: w.id });
+      }
+      renderList();
+      renderProps();
     }
     function closeMenu(): void {
       menu.hidden = true;

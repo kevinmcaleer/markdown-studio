@@ -186,6 +186,10 @@ const editor = mount(el, {
   diagram's cables that has sockets at both ends; **Open in wiring
   diagram** goes to it; and a part's sockets can be saved to its catalog
   part, so every project using it gets them (matched by the model's size).
+  The diagram's parts not in the scene yet are listed in its Wiring diagram
+  settings and under **From the wiring diagram** in Add a part: one whose
+  catalog part has a 3D model (`WiringPart.model`, STL or STEP) is added
+  from it, linked to the diagram with the catalog's sockets.
 - **Showing the wiring**: wires go in in the model's order (Goes in i of n
   in a wire's settings). **Assemble n wires** plays them in one by one, each
   growing along its route from its first plug (1×/2×/4×, Skip, Esc stops).
