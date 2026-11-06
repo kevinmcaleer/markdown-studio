@@ -25,6 +25,7 @@ import { mirrorPartner, mirrorPlane, mirrorPoint } from "./wireMirror";
 import { cableBetween, catalogSocketsFor, coloursFromDiagram, connectionsFor, diagramLabels, freePort, linkByName, missingWires, partsNotInScene, portById, portPlacements, routedCount, type DiagramEnd, type PortPlacement, type WiringPart, type WiringHost, type WiringInfo } from "./wiring2d";
 import { BARE_PIN, BUNDLE_TWIST, cableColours, coresOf, isBarePin, loomsOf, newSocketId, nextWireColour, WIRE_COLOURS, WIRE_DEFAULTS, WIRE_LIMITS, wireColourName, type PartSocket, type WireCore, type WireEnd, type WireSpec, type WireWaypoint } from "./wireSpec";
 import { applyJoint } from "./joint";
+import { partJoints } from "./jointList";
 import { sitDelta } from "./sit";
 import { emptyModel, frame, frameTight, LineArt, modelFromPositions, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
 import { MAX_EMBED, parseStl, stlFaces, toBinaryStl, tooBigToCarry } from "./stl";
@@ -3880,6 +3881,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       before: string;
     }
     let draft: JointDraft | null = null;
+    /** The part whose Joints list opened the dialog, selected again when it closes. */
+    let jointHome = "";
     /** Whether the joint dialog shows its X/Y/Z offset row (hidden until asked for, or the joint has one). */
     let offsetOpen = false;
 
@@ -3923,6 +3926,13 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       draft = null;
       jointDialog.hidden = true;
       if (joining?.half) stopJoin();
+      // Opened from a part's Joints list: back to that part, its joint still shown.
+      if (jointHome && partById(jointHome)) {
+        selectedId = jointHome;
+        attachGizmo();
+        if (shownJoint) gizmo.detach();
+      }
+      jointHome = "";
       renderList();
       renderProps();
       draw();
@@ -4829,6 +4839,27 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       rowEl.querySelectorAll<HTMLInputElement>("input").forEach(i => (i.value = String(Math.round(scene.explode * 100))));
     }
 
+    /** Every joint the part has, its own and the ones on it, each one click from its tools. */
+    function jointsList(p: ScenePart): string {
+      const js = partJoints(scene.parts, p.id);
+      if (!js.length) return "";
+      const kind = (t: JointType) => JOINT_TYPES.find(x => x.id === t)?.label || "Fixed";
+      const row = (j: (typeof js)[number]) => `<li class="lyr-scene-row lyr-scene-pjoint${shownJoint === j.id ? " lyr-on" : ""}">
+          <button type="button" class="lyr-btn lyr-icon-btn lyr-scene-tick${j.explodes ? " lyr-on" : ""}" data-pj-tick="${esc(j.id)}" title="${j.explodes ? "Explodes: click to keep this joint assembled in this scene" : "Stays assembled: click to explode it again"}" aria-label="Explode this joint" aria-pressed="${j.explodes}">${icon(j.explodes ? "ticked" : "border", 16)}</button>
+          <button type="button" class="lyr-scene-name" data-pj-show="${esc(j.id)}" title="Show where they join">${icon("link", 14)}<span>${esc(j.other.name)}</span><small>${esc(kind(j.type))}</small></button>
+          <button type="button" class="lyr-btn lyr-icon-btn" data-pj-go="${esc(j.other.id)}" title="Select ${esc(j.other.name)}" aria-label="Select ${esc(j.other.name)}">${icon("chevronRight", 16)}</button>
+          <button type="button" class="lyr-btn lyr-icon-btn" data-pj-edit="${esc(j.id)}" title="Edit the joint" aria-label="Edit the joint to ${esc(j.other.name)}">${icon("pencil", 16)}</button>
+          <button type="button" class="lyr-btn lyr-icon-btn" data-pj-remove="${esc(j.id)}" title="Remove the joint (the parts stay where they are)" aria-label="Remove the joint to ${esc(j.other.name)}">${icon("unlink", 16)}</button>
+        </li>`;
+      const on = js.filter(j => j.role === "on");
+      const holds = js.filter(j => j.role === "holds");
+      return `<div class="lyr-scene-pjoints">
+        <div class="lyr-scene-sub">Joints <span class="lyr-scene-count">${js.length}</span></div>
+        ${on.length ? `<div class="lyr-scene-pjoints-head">Joined to</div><ul class="lyr-scene-list">${on.map(row).join("")}</ul>` : ""}
+        ${holds.length ? `<div class="lyr-scene-pjoints-head">Joined to this part</div><ul class="lyr-scene-list">${holds.map(row).join("")}</ul>` : ""}
+      </div>`;
+    }
+
     function renderProps(): void {
       const p = partById(selectedId);
       const parent = p?.parent ? partById(p.parent) : undefined;
@@ -4841,6 +4872,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           : p ? `
             <label class="lyr-scene-namebox">Name <input type="text" maxlength="120" data-name value="${esc(p.name)}"></label>
             ${p.plug ? plugSection(p) : ""}
+            ${jointsList(p)}
             ${jointSection(p, parent)}
             ${locked(p) && !p.track ? `<p class="lyr-note lyr-scene-locked-note">${icon("link", 14)} Held in place by its joint to ${esc(parent?.name || "its parent")}, so it moves with it. Turn or slide it with the joint's ${p.joint?.type === "prismatic" ? "Slide" : p.joint?.type === "revolute" ? "Angle" : "Spin and Gap"}, or Unjoin it to place it by hand.</p>` : ""}
             <fieldset class="lyr-scene-placing"${locked(p) ? " disabled" : ""}>
@@ -5076,7 +5108,50 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     props.addEventListener("click", e => {
       const b = (e.target as HTMLElement).closest("button");
       if (!b) return;
-      if (b.dataset.wireColour) {
+      if (b.dataset.pjShow) {
+        // Show the joint, but keep this part in the inspector so its other joints stay to hand.
+        const home = selectedId;
+        const id = b.dataset.pjShow;
+        if (shownJoint === id) {
+          select(home);
+          return;
+        }
+        showJoint(id);
+        zoomTo(id, true);
+        selectedId = home;
+        renderList();
+        renderProps();
+        draw();
+      } else if (b.dataset.pjGo) {
+        select(b.dataset.pjGo);
+        zoomTo(b.dataset.pjGo, false);
+      } else if (b.dataset.pjEdit) {
+        const id = b.dataset.pjEdit;
+        if (partById(id)?.track) {
+          select(id);
+          openTrackDialog(id);
+        } else {
+          jointHome = selectedId;
+          openJointDialog(id);
+        }
+      } else if (b.dataset.pjRemove) {
+        const p = partById(b.dataset.pjRemove);
+        if (p) {
+          const to = p.parent ? partById(p.parent)?.name : "";
+          unjoin(p);
+          status(`“${p.name}” is no longer joined to “${to}”. It stays where it is.`);
+        }
+      } else if (b.dataset.pjTick) {
+        const p = partById(b.dataset.pjTick);
+        if (!p) return;
+        if (p.explode === 0) delete p.explode;
+        else p.explode = 0;
+        follow();
+        commit();
+        renderList();
+        renderProps();
+        status(p.explode === 0 ? `${p.name} stays assembled in this scene.` : `${p.name} explodes with the slider again.`);
+      } else if (b.dataset.wireColour) {
         setWire(w => withCoreColour(w, coreAt, b.dataset.wireColour!));
         commit();
         renderProps();
