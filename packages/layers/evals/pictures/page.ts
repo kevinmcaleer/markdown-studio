@@ -24,6 +24,8 @@ interface PictureCase {
     wiring?: boolean;
     hideWiring?: boolean;
     seeThrough?: boolean;
+    /** Wires in their own colour alone, no outline (the wiring showcase). */
+    bareWires?: boolean;
     wireStep?: string;
   };
   size?: [number, number];
@@ -80,7 +82,7 @@ async function render(c: PictureCase): Promise<string> {
     }
     scene.camera = frameTight(cam, placed, w / h);
   } else scene.camera = cam;
-  const canvas = await renderPicture(scene, store, w, h, 1);
+  const canvas = await renderPicture(scene, store, w, h, 1, [], { bareWires: !!c.scene.bareWires });
   return canvas.toDataURL("image/png");
 }
 

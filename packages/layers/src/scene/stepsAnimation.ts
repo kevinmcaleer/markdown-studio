@@ -2,14 +2,14 @@
 // Play steps shows, drawn a frame at a time and saved as a video. Each step
 // is shown with its parts drawn apart (earlier steps' parts ghosted, later
 // ones not there yet), then its parts go together; the view glides from one
-// step's framing to the next, while the last step's parts fade from the
-// highlight to plain. An MP4 where the browser can encode one, else
+// step's framing to the next, while the last step's highlighted parts fade
+// back to white. An MP4 where the browser can encode one, else
 // an animated GIF.
 
 import { OrthographicCamera } from "three";
 import { mp4Config } from "../mp4";
 import { ANIMATION_BACKGROUND, ease, encodeFrames } from "./animation";
-import type { SceneCamera, ScenePart, SceneStyle, Vec3 } from "./model";
+import { highlightedParts, type SceneCamera, type ScenePart, type SceneStyle, type Vec3 } from "./model";
 import { cameraFor, frameAll, LineArt, type ModelStore } from "./render";
 
 /** How long each piece of a step lasts, in seconds (as Play steps shows it). */
@@ -32,8 +32,6 @@ export interface StepsFrame {
   step: number;
   explode: number;
   glide: number;
-  /** How highlighted the last step's parts still are: 1 at the start of the glide, fading to 0 (plain) as it ends. */
-  fade: number;
   /** Milliseconds. */
   delay: number;
 }
@@ -45,12 +43,11 @@ export function stepsFrames(count: number, fps = 24, timing: StepsTiming = STEPS
   const n = (s: number) => Math.max(1, Math.round(s * fps));
   for (let step = 0; step < count; step++) {
     // The first step starts framed; later ones glide over from the last.
-    // Meanwhile the last step's parts fade from the highlight to plain.
-    if (step) for (let i = 1, g = n(timing.glide); i <= g; i++) out.push({ step, explode: 1, glide: ease(i / g), fade: 1 - ease(i / g), delay: ms });
-    out.push({ step, explode: 1, glide: 1, fade: 0, delay: Math.max(ms, timing.hold * 1000) });
-    for (let i = 1, m = n(timing.move); i <= m; i++) out.push({ step, explode: 1 - ease(i / m), glide: 1, fade: 0, delay: ms });
+    if (step) for (let i = 1, g = n(timing.glide); i <= g; i++) out.push({ step, explode: 1, glide: ease(i / g), delay: ms });
+    out.push({ step, explode: 1, glide: 1, delay: Math.max(ms, timing.hold * 1000) });
+    for (let i = 1, m = n(timing.move); i <= m; i++) out.push({ step, explode: 1 - ease(i / m), glide: 1, delay: ms });
     const last = step === count - 1;
-    out.push({ step, explode: 0, glide: 1, fade: 0, delay: Math.max(ms, (last ? timing.end : timing.rest) * 1000) });
+    out.push({ step, explode: 0, glide: 1, delay: Math.max(ms, (last ? timing.end : timing.rest) * 1000) });
   }
   // The same picture once more: a video's last frame often shows only for an instant, and the finished model should stay up.
   if (out.length) out.push({ ...out[out.length - 1], delay: ms });
@@ -86,6 +83,13 @@ const GIF = { width: 960, height: 540, fps: 12 };
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 function between(a: SceneCamera, b: SceneCamera, t: number): SceneCamera {
   return { direction: b.direction, target: [0, 1, 2].map(k => lerp(a.target[k], b.target[k], t)) as Vec3, size: lerp(a.size, b.size, t) };
+}
+
+/** The parts highlighted in one step that are still shown, but not highlighted, in the next: they fade from the highlight to their own fill. */
+export function fadingOut(before: ScenePart[], after: ScenePart[]): string[] {
+  const was = highlightedParts(before.filter(p => !p.ghost));
+  const now = highlightedParts(after);
+  return after.filter(p => !p.hidden && was.has(p.id) && (p.ghost || !now.has(p.id))).map(p => p.id);
 }
 
 /** Draws the steps, one after another, from `direction`, and encodes them as a movie. */
@@ -131,18 +135,20 @@ export async function renderStepsMovie(steps: MovieStep[], style: SceneStyle, di
     const ss = Math.max(1, Math.min(2, max / Math.max(width, height)));
     let shownStep = -1;
     let parts: ScenePart[] = [];
+    let fading: string[] = [];
     const draw = (i: number): void => {
       const f = frames[i];
       if (f.step !== shownStep) {
         shownStep = f.step;
         parts = steps[f.step].parts.map(p => ({ ...p }));
         art.setParts(parts.flatMap(part => (models.has(part.id) ? [{ part, model: models.get(part.id)! }] : [])), style, 0);
+        fading = f.step ? fadingOut(steps[f.step - 1].parts, parts) : [];
       }
+      // The last step's highlighted parts fade back to white as the view glides on.
+      for (const id of fading) art.fadeFill(id, style.highlight, f.glide);
       const moving = new Set(steps[f.step].moving);
       for (const p of parts) if (moving.has(p.id)) p.explode = f.explode;
       art.move(parts, 0);
-      // The last step's parts, still part way highlighted as this one comes on.
-      if (f.step) art.fadeHighlight(steps[f.step - 1].moving, f.fade);
       const cam = f.step ? between(cameras[f.step - 1], cameras[f.step], f.glide) : cameras[0];
       const camera: OrthographicCamera = cameraFor(cam, aspect, cam.size * 4 + Math.hypot(...cam.target));
       art.draw(camera, width, height, ss);

@@ -32,6 +32,7 @@ import { EXPLODE_DIRS, explodeChooser, explodeDirLabel, explodeVector, type Expl
 import { partJoints } from "./jointList";
 import { sitDelta } from "./sit";
 import { renderStepsMovie } from "./stepsAnimation";
+import { renderWiringAnimation } from "./wiringAnimation";
 import { growsFromTo, seeThroughParts } from "./seeThrough";
 import { emptyModel, frame, frameAll, frameTight, LineArt, modelFromPositions, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
 import { MAX_EMBED, parseStl, stlFaces, toBinaryStl, tooBigToCarry } from "./stl";
@@ -166,6 +167,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     let stepPlay: { frame: number; at: number; t0: number } | null = null;
     /** The steps movie being made (Save as movie): how far it's got, and whether it's been stopped. */
     let movie: { pct: number; stopped: boolean } | null = null;
+    /** The wiring animation being made to watch here (Play the wiring animation): how far it's got, and whether it's been stopped. */
+    let wiringMovie: { pct: number; stopped: boolean } | null = null;
 
     const overlay = document.createElement("div");
     overlay.className = "lyr-overlay lyr-scene-overlay";
@@ -229,6 +232,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
             <div class="lyr-steps-strip" role="region" aria-label="Steps" hidden></div>
             <div class="lyr-scene-help">Drag to look around, right-drag to pan, scroll to zoom. Hold Shift on a handle for 5 mm or 15° steps.</div>
             <div class="lyr-drop" hidden>Drop STL or STEP files to add them</div>
+            <div class="lyr-wiring-player" role="dialog" aria-label="Wiring animation" hidden></div>
           </div>
           <aside class="lyr-scene-side lyr-scene-props" aria-label="Part and style"></aside>
         </div>
@@ -4336,7 +4340,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       if (diagramState === "loading") return `<section class="lyr-scene-section">${head}<p class="lyr-note">Loading the wiring diagram…</p></section>`;
       if (!diagram || !diagram.parts.length) {
         return `<section class="lyr-scene-section">${head}<p class="lyr-note">${diagramState === "failed" ? "The wiring diagram couldn't be loaded." : "The project has no wiring diagram yet. Wires made here can be added to one once it has their parts."}</p>
-          ${wiringHost?.open ? `<button type="button" class="lyr-wide-btn" data-act="diagram-open">${icon("wire", 14)} Open the wiring diagram</button>` : ""}</section>`;
+          ${wiringHost?.open ? `<button type="button" class="lyr-wide-btn" data-act="diagram-open">${icon("wire", 14)} Open the wiring diagram</button>` : ""}${showcaseButton(p)}</section>`;
       }
       const d = diagram;
       let mine = "";
@@ -4387,9 +4391,17 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         ${p ? "" : pinsOverview(d)}
         ${missing.wires.length ? `<button type="button" class="lyr-wide-btn" data-act="diagram-missing" title="A wire or cable for each of the diagram's with its pins placed at both ends, by the shortest smooth run">${icon("wire", 14)} Add missing wires (${missing.wires.length})</button>` : ""}
         ${!p && scene.parts.some(q => q.wire) ? `<button type="button" class="lyr-wide-btn" data-act="wires-route" title="Every wire's waypoints worked out so it runs round the parts, not through them (waypoints you put in yourself stay)">${icon("wand", 14)} Route all wires round parts</button>` : ""}
+        ${!p ? wiringMovieButton() : ""}
         ${byName ? `<button type="button" class="lyr-wide-btn" data-act="diagram-names" title="Link parts whose names match the diagram's">${icon("link", 14)} Link parts by name (${byName})</button>` : ""}
         ${!p?.wire && wiringHost?.open ? `<button type="button" class="lyr-wide-btn" data-act="diagram-open">${icon("wire", 14)} Open the wiring diagram</button>` : ""}
+        ${showcaseButton(p)}
       </section>`;
+    }
+
+    /** "Wiring showcase": the see-through video of the wires growing in, previewed here, to save for social media. */
+    function showcaseButton(p: ScenePart | undefined): string {
+      if (p || !scene.parts.some(q => q.wire && !q.hidden)) return "";
+      return `<button type="button" class="lyr-wide-btn" data-act="showcase" title="Preview the wiring showcase from this view: the printed parts see-through, each wire growing out of its component. Save it as a video for social media">${icon("play", 14)} Wiring showcase</button>`;
     }
 
     /**
@@ -4516,6 +4528,96 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     playBar.addEventListener("change", e => {
       const el = e.target as HTMLSelectElement;
       if (el.dataset.play === "speed" && playing) playing.speed = PLAY_SPEEDS.includes(Number(el.value)) ? Number(el.value) : 1;
+    });
+
+    // ------------------------------------------------------------ the wiring animation
+
+    // "Play the wiring animation": the wiring showcase (wiringAnimation.ts,
+    // as /Wiring showcase puts on a page) made from the model as it is now,
+    // seen from this view, and played over the stage, with Save to keep it.
+    const player = $(".lyr-wiring-player");
+    let playerUrl = "";
+    function wiringMovieButton(): string {
+      if (!wiresInOrder(scene.parts).length) return "";
+      const label = wiringMovie ? `Making the animation… ${wiringMovie.pct}%` : "Play the wiring animation";
+      const title = wiringMovie ? "Stop making the wiring animation" : "Watch the wires grow out of their parts, one after another, in the see-through view (as the Wiring showcase shows it), from this view";
+      return `<button type="button" class="lyr-wide-btn" data-act="wiring-movie" title="${esc(title)}">${icon(wiringMovie ? "close" : "play", 14)} <span>${esc(label)}</span></button>`;
+    }
+    async function playWiringMovie(): Promise<void> {
+      if (wiringMovie) {
+        wiringMovie.stopped = true;
+        return;
+      }
+      if (!wiresInOrder(scene.parts).length) return status("No wires to animate yet: add them with the Wire tool (W).", true);
+      const me = (wiringMovie = { pct: 0, stopped: false });
+      renderProps();
+      status("Making the wiring animation…", false, true);
+      try {
+        const frame = $(".lyr-scene-stage").getBoundingClientRect();
+        // As big as the stage shows it (even sizes, as H.264 wants), within reason.
+        const w = Math.max(480, Math.min(1280, Math.round(frame.width * 0.85 / 2) * 2));
+        const h = Math.max(360, Math.min(960, Math.round((w * 0.75) / 2) * 2));
+        const made = await renderWiringAnimation({ parts: scene.parts }, opts.store, scene.camera.direction, {
+          width: w,
+          height: h,
+          progress: (done, total) => {
+            const pct = Math.floor((done / total) * 100);
+            if (pct === me.pct) return;
+            me.pct = pct;
+            const label = props.querySelector('[data-act="wiring-movie"] span');
+            if (label) label.textContent = `Making the animation… ${pct}%`;
+          },
+          cancelled: () => me.stopped || closed,
+        });
+        if (closed || me.stopped) throw new Error("stopped");
+        showWiringMovie(made.blob, made.type);
+        status("");
+      } catch (e) {
+        if (!closed) status(me.stopped ? "Stopped making the wiring animation." : `The wiring animation couldn't be made: ${e instanceof Error ? e.message : String(e)}`, !me.stopped);
+      } finally {
+        if (wiringMovie === me) wiringMovie = null;
+        if (!closed) renderProps();
+      }
+    }
+    function showWiringMovie(blob: Blob, type: string): void {
+      closeWiringMovie();
+      playerUrl = URL.createObjectURL(blob);
+      const mp4 = type === "video/mp4";
+      const name = `wiring.${mp4 ? "mp4" : "gif"}`;
+      player.innerHTML = `
+        <div class="lyr-wiring-player-box">
+          <div class="lyr-wiring-player-head">
+            <strong>${icon("wire", 16)}<span>Wiring animation</span></strong>
+            <span class="lyr-grow"></span>
+            <a class="lyr-btn" href="${playerUrl}" download="${name}" title="Save the animation as a file (${mp4 ? "MP4 video" : "animated GIF"})">${icon("download", 16)}<span>Save</span></a>
+            <button type="button" class="lyr-btn lyr-icon-btn" data-act="wiring-close" title="Close (Esc)" aria-label="Close">${icon("close", 16)}</button>
+          </div>
+          ${mp4 ? `<video src="${playerUrl}" autoplay loop muted playsinline controls></video>` : `<img src="${playerUrl}" alt="The wires going in, one after another">`}
+        </div>`;
+      player.hidden = false;
+      (player.querySelector('[data-act="wiring-close"]') as HTMLElement).focus({ preventScroll: true });
+    }
+    function closeWiringMovie(): boolean {
+      if (player.hidden) return false;
+      player.hidden = true;
+      player.innerHTML = "";
+      if (playerUrl) URL.revokeObjectURL(playerUrl);
+      playerUrl = "";
+      root.focus({ preventScroll: true });
+      return true;
+    }
+    player.addEventListener("click", e => {
+      // Closed by its button, or a click on the dimmed stage round it.
+      if (e.target === player || (e.target as HTMLElement).closest('[data-act="wiring-close"]')) {
+        e.stopPropagation();
+        closeWiringMovie();
+      }
+    });
+    player.addEventListener("keydown", e => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        closeWiringMovie();
+      }
     });
 
     /** Moves a wire earlier or later in the order the wires go in (the model's order of wires). */
@@ -5993,6 +6095,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         commit();
         renderList();
         renderProps();
+      } else if (b.dataset.act === "showcase") {
+        openShowcase();
       } else if (b.dataset.act === "diagram-open") {
         // The diagram may change while it's open: read it again when it closes.
         const shut = wiringHost?.open?.(b.dataset.connection || undefined);
@@ -6057,6 +6161,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         if (p) void routeWiresRound([p]);
       } else if (b.dataset.act === "wires-route") {
         void routeWiresRound(scene.parts.filter(q => q.wire));
+      } else if (b.dataset.act === "wiring-movie") {
+        void playWiringMovie();
       } else if (b.dataset.act === "wire-clear") {
         setWire(w => ({ ...w, waypoints: [] }));
         commit();
@@ -6492,6 +6598,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         void finish();
         return;
       }
+      if (e.key === "Escape" && closeWiringMovie()) return;
       if (isTyping(e.target)) {
         if (e.key === "Escape") (e.target as HTMLElement).blur();
         return;
@@ -6837,6 +6944,125 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       });
     }
 
+    // ------------------------------------------------------------ wiring showcase
+
+    /** The wiring showcase's sizes: shaped for where it's posted. */
+    const SHOWCASE_SHAPES = [
+      { id: "wide", label: "Landscape 16:9 (YouTube, X)", w: 1280, h: 720 },
+      { id: "square", label: "Square 1:1 (Instagram feed)", w: 1080, h: 1080 },
+      { id: "tall", label: "Portrait 4:5 (Instagram, Facebook)", w: 1080, h: 1350 },
+      { id: "story", label: "Vertical 9:16 (Reels, TikTok, Shorts)", w: 1080, h: 1920 },
+    ];
+    const showcaseDialog = document.createElement("div");
+    showcaseDialog.className = "lyr-joint-dialog lyr-showcase-dialog";
+    showcaseDialog.setAttribute("role", "dialog");
+    showcaseDialog.setAttribute("aria-label", "Wiring showcase");
+    showcaseDialog.hidden = true;
+    stage.appendChild(showcaseDialog);
+    draggable(showcaseDialog);
+    /** The showcase being made or shown: its shape, how far it's got, and the video once made. */
+    type Showcase = { shape: string; pct: number; stopped: boolean; made?: { url: string; type: string; blob: Blob }; error?: string };
+    let showcase: Showcase | null = null;
+
+    /** Opens the wiring showcase's preview, made from the view as it is now. */
+    function openShowcase(shape = showcase?.shape || "wide"): void {
+      stopShowcase();
+      const me: Showcase = (showcase = { shape, pct: 0, stopped: false });
+      showcaseDialog.hidden = false;
+      renderShowcase();
+      const size = SHOWCASE_SHAPES.find(x => x.id === shape) || SHOWCASE_SHAPES[0];
+      const parts = clone(scene).parts.filter(p => !p.hidden);
+      void renderWiringAnimation({ parts }, opts.store, [...scene.camera.direction] as Vec3, {
+        width: size.w,
+        height: size.h,
+        progress: (done, total) => {
+          const pct = Math.floor((done / total) * 100);
+          if (pct === me.pct || showcase !== me) return;
+          me.pct = pct;
+          const el = showcaseDialog.querySelector("[data-showcase-pct]");
+          if (el) el.textContent = `Making it… ${pct}%`;
+        },
+        cancelled: () => me.stopped || closed,
+      }).then(
+        made => {
+          if (me.stopped || closed) return;
+          me.made = { url: URL.createObjectURL(made.blob), type: made.type, blob: made.blob };
+          renderShowcase();
+        },
+        e => {
+          if (me.stopped || closed) return;
+          me.error = e instanceof Error && e.message ? e.message : String(e);
+          renderShowcase();
+        },
+      );
+    }
+
+    /** Stops the showcase being made (if it is) and lets its video go. */
+    function stopShowcase(): void {
+      if (!showcase) return;
+      showcase.stopped = true;
+      if (showcase.made) URL.revokeObjectURL(showcase.made.url);
+      showcase = null;
+    }
+
+    function closeShowcase(): void {
+      stopShowcase();
+      showcaseDialog.hidden = true;
+      showcaseDialog.innerHTML = "";
+    }
+
+    function renderShowcase(): void {
+      const sc = showcase;
+      if (!sc) return;
+      const size = SHOWCASE_SHAPES.find(x => x.id === sc.shape) || SHOWCASE_SHAPES[0];
+      const video = sc.made?.type === "video/mp4";
+      const preview = sc.made
+        ? video
+          ? `<video src="${sc.made.url}" autoplay loop muted playsinline></video>`
+          : `<img src="${sc.made.url}" alt="Wiring showcase">`
+        : sc.error
+          ? `<p class="lyr-note lyr-error">It couldn't be made: ${esc(sc.error)}</p>`
+          : `<p class="lyr-note" data-showcase-pct>Making it… ${sc.pct}%</p>`;
+      showcaseDialog.innerHTML = `
+        <div class="lyr-joint-head">
+          ${icon("play", 16)}<strong title="Drag here to move the dialog">Wiring showcase</strong>
+          <span class="lyr-grow"></span>
+          <button type="button" class="lyr-btn lyr-icon-btn" data-act="showcase-close" title="Close" aria-label="Close">${icon("close", 16)}</button>
+        </div>
+        <div class="lyr-joint-body">
+          <label class="lyr-joint-half lyr-showcase-shape">Shape
+            <select data-showcase-shape>${SHOWCASE_SHAPES.map(x => `<option value="${x.id}"${x.id === sc.shape ? " selected" : ""}>${esc(x.label)}</option>`).join("")}</select>
+          </label>
+          <div class="lyr-showcase-preview" style="aspect-ratio: ${size.w} / ${size.h}">${preview}</div>
+          <p class="lyr-note">From the view as it is now: turn the model and press Again to change it.${sc.made && !video ? " This browser can't make an MP4, so it's an animated GIF." : ""}</p>
+        </div>
+        <div class="lyr-joint-foot">
+          <button type="button" class="lyr-btn" data-act="showcase-again" title="Make it again from the view as it is now">${icon("rotate", 16)}<span>Again</span></button>
+          <button type="button" class="lyr-btn lyr-done" data-act="showcase-save"${sc.made ? "" : " disabled"} title="Download it, ${size.w} × ${size.h}">${icon("download", 16)}<span>Save video</span></button>
+        </div>`;
+    }
+
+    showcaseDialog.addEventListener("change", e => {
+      const t = e.target as HTMLSelectElement;
+      if (t.dataset.showcaseShape !== undefined) openShowcase(t.value);
+    });
+    showcaseDialog.addEventListener("click", e => {
+      const b = (e.target as HTMLElement).closest("button");
+      if (!b) return;
+      if (b.dataset.act === "showcase-close") closeShowcase();
+      else if (b.dataset.act === "showcase-again") openShowcase();
+      else if (b.dataset.act === "showcase-save" && showcase?.made) {
+        const name = `wiring-showcase.${showcase.made.type === "video/mp4" ? "mp4" : "gif"}`;
+        const a = document.createElement("a");
+        a.href = showcase.made.url;
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        status(`Downloaded ${name} (${(showcase.made.blob.size / 1024 / 1024).toFixed(1)} MB).`);
+      }
+    });
+
     /** Save as movie: the steps going together, as Play steps shows them, made into a video and downloaded. */
     async function saveMovie(): Promise<void> {
       if (movie) {
@@ -7018,18 +7244,19 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       stepPlay = { frame: 0, at: 0, t0: performance.now() };
       renderStrip();
       const HOLD = 600, MOVE = 900, REST = 400, FADE = 500;
-      const ease = (f: number) => (f < 0.5 ? 2 * f * f : 1 - Math.pow(-2 * f + 2, 2) / 2);
       const tick = (now: number) => {
         if (!stepPlay || closed) return;
         const t = now - stepPlay.t0;
-        const e = 1 - ease(Math.max(0, Math.min(1, (t - HOLD) / MOVE)));
+        const f = Math.max(0, Math.min(1, (t - HOLD) / MOVE));
+        const e = 1 - (f < 0.5 ? 2 * f * f : 1 - Math.pow(-2 * f + 2, 2) / 2);
         const at = stepsAt();
         for (const p of scene.parts) if (at.get(p.id) === stepPlay.at) p.explode = e;
         art.move(scene.parts, scene.explode);
-        // The last step's parts fade from the highlight to plain as this step comes on.
+        // The last step's parts fade from the highlight back to white as this step comes on (as the saved movie shows it).
         if (stepPlay.at > 0 && t < FADE + 100) {
-          const last = stepPlay.at - 1;
-          art.fadeHighlight(scene.parts.filter(p => at.get(p.id) === last).map(p => p.id), 1 - ease(Math.min(1, t / FADE)));
+          const k = Math.min(1, t / FADE);
+          const g = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+          for (const p of scene.parts) if (at.get(p.id) === stepPlay.at - 1) art.fadeFill(p.id, scene.style.highlight, g);
         }
         draw();
         if (t > HOLD + MOVE + REST) {
@@ -7371,6 +7598,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     function close(result: WorkspaceResult | null): void {
       if (closed) return;
       closed = true;
+      stopShowcase();
       cancelAnimationFrame(drawQueued);
       ro.disconnect();
       gizmo.detach();
@@ -7382,6 +7610,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       thumbWatch?.disconnect();
       thumbnailer?.dispose();
       blobUrls.forEach(u => URL.revokeObjectURL(u));
+      if (playerUrl) URL.revokeObjectURL(playerUrl);
       overlay.remove();
       // The editor underneath may be full screen too.
       if (!document.querySelector(".lyr-overlay")) document.documentElement.classList.remove("lyr-open");

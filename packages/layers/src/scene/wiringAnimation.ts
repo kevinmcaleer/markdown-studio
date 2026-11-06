@@ -115,7 +115,7 @@ export async function renderWiringAnimation(model: Pick<ProjectModel, "parts">, 
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
   try {
-    art.look = { seeThrough: true };
+    art.look = { seeThrough: true, bareWires: true };
     art.setParts(list, animationStyle(), 0);
     // One camera for the whole loop: about the model's middle, holding it (wires and all) at every angle of the sway.
     const pts = samplePoints(art);

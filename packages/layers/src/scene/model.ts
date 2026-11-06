@@ -640,6 +640,8 @@ export interface SceneLook {
   hideWiring?: boolean;
   /** The printed parts drawn as glass (see seeThrough.ts). */
   seeThrough?: boolean;
+  /** Wires drawn in their own colour alone, with no outline (the wiring showcase). */
+  bareWires?: boolean;
   step?: { ghost: Set<string>; hidden: Set<string> };
 }
 

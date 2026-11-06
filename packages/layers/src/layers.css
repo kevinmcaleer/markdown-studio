@@ -982,6 +982,14 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 /* The strip of steps under the view. */
 .lyr-steps-strip { width: 100%; max-width: 100%; display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 10px; background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgb(0 0 0 / 0.12); }
 .lyr-steps-strip[hidden] { display: none; }
+/* The wiring animation, played over the stage (Play the wiring animation). */
+.lyr-wiring-player { position: absolute; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgb(31 35 40 / 0.45); }
+.lyr-wiring-player[hidden] { display: none; }
+.lyr-wiring-player-box { display: flex; flex-direction: column; gap: 8px; max-width: 100%; max-height: 100%; padding: 8px 10px 10px; background: var(--lyr-bar, #fff); border-radius: var(--lyr-radius, 8px); box-shadow: 0 8px 32px rgb(0 0 0 / 0.25); }
+.lyr-wiring-player-head { display: flex; align-items: center; gap: 6px; }
+.lyr-wiring-player-head strong { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; }
+.lyr-wiring-player-head a.lyr-btn { text-decoration: none; color: inherit; }
+.lyr-wiring-player video, .lyr-wiring-player img { display: block; max-width: 100%; max-height: calc(100vh - 220px); border-radius: 6px; background: #ececec; }
 .lyr-steps-bar { display: flex; align-items: center; gap: 4px; font-size: 13px; }
 .lyr-steps-bar .lyr-grow { flex: 1; }
 .lyr-steps-title { display: inline-flex; align-items: center; gap: 6px; }
@@ -1059,3 +1067,10 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 .lyr-tool-size { padding: 1px 7px; border: 1px solid var(--lyr-line); border-radius: 999px; background: #fff; color: var(--lyr-muted); font: inherit; font-size: 11px; cursor: pointer; }
 .lyr-tool-size:hover { border-color: #9fb9e6; }
 .lyr-tool-size.lyr-on { border-color: #1f6fe0; background: #eaf2ff; color: #174ea6; }
+
+/* The wiring showcase's preview, in its dialog in the 3D workspace. */
+.lyr-showcase-dialog { width: 380px; }
+.lyr-showcase-shape { display: grid; gap: 4px; margin-top: 10px; font-size: 12px; font-weight: 600; }
+.lyr-showcase-preview { display: flex; align-items: center; justify-content: center; width: 100%; max-height: 52vh; margin-top: 10px; overflow: hidden; background: #ececec; border-radius: 6px; }
+.lyr-showcase-preview video, .lyr-showcase-preview img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.lyr-showcase-preview .lyr-note { margin: 0; }
