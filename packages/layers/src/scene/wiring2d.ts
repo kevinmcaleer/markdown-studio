@@ -41,6 +41,11 @@ export interface WiringPart {
   ports: WiringPort[];
   /** Sockets the catalog part keeps for its model (see {@link CatalogSockets}). */
   sockets?: CatalogSockets | null;
+  /**
+   * The catalog part's 3D model, when it has one a scene can show: where to
+   * fetch it, and a file name saying what it is ("9v-battery.stl").
+   */
+  model?: { url: string; file: string; thumbnail?: string | (() => Promise<Blob | string | null | undefined>) } | null;
 }
 
 export interface WiringConnection {
@@ -278,6 +283,22 @@ export function linkByName(info: WiringInfo, parts: ScenePart[]): { part: string
     if (taken.has(w.id)) continue;
     const hits = parts.filter(p => !p.wiringPart && !p.wire && !p.plug && (norm(p.name) === norm(w.name) || norm(p.name) === norm(w.id)));
     if (hits.length === 1 && !out.some(o => o.part === hits[0].id)) out.push({ part: hits[0].id, wiringPart: w.id });
+  }
+  return out;
+}
+
+/**
+ * The diagram's parts that no part in the scene stands for yet (none linked
+ * to it, and none named as it): those with a 3D model the scene can add,
+ * and those without.
+ */
+export function partsNotInScene(info: WiringInfo, parts: ScenePart[]): { withModel: WiringPart[]; noModel: WiringPart[] } {
+  const linked = new Set(parts.flatMap(p => (p.wiringPart ? [p.wiringPart] : [])));
+  for (const l of linkByName(info, parts)) linked.add(l.wiringPart);
+  const out = { withModel: [] as WiringPart[], noModel: [] as WiringPart[] };
+  for (const w of info.parts) {
+    if (linked.has(w.id)) continue;
+    (w.model?.url && /\.(stl|step|stp)$/i.test(w.model.file || "") ? out.withModel : out.noModel).push(w);
   }
   return out;
 }

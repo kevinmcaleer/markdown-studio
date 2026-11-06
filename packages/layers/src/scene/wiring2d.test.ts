@@ -13,6 +13,7 @@ import {
   linkByName,
   missingWires,
   netOfPin,
+  partsNotInScene,
   routedCount,
   type WiringInfo,
   type WiringPart,
@@ -122,5 +123,18 @@ describe("the 2D wiring, in 3D", () => {
     const w = normalizeScene({ parts: [{ id: "w", name: "W", position: [0, 0, 0], rotation: [0, 0, 0], wiringPart: "s1", wire: { from: { part: "a", point: [0, 0, 0], normal: [0, 0, 1] }, to: { part: "b", point: [0, 0, 0], normal: [0, 0, 1] } } }] }).parts[0];
     expect(w.wiringPart).toBeUndefined();
     expect(model()[0].sockets![0].port).toBe("bus-2");
+  });
+
+  it("lists the diagram's parts not in the scene, those with a catalog model apart", () => {
+    const withBattery: WiringInfo = {
+      ...info,
+      parts: [...info.parts, { id: "bat", name: "9V battery", slug: "9v-battery", ports: [], model: { url: "/api/parts/9v-battery/mesh", file: "9v-battery.stl" } }, { id: "glb", name: "Odd", ports: [], model: { url: "/m", file: "odd.glb" } }],
+    };
+    // s1 and s2 are linked; "PICO" is the Pico by name.
+    const parts = [...model(), ...normalizeScene({ parts: [{ id: "c", name: "PICO", position: [0, 0, 0], rotation: [0, 0, 0] }] }).parts];
+    const got = partsNotInScene(withBattery, parts);
+    expect(got.withModel.map(w => w.id)).toEqual(["bat"]);
+    expect(got.noModel.map(w => w.id)).toEqual(["glb"]);
+    expect(partsNotInScene(withBattery, model()).noModel.map(w => w.id)).toEqual(["pico", "glb"]);
   });
 });
