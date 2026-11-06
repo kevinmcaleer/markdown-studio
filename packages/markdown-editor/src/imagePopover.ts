@@ -107,6 +107,11 @@ export function openImagePopover(view: EditorView, pos: number): boolean {
   return true;
 }
 
+/** Closes the popover, if it's open: a double-click on a picture opens its own editor instead. */
+export function closeImagePopover(view: EditorView): void {
+  if (view.state.field(field, false)) view.dispatch({ effects: close.of(null) });
+}
+
 /** Whether the popover is open on the picture at `pos`. */
 export function imagePopoverAt(state: EditorState): number | null {
   return state.field(field, false)?.pos ?? null;
