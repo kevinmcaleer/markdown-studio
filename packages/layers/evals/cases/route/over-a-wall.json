@@ -1,0 +1,12 @@
+{
+  "title": "A wire between two pins either side of a wall goes over or round it, not through",
+  "why": "A 6 mm wall 40 mm high stands across a 120 mm plate. Pins 30 mm either side of it point up, so the straight run (and its slack's bow) goes through the wall. Round the wall's end (it's 60 mm deep, so 30 mm out and back) or over its top (40 mm up and down) are both fine; either is under 160 mm.",
+  "input": {
+    "parts": [
+      { "id": "base", "shape": { "box": [120, 60, 5] }, "position": [0, 0, -5] },
+      { "id": "wall", "shape": { "box": [6, 60, 40] }, "position": [0, 0, 0] }
+    ],
+    "wire": { "from": { "part": "base", "point": [-30, 0, 2.5], "normal": [0, 0, 1] }, "to": { "part": "base", "point": [30, 0, 2.5], "normal": [0, 0, 1] }, "waypoints": [], "color": "#d22", "diameter": 1.6, "slack": 10 }
+  },
+  "expect": { "hitsBefore": true, "maxLength": 160 }
+}

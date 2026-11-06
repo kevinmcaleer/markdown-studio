@@ -21,6 +21,8 @@ import {
   highlightedParts, ARROW_FROM, ARROW_TO, isWiring, lookOf, wiresInOrder } from "./model";
 import { connectorFile, connectorMesh, connectorOf, CONNECTOR_FAMILIES, DEFAULT_CONNECTOR, plugLift } from "./connectors";
 import { cableRadius, MIN_BEND, tightestBend, wireLength, wireRoute, wireTriangles } from "./wire";
+import { solidGrid, type Solid, type SolidGrid } from "./wireAvoid";
+import { routeWire, wireHitsParts } from "./wireRouting";
 import { mirrorPartner, mirrorPlane, mirrorPoint } from "./wireMirror";
 import { guessedSockets, guessPins, fitsPicture } from "./pinGuess";
 import { cableBetween, catalogSocketsFor, coloursFromDiagram, connectionsFor, diagramLabels, freePort, linkByName, missingWires, movedConnections, partsNotInScene, portById, portPlacements, routedCount, type DiagramEnd, type PortPlacement, type WiringPart, type WiringHost, type WiringInfo } from "./wiring2d";
@@ -3839,6 +3841,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         <p class="lyr-note">${esc(endName(w.from))} → ${esc(endName(w.to))}. About ${Math.round(len)} mm long, assembled.</p>
         ${tight ? `<p class="lyr-note lyr-note-warn" role="note">Bends too tightly: ${tight < 1 ? "under 1" : Math.round(tight * 10) / 10} mm round at its tightest, and wire this thick wants at least ${Math.round(MIN_BEND * outer * 10) / 10} mm. Give it more slack, or move a waypoint.</p>` : ""}
         <p class="lyr-note">${w.waypoints.length ? `${w.waypoints.length} waypoint${w.waypoints.length === 1 ? "" : "s"}: drag one over the parts to move it, click it to take it out.` : "No waypoints: it takes the shortest smooth run."} Shift-click a part to add one.</p>
+        <button type="button" class="lyr-wide-btn" data-act="wire-route" title="Work out its waypoints so it runs round the parts, not through them (waypoints you put in yourself stay)">${icon("wand", 14)} Route round parts</button>
+        ${wiresInOrder(scene.parts).length > 1 ? `<button type="button" class="lyr-wide-btn" data-act="wires-route" title="Every wire's waypoints worked out so it runs round the parts, not through them (waypoints you put in yourself stay)">${icon("wand", 14)} Route all ${wiresInOrder(scene.parts).length} wires round parts</button>` : ""}
         ${w.waypoints.length ? `<button type="button" class="lyr-wide-btn" data-act="wire-clear">${icon("close", 14)} Take out every waypoint</button>` : ""}
         ${(() => {
           const wires = wiresInOrder(scene.parts);
@@ -4070,6 +4074,72 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       }
     }
 
+    /** The model's solid parts as they sit assembled, drawn into a grid for routing wires round them (null with none loaded). */
+    function solidsGrid(wires: ScenePart[]): SolidGrid | null {
+      const assembled = worldMatrices(scene.parts, 0, false);
+      const solids: Solid[] = [];
+      for (const o of scene.parts) {
+        const m = models.get(o.id);
+        const mw = assembled.get(o.id);
+        if (o.wire || !m || m instanceof Error || !mw) continue;
+        solids.push({ part: o.id, positions: m.geometry.getAttribute("position").array, matrix: mw });
+      }
+      if (!solids.length) return null;
+      // The wires' ends too, so a wire off the model's edge still fits.
+      const ends = wires.flatMap(w => [w.wire!.from, w.wire!.to].flatMap(e => {
+        const m = assembled.get(e.part);
+        return m ? [new Vector3(...e.point).applyMatrix4(m)] : [];
+      }));
+      return solidGrid(solids, ends);
+    }
+
+    /**
+     * "Route round parts": each wire's waypoints worked out so it runs round
+     * the solid parts, not through them. Waypoints put in by hand stay; ones
+     * from an earlier routing are replaced. Says how it went.
+     */
+    async function routeWiresRound(wires: ScenePart[], quiet = false): Promise<void> {
+      wires = wires.filter(w => w.wire);
+      if (!wires.length || wireBusy) return;
+      wireBusy = true;
+      try {
+        status(`Routing ${wires.length === 1 ? "the wire" : `${wires.length} wires`} round the parts…`, false, true);
+        // Let the status show before the grid is drawn.
+        await new Promise(r => setTimeout(r, 30));
+        const g = solidsGrid(wires);
+        if (!g) {
+          status("The parts' models need to be loaded first.", true);
+          return;
+        }
+        const assembled = worldMatrices(scene.parts, 0, false);
+        const looms = loomsOf(scene.parts);
+        let moved = 0, stuck = 0, close = 0;
+        for (const w of wires) {
+          if (closed) return;
+          // Already clear with no routing of its own: left as it is.
+          if (!w.wire!.waypoints.some(x => x.auto) && !wireHitsParts(w.wire!, assembled, g, looms)) continue;
+          const got = routeWire(w.wire!, assembled, g, looms);
+          if (!got) continue;
+          w.wire = { ...w.wire!, waypoints: got.waypoints };
+          relay(w);
+          moved++;
+          if (got.stuck) stuck++;
+          else if (!got.clear) close++;
+          await new Promise(r => setTimeout(r, 0));
+        }
+        commit();
+        renderList();
+        renderProps();
+        if (quiet && !stuck && !close) return;
+        const n = (k: number) => `${k} wire${k === 1 ? "" : "s"}`;
+        status(moved
+          ? `${n(moved)} routed round the parts.${stuck ? ` ${n(stuck)} couldn't find a way round: add a waypoint by hand (Shift-click a part).` : ""}${close ? ` ${n(close)} still brush${close === 1 ? "es" : ""} a part: less slack helps.` : ""}`
+          : `${wires.length === 1 ? "The wire already runs" : "The wires already run"} clear of the parts.`, !!stuck);
+      } finally {
+        wireBusy = false;
+      }
+    }
+
     /** "Add missing wires": a cable for each of the diagram's not in the model yet, between the sockets for its ports. */
     async function addMissingWires(): Promise<void> {
       if (!diagram || wireBusy) return;
@@ -4079,6 +4149,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         return;
       }
       wireBusy = true;
+      const added: ScenePart[] = [];
       try {
         for (const m of wires) {
           const a = await wireEndAt({ part: m.from.part, socket: m.from.socket, fresh: false }, m.fromIndex);
@@ -4091,14 +4162,20 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           const made: ScenePart = { id: newPartId(scene.parts), name: label.slice(0, 120), position: [0, 0, 0], rotation: [0, 0, 0], wire: spec };
           keepModel(made, emptyModel());
           scene.parts.push(made);
+          added.push(made);
         }
         rebuild();
         commit();
         renderList();
         renderProps();
-        status(`${wires.length} wire${wires.length === 1 ? "" : "s"} added from the wiring diagram, each by the shortest smooth run: pick one and Shift-click the parts to route it.${skipped ? ` ${skipped} more need their pins placed first (a part's Pins, under Wiring diagram).` : ""}`);
       } finally {
         wireBusy = false;
+      }
+      // Round the parts, not through them.
+      await routeWiresRound(added, true);
+      if (closed) return;
+      if (!/couldn't|brush/.test($(".lyr-status").textContent || "")) {
+        status(`${wires.length} wire${wires.length === 1 ? "" : "s"} added from the wiring diagram, routed round the parts: pick one and Shift-click the parts to change its way.${skipped ? ` ${skipped} more need their pins placed first (a part's Pins, under Wiring diagram).` : ""}`);
       }
     }
 
@@ -4132,7 +4209,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       if (pins) said.push(`${pins} pin${pins === 1 ? "" : "s"} placed`);
       if (wires.length) said.push(`${wires.length} wire${wires.length === 1 ? "" : "s"} added`);
       status(said.length
-        ? `${said.join(", ")}.${skipped ? ` ${skipped} more wire${skipped === 1 ? "" : "s"} need${skipped === 1 ? "s" : ""} pins placed by hand: pick the part, then click its pins under Pins on the model.` : " Pick a wire and Shift-click parts to route it."}`
+        ? `${said.join(", ")}.${skipped ? ` ${skipped} more wire${skipped === 1 ? "" : "s"} need${skipped === 1 ? "s" : ""} pins placed by hand: pick the part, then click its pins under Pins on the model.` : " The wires run round the parts: pick one and Shift-click parts to change its way."}`
         : skipped ? `${skipped} wire${skipped === 1 ? "" : "s"} need${skipped === 1 ? "s" : ""} pins placed by hand: pick the part, then click its pins under Pins on the model.` : "Every wire in the diagram is in the model.", !said.length && !!skipped);
     }
 
@@ -4292,6 +4369,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         <p class="lyr-note">${routed} of ${total} wire${total === 1 ? "" : "s"} in the diagram routed here.</p>
         ${p ? "" : pinsOverview(d)}
         ${missing.wires.length ? `<button type="button" class="lyr-wide-btn" data-act="diagram-missing" title="A wire or cable for each of the diagram's with its pins placed at both ends, by the shortest smooth run">${icon("wire", 14)} Add missing wires (${missing.wires.length})</button>` : ""}
+        ${!p && scene.parts.some(q => q.wire) ? `<button type="button" class="lyr-wide-btn" data-act="wires-route" title="Every wire's waypoints worked out so it runs round the parts, not through them (waypoints you put in yourself stay)">${icon("wand", 14)} Route all wires round parts</button>` : ""}
         ${byName ? `<button type="button" class="lyr-wide-btn" data-act="diagram-names" title="Link parts whose names match the diagram's">${icon("link", 14)} Link parts by name (${byName})</button>` : ""}
         ${!p?.wire && wiringHost?.open ? `<button type="button" class="lyr-wide-btn" data-act="diagram-open">${icon("wire", 14)} Open the wiring diagram</button>` : ""}
       </section>`;
@@ -5957,6 +6035,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       } else if (b.dataset.act === "wire-mirror") {
         const p = wireById(selectedId);
         if (p) void mirrorWire(p);
+      } else if (b.dataset.act === "wire-route") {
+        const p = wireById(selectedId);
+        if (p) void routeWiresRound([p]);
+      } else if (b.dataset.act === "wires-route") {
+        void routeWiresRound(scene.parts.filter(q => q.wire));
       } else if (b.dataset.act === "wire-clear") {
         setWire(w => ({ ...w, waypoints: [] }));
         commit();
