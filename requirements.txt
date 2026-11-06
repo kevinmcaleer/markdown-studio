@@ -3,7 +3,7 @@ fastapi==0.161.1
 uvicorn[standard]==0.54.0
 argon2-cffi==25.1.0
 # Real-time co-editing: the server side of Yjs (prebuilt wheels for arm64 too).
-pycrdt==0.14.10
+pycrdt==0.14.13
 # Markdown parsing (matches the editor's preview) and Word/PDF export.
 markdown-it-py==4.2.0
 mdit-py-plugins==0.6.1
