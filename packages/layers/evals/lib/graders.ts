@@ -8,6 +8,7 @@ import { ARROW_FROM, ARROW_TO, lookOf, placeBeside, shownAs, type Box3, type Sce
 import { arrowEnd, cameraFor, frameTight, localMatrix, worldMatrices, type Placed } from "../../src/scene/render";
 import { fitDiameter, fitLength, holeDepth, isHoleSnap, type ScrewHead } from "../../src/scene/screw";
 import { Topology, type Face, type Snap } from "../../src/scene/snaps";
+import { sitDelta } from "../../src/scene/sit";
 import { layTrack, type TrackSpec } from "../../src/scene/track";
 import { cableRadius, coreLines, leadLength, MIN_BEND, ringRadius, tightestBend, wireRoute } from "../../src/scene/wire";
 import { mirrorPartner, mirrorPlane, mirrorPoint } from "../../src/scene/wireMirror";
@@ -524,5 +525,30 @@ export const GRADERS: Record<string, Grader> = {
       if (want) checks.push(yes(`cable ${i + 1} coloured as the diagram`, !!w && w.cores.map(c => c.color).join(",") === want.join(","), w ? w.cores.map(c => c.color).join(",") : "missing"));
     });
     return checks;
+  },
+
+  /**
+   * Sit on part: a joined part slides along its joint's normal until it
+   * rests on the part it's joined to. Shapes are where they're written (not
+   * centred); the parent may be several shapes (a tray's floor and walls).
+   */
+  sit(input: { parent: ShapeSpec[]; child: ShapeSpec; position: Vec3; rotation?: Vec3; normal: Vec3 }, expect: { move: number | null; tol?: number }, ctx) {
+    const pieces = input.parent.map(s => shapeTriangles(s, ctx.read));
+    const pp = new Float32Array(pieces.reduce((n, p) => n + p.length, 0));
+    pieces.reduce((at, p) => (pp.set(p, at), at + p.length), 0);
+    const cp = shapeTriangles(input.child, ctx.read);
+    const m = localMatrix({ position: input.position, rotation: input.rotation || [0, 0, 0] });
+    const move = sitDelta(pp, cp, m, input.normal);
+    if (expect.move === null) return [yes("finds nothing beneath", move === null, move === null ? "nothing" : `moved ${show(move)} mm`)];
+    if (move === null) return [yes("finds the part beneath", false, "found nothing")];
+    const tol = expect.tol ?? 0.1;
+    // Moved by that much, a second press has nothing left to do: it touches.
+    const n = new Vector3(...input.normal).normalize();
+    const after = m.clone().premultiply(new Matrix4().makeTranslation(n.x * move, n.y * move, n.z * move));
+    const again = sitDelta(pp, cp, after, input.normal) ?? NaN;
+    return [
+      near("moves along the joint (mm)", move, expect.move, tol, 2),
+      near("then rests touching (a second press moves mm)", again, 0, tol),
+    ];
   },
 };
