@@ -118,7 +118,25 @@ const editor = mount(el, {
   step number, and no words, as on a flat-pack sheet. Every page looks from the project's default view (or the
   usual one), framed round the whole assembly. It draws on the editor's
   own page, so mount one out of sight for it. Every page is an ordinary
-  graphic afterwards, to open and tidy.
+  graphic afterwards, to open and tidy. With **build steps** (below) it
+  draws one page per step instead, titled and viewed as the step says.
+- **Build steps** (the 3D scene's **Model / Steps** switch, top of the
+  parts panel): build the whole model in Model mode, joints and all, then
+  in Steps mode say which parts go on in each step. A strip of step cards
+  sits under the view, each with its picture; the picked step shows as its
+  guide page will (earlier steps ghosted, its parts highlighted and drawn
+  apart with arrows, later parts hidden). Click a part in the list or the
+  view to put it in the step shown (or take it out), drag parts or cards
+  to move them, and use **Suggest steps** (from the joint tree), **Record
+  steps** (click the parts in the order they go on, Next step between
+  steps; a part waits until what it's joined to is on, and its screws come
+  with it) and **Play steps**. The Step panel has a title, a view, and
+  checks: a part joined to one fitted later, or one that runs into an
+  earlier part on its way off. Fixings needn't be picked: they go with
+  their part. Steps are saved in the project model (`model.steps`,
+  `[{ id, title?, parts, view? }]`) without making pictures out of date,
+  and the scene's own picture is left as it was unless *Use this step for
+  this picture* is pressed.
 - **Detail circles**, as on a flat-pack sheet: from a scene's bar, *Detail
   circle…* picks a part and adds a magnifier: a white disc with a bold ring
   and a **tail** that curves in to the spot it magnifies (the part's middle

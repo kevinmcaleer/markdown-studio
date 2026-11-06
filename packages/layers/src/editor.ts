@@ -1788,7 +1788,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
   async function assemblyGuide(guide: GuideOptions): Promise<number> {
     const model = await getProjectModel();
     if (!model?.parts.length) throw new Error("No project model yet: add a 3D scene with the project's parts first.");
-    const [t, g] = await Promise.all([sceneTools(), import("./scene/guide")]);
+    const [t, g, b] = await Promise.all([sceneTools(), import("./scene/guide"), import("./scene/buildSteps")]);
     const sizes = new Map<string, [number, number, number]>();
     for (const p of model.parts) {
       try {
@@ -1802,7 +1802,8 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
       const s = sizes.get(p.id);
       return !!s && isFastener(s);
     };
-    const steps = g.guideSteps(model, fixing);
+    // The steps picked by hand in the 3D scene's Steps mode, or, with none, one per part from the joint tree.
+    const steps: import("./scene/buildSteps").PlannedStep[] = model.steps?.some(s => s.parts.length) ? b.planSteps(model, fixing) : g.guideSteps(model, fixing);
     if (!steps.length) throw new Error("Every part in the model is a fixing (12 mm or less across): nothing to fit.");
     const PAGE = SIZES.find(s => s.id === "photo") || SIZES[0];
     const SCENE = { left: 0.3, top: 0.06, width: 0.66, height: 0.88 };
@@ -1818,6 +1819,11 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
     for (const s of scenes) {
       if (s !== scenes[0]) s.camera = structuredClone(camera);
       s.model = { stamp: model.stamp };
+    }
+    // A step drawn from a view of its own is framed round itself.
+    for (const step of steps) {
+      const own = step.view ? model.views?.find(v => v.id === step.view) : undefined;
+      if (own) scenes[step.n].camera = await t.frameAll(own.camera, [scenes[step.n]], t.store, (PAGE.width * SCENE.width) / (PAGE.height * SCENE.height));
     }
     const total = steps.length + 3;
     let made = 0;
@@ -1914,7 +1920,7 @@ export function mount(host: HTMLElement, options: LayersOptions = {}): LayersHan
 
     // One page per step.
     for (const step of steps) {
-      await page(`Step ${step.n}`, "#ececec", async () => {
+      await page(step.title ? `Step ${step.n}: ${step.title}` : `Step ${step.n}`, "#ececec", async () => {
         const floor = new Polygon([{ x: 0, y: H * 0.55 }, { x: W, y: H * 0.38 }, { x: W, y: H }, { x: 0, y: H }], { fill: "#d6d6d6", strokeWidth: 0, objectCaching: false });
         Object.assign(floor, { name: "Floor", layerId: newId() });
         const b = badge(step.n, { x: W * 0.05, y: H * 0.06 }, STEP_RED);

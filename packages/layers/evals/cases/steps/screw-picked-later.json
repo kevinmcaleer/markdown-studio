@@ -1,0 +1,102 @@
+{
+  "title": "A screw put in a later step stays there",
+  "why": "s3 holds the shield down, so the builder picked it into the shield's step. A fixing picked by hand goes where it was put, not with the part it's joined to in the model.",
+  "input": {
+    "parts": [
+      {
+        "id": "chassis"
+      },
+      {
+        "id": "motorL",
+        "parent": "chassis"
+      },
+      {
+        "id": "s1",
+        "parent": "motorL"
+      },
+      {
+        "id": "s2",
+        "parent": "motorL"
+      },
+      {
+        "id": "wheelL",
+        "parent": "motorL"
+      },
+      {
+        "id": "motorR",
+        "parent": "chassis"
+      },
+      {
+        "id": "wheelR",
+        "parent": "motorR"
+      },
+      {
+        "id": "s3",
+        "parent": "chassis"
+      },
+      {
+        "id": "shield",
+        "parent": "chassis"
+      }
+    ],
+    "fixings": [
+      "s1",
+      "s2",
+      "s3"
+    ],
+    "steps": [
+      {
+        "id": "a",
+        "parts": [
+          "chassis",
+          "motorL",
+          "motorR"
+        ]
+      },
+      {
+        "id": "b",
+        "parts": [
+          "wheelL",
+          "wheelR"
+        ]
+      },
+      {
+        "id": "c",
+        "parts": [
+          "shield",
+          "s3"
+        ]
+      }
+    ]
+  },
+  "expect": {
+    "pages": [
+      {
+        "added": [
+          "chassis",
+          "motorL",
+          "motorR"
+        ],
+        "fixings": [
+          "s1",
+          "s2"
+        ]
+      },
+      {
+        "added": [
+          "wheelL",
+          "wheelR"
+        ],
+        "fixings": []
+      },
+      {
+        "added": [
+          "shield"
+        ],
+        "fixings": [
+          "s3"
+        ]
+      }
+    ]
+  }
+}

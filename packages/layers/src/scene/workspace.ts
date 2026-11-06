@@ -29,7 +29,7 @@ import { applyJoint } from "./joint";
 import { EXPLODE_DIRS, explodeChooser, explodeDirLabel, explodeVector, type ExplodeChoice, type ExplodeShape } from "./explode";
 import { partJoints } from "./jointList";
 import { sitDelta } from "./sit";
-import { emptyModel, frame, frameTight, LineArt, modelFromPositions, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
+import { emptyModel, frame, frameAll, frameTight, LineArt, modelFromPositions, Thumbnailer, ModelStore, placeCamera, radiusOf, renderPicture, worldMatrices, type FetchModel, type Model } from "./render";
 import { MAX_EMBED, parseStl, stlFaces, toBinaryStl, tooBigToCarry } from "./stl";
 import { isPacked, packMesh, packParts } from "./mesh";
 import { isStepFile, mergeBodies, readStep, type StepBody } from "./step";
@@ -39,6 +39,8 @@ import { MAX_SNAP_TRIANGLES, nearestSnap, Topology, type Face, type Snap } from 
 import { createSectionTool } from "./sectionTool";
 import { insideReach, layTrack, MAX_TRACK_PIECES, trackPitch, trackTriangles, type TrackSpec, type TrackWheel, type WorldCircle } from "./track";
 import { hideTrackPieces, trackPieces } from "./trackSpec";
+import { fixingOwners, newStepId, readyToFit, stepIndex, stepOfParts, steppable, stepWarnings, suggestSteps, tidySteps, type BuildStep } from "./buildSteps";
+import { isFastener } from "../stepFrame";
 import { fitDiameter, fitLength, holeDepth, isHoleSnap, matchingHoles, SCREW_HEADS, SCREW_LENGTHS, SCREW_SIZES, screwFile, screwLabel, screwLift, screwMesh, screwName, screwNoun, type ScrewHead, type ScrewSpec } from "./screw";
 
 export interface SceneModel {
@@ -133,6 +135,16 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     let tool: "translate" | "rotate" = "translate";
     let busy = false;
     let closed = false;
+    // Steps mode (see "steps" below): the build steps, the one shown, and what the scene showed before.
+    type Showing = { hidden?: boolean; ghost?: boolean; highlight?: boolean; explode?: number };
+    let steps: BuildStep[] = structuredClone(shared ? opts.model?.steps || [] : []);
+    const startSteps = JSON.stringify(steps);
+    let stepsOn = false;
+    let stepAt = 0;
+    /** What the scene showed before Steps mode, put back when it ends. */
+    let kept: { parts: Map<string, Showing>; explode: number; arrows?: boolean; historyAt: number } | null = null;
+    let recording: { steps: string[][] } | null = null;
+    let stepPlay: { frame: number; at: number; t0: number } | null = null;
 
     const overlay = document.createElement("div");
     overlay.className = "lyr-overlay lyr-scene-overlay";
@@ -153,6 +165,10 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         </div>
         <div class="lyr-scene-body">
           <aside class="lyr-scene-side lyr-scene-parts" aria-label="Parts">
+            <div class="lyr-scene-modes" role="group" aria-label="Mode"${shared ? "" : " hidden"}>
+              <button type="button" class="lyr-scene-mode lyr-on" data-mode="model" aria-pressed="true" title="Build the model: parts, joints and how they come apart">${icon("cube", 14)}<span>Model</span></button>
+              <button type="button" class="lyr-scene-mode" data-mode="steps" aria-pressed="false" title="Put the model's parts in the order they go together, a step at a time, for the assembly guide">${icon("list", 14)}<span>Steps</span></button>
+            </div>
             <div class="lyr-scene-add">
               <button type="button" class="lyr-wide-btn lyr-primary" data-act="add" aria-haspopup="menu">${icon("plus", 16)} Add a part</button>
               <div class="lyr-scene-menu" role="menu" hidden></div>
@@ -189,6 +205,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
             <div class="lyr-screw-bar lyr-wire-bar" role="toolbar" aria-label="Wire" hidden></div>
             <div class="lyr-screw-bar lyr-play-bar" role="toolbar" aria-label="Assemble the wires" hidden></div>
             <div class="lyr-scene-frame"><canvas class="lyr-scene-canvas"></canvas></div>
+            <div class="lyr-steps-strip" role="region" aria-label="Steps" hidden></div>
             <div class="lyr-scene-help">Drag to look around, right-drag to pan, scroll to zoom. Hold Shift on a handle for 5 mm or 15° steps.</div>
             <div class="lyr-drop" hidden>Drop STL or STEP files to add them</div>
           </div>
@@ -314,7 +331,9 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       const box = stage.getBoundingClientRect();
       const availW = Math.max(100, box.width - 32);
       const barH = [...root.querySelectorAll<HTMLElement>(".lyr-screw-bar")].reduce((h, bar) => h + (bar.hidden ? 0 : bar.offsetHeight + 10), 0);
-      const availH = Math.max(100, box.height - 96 - barH);
+      const stripEl = root.querySelector<HTMLElement>(".lyr-steps-strip");
+      const stripH = stripEl && !stripEl.hidden ? stripEl.offsetHeight + 10 : 0;
+      const availH = Math.max(100, box.height - 96 - barH - stripH);
       viewW = Math.floor(Math.min(availW, availH * aspect));
       viewH = Math.floor(viewW / aspect);
       frameEl.style.width = `${viewW}px`;
@@ -695,7 +714,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
 
     function attachGizmo(): void {
       const p = selectedId ? partById(selectedId) : undefined;
-      if (p && !p.hidden && !locked(p) && art.matrixOf(p.id) && !screwing && !trackPick && !wiringOn) {
+      if (p && !p.hidden && !locked(p) && art.matrixOf(p.id) && !screwing && !trackPick && !wiringOn && !stepsOn) {
         placeProxy();
         gizmo.attach(proxy);
         gizmo.setMode(tool);
@@ -734,6 +753,23 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       if (!d || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 4) return;
       if (section.picking() && e.button === 0) {
         section.click(e);
+        return;
+      }
+      // Steps mode: a click puts the part in the step shown (or takes it out), or, recording, fits it.
+      if (stepsOn) {
+        if (e.button !== 0) return;
+        const r = canvasEl.getBoundingClientRect();
+        art.scene.updateMatrixWorld(true);
+        raycaster.setFromCamera(new Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1), camera);
+        const hit = raycaster.intersectObjects(art.meshes(), false).find(h => art.keeps(h.point));
+        const id = hit ? String(hit.object.userData.partId || "") : "";
+        if (!id) return;
+        stopStepPlay();
+        if (recording) recordClick(id);
+        else if (partById(id)?.ghost && steps.length) {
+          const k = stepsAt().get(id);
+          status(`${partById(id)!.name} goes on in step ${(k ?? 0) + 1}. To move it to this step, click it in the list.`);
+        } else toggleInStep(id);
         return;
       }
       // A handle under the pointer is the gizmo's click, unless faces are being picked (the gizmo is put away then).
@@ -911,6 +947,12 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       });
     }
     function undo(): void {
+      if (stepsOn) {
+        if (recording) return recordTakeBack();
+        if (!stepsPast.length) return;
+        stepsFuture.push(stepsNow);
+        return stepsRestore(stepsPast.pop()!);
+      }
       commit();
       if (!past.length) return;
       future.push(current);
@@ -919,6 +961,11 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       syncHistory();
     }
     function redo(): void {
+      if (stepsOn) {
+        if (recording || !stepsFuture.length) return;
+        stepsPast.push(stepsNow);
+        return stepsRestore(stepsFuture.pop()!);
+      }
       if (!future.length) return;
       past.push(current);
       current = future.pop()!;
@@ -926,8 +973,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
       syncHistory();
     }
     function syncHistory(): void {
-      $<HTMLButtonElement>("[data-act=undo]").disabled = !past.length;
-      $<HTMLButtonElement>("[data-act=redo]").disabled = !future.length;
+      $<HTMLButtonElement>("[data-act=undo]").disabled = stepsOn ? !(recording ? recording.steps.flat().length : stepsPast.length) : !past.length;
+      $<HTMLButtonElement>("[data-act=redo]").disabled = stepsOn ? !!recording || !stepsFuture.length : !future.length;
     }
 
     // ------------------------------------------------------------ the parts list
@@ -955,6 +1002,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
 
     function renderList(): void {
       syncExplodeFollow();
+      if (stepsOn) return renderStepsList();
       // A tree: each part joined to another sits under it, with its joint
       // as a row between them that can be shown, changed or undone.
       const byParent = new Map<string, ScenePart[]>();
@@ -5096,6 +5144,10 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     }
 
     function renderProps(): void {
+      if (stepsOn) {
+        props.innerHTML = stepPanel();
+        return;
+      }
       const p = partById(selectedId);
       const parent = p?.parent ? partById(p.parent) : undefined;
       props.innerHTML = `
@@ -5764,6 +5816,7 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     // The view new steps start from (the project's, with a model).
     let defaultView = shared && views.some(v => v.id === opts.model?.defaultView) ? opts.model!.defaultView! : "";
     const startViews = JSON.stringify([views, defaultView]);
+    const stepsOut = () => (steps.length ? { steps } : { steps: undefined });
     const viewsOut = () => (views.length ? { views, ...(defaultView ? { defaultView } : {}) } : { views: [], defaultView: undefined });
     const viewsMenu = $(".lyr-scene-views-menu");
     const sameCamera = (a: NamedView["camera"], b: NamedView["camera"]) =>
@@ -5915,6 +5968,24 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         if (e.key === "Escape") (e.target as HTMLElement).blur();
         return;
       }
+      // Steps mode: the model's keys (move, turn, screw, wire, delete, duplicate) are put away.
+      if (stepsOn) {
+        if (mod && (key === "z" || key === "y")) {
+          e.preventDefault();
+          if (key === "y" || e.shiftKey) redo();
+          else undo();
+        } else if (e.key === "Escape") {
+          if (stepPlay) stopStepPlay();
+          else if (recording) stepsAction("rec-stop");
+          else setMode(false);
+        } else if (!mod && key === "f") {
+          fitView(true);
+        } else if (!mod && (e.key === "ArrowLeft" || e.key === "ArrowRight") && steps.length && !recording) {
+          stepAt = Math.max(0, Math.min(steps.length - 1, stepAt + (e.key === "ArrowLeft" ? -1 : 1)));
+          showStep();
+        }
+        return;
+      }
       if (mod && key === "z") {
         e.preventDefault();
         if (e.shiftKey) redo();
@@ -5984,6 +6055,646 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
     overlay.addEventListener("keydown", onKey);
     overlay.addEventListener("keyup", onKeyUp);
 
+    // ------------------------------------------------------------ steps
+
+    // Steps mode: the model is built (Model mode), then each step says which
+    // parts are fitted in it. A step is shown as its guide page will be:
+    // earlier steps ghosted, its parts highlighted and drawn apart along
+    // their joints, later parts hidden. The steps are the project model's,
+    // saved with it on Done (without making pictures out of date); what this
+    // scene showed comes back when Steps mode ends, unless a step was picked
+    // for this picture.
+    const stepsPast: string[] = [];
+    const stepsFuture: string[] = [];
+    let stepsNow = JSON.stringify(steps);
+    const strip = $(".lyr-steps-strip");
+    /** The model as it was when Steps mode started (it can't change in it): step pictures drawn from another are drawn again. */
+    let stepsSig = "";
+
+    const isFixing = (p: ScenePart): boolean => {
+      const m = models.get(p.id);
+      return !!m && !(m instanceof Error) && isFastener(m.size);
+    };
+    const showingOf = (p: ScenePart): Showing => ({ hidden: p.hidden, ghost: p.ghost, highlight: p.highlight, explode: p.explode });
+    function setShowing(p: ScenePart, s: Showing): void {
+      for (const k of ["hidden", "ghost", "highlight", "explode"] as const) {
+        if (s[k] === undefined) delete p[k];
+        else Object.assign(p, { [k]: s[k] });
+      }
+    }
+    /** The steps' parts, tidied against the model as it is now. */
+    function tidy(): void {
+      steps = tidySteps(steps, scene.parts.filter(p => !p.wire), views);
+      stepAt = Math.max(0, Math.min(stepAt, steps.length - 1));
+    }
+    function stepsCommit(): void {
+      const next = JSON.stringify(steps);
+      if (next === stepsNow) return;
+      stepsPast.push(stepsNow);
+      if (stepsPast.length > 80) stepsPast.shift();
+      stepsFuture.length = 0;
+      stepsNow = next;
+      syncHistory();
+    }
+    function stepsRestore(text: string): void {
+      steps = JSON.parse(text) as BuildStep[];
+      stepsNow = text;
+      tidy();
+      showStep();
+      syncHistory();
+    }
+    const stepsAt = () => stepOfParts(scene.parts, steps, isFixing);
+    const stepName = (i: number, at = stepsAt()): string => {
+      const s = steps[i];
+      if (!s) return "";
+      if (s.title) return s.title;
+      const names = [...new Set(steppable(scene.parts).filter(p => s.parts.includes(p.id) && !isFixing(p)).map(p => p.name.trim() || "part"))];
+      if (!names.length) {
+        const fix = [...at].filter(([, k]) => k === i).length;
+        return fix ? `${fix} fixing${fix === 1 ? "" : "s"}` : "Empty";
+      }
+      return names.length <= 2 ? names.join(" and ") : `${names[0]} and ${names.length - 1} more`;
+    };
+
+    function setMode(on: boolean): void {
+      if (on === stepsOn) return;
+      if (on) {
+        if (!linked()) return status("Steps are for the project's model: use the project model here first.", true);
+        stopScrews();
+        stopWires();
+        stopPlayback();
+        if (section.picking()) section.stop("");
+        if (joining) stopJoin("");
+        commit();
+        kept = { parts: new Map(scene.parts.map(p => [p.id, showingOf(p)])), explode: scene.explode, arrows: scene.arrows, historyAt: past.length };
+        stepsOn = true;
+        selectedId = "";
+        shownJoint = "";
+        tidy();
+        stepsSig = JSON.stringify(scene.parts.map(p => [p.id, p.position, p.rotation, p.joint, p.parent]));
+        status(steps.length ? "" : "No steps yet: press Suggest steps to start from the joints, or Record steps to click the parts in the order they go on.", false, !steps.length);
+      } else {
+        stopStepPlay();
+        recording = null;
+        stepsOn = false;
+        if (kept) {
+          for (const p of scene.parts) setShowing(p, kept.parts.get(p.id) || {});
+          scene.explode = kept.explode;
+          if (kept.arrows) scene.arrows = true;
+          else delete scene.arrows;
+          // The pictures of the steps aren't this scene's history.
+          past.length = Math.min(past.length, kept.historyAt);
+          future.length = 0;
+          current = snap();
+          kept = null;
+        }
+        status("");
+        syncHistory();
+      }
+      root.classList.toggle("lyr-steps-on", stepsOn);
+      root.querySelectorAll<HTMLElement>("[data-mode]").forEach(b => {
+        const me = b.dataset.mode === (stepsOn ? "steps" : "model");
+        b.classList.toggle("lyr-on", me);
+        b.setAttribute("aria-pressed", String(me));
+      });
+      strip.hidden = !stepsOn;
+      attachGizmo();
+      showStep();
+      syncExplode();
+      layout();
+    }
+
+    /** Shows the step picked (or the recording so far) in the view, the list, the strip and the panel. */
+    function showStep(): void {
+      if (stepsOn) {
+        const at = recording ? recordedAt() : stepsAt();
+        const pieces = trackPieces(scene.parts);
+        for (const p of scene.parts) {
+          const k = at.get(p.id);
+          const s: Showing = {};
+          if (p.wire || pieces.has(p.id)) s.hidden = true;
+          else if (recording) {
+            const last = recording.steps.length - 1;
+            if (k === undefined) s.ghost = true;
+            else if (k === last) Object.assign(s, { highlight: true, explode: 1 });
+            else Object.assign(s, { highlight: false, explode: 0 });
+          } else if (!steps.length) {
+            // No steps yet: the whole model, to pick from.
+          } else if (k === undefined || k > stepAt) s.hidden = true;
+          else if (k === stepAt) Object.assign(s, { highlight: true, explode: 1 });
+          else Object.assign(s, { ghost: true, highlight: false, explode: 0 });
+          setShowing(p, s);
+        }
+        scene.explode = 0;
+        scene.arrows = true;
+        rebuild();
+        renderStrip();
+      } else rebuild();
+      renderList();
+      renderProps();
+      // The button clicked has gone: keep the keys (undo, arrows) working in the scene.
+      if (!overlay.contains(document.activeElement) || document.activeElement === document.body) root.focus({ preventScroll: true });
+    }
+
+    // The strip under the view: a card per step with its picture.
+    const stepThumbs = new Map<string, string>();
+    let thumbGen = 0;
+    let thumbTimer = 0;
+    function renderStrip(): void {
+      if (!stepsOn) return;
+      const at = stepsAt();
+      const rec = recording;
+      const loose = steppable(scene.parts).filter(p => !isFixing(p) && !at.has(p.id));
+      const cards = rec
+        ? rec.steps.map((ids, i) => `<div class="lyr-step-card${i === rec.steps.length - 1 ? " lyr-on" : ""}">
+            <div class="lyr-step-cap"><span class="lyr-step-badge">${i + 1}</span><span>${esc(ids.length ? ids.filter(id => !isFixing(partById(id)!)).map(id => partById(id)?.name || "part").join(", ") || "Fixings" : "Click parts to fit them")}</span></div>
+          </div>`).join("")
+        : steps.map((_, i) => {
+            const warn = stepWarnings(scene.parts, at, i).length > 0;
+            const img = stepThumbs.get(thumbKey(i));
+            return `<div class="lyr-step-card${i === stepAt ? " lyr-on" : ""}" data-step-card="${i}" draggable="true" role="button" tabindex="0" title="Step ${i + 1}: ${esc(stepName(i, at))}. Drag to move it.">
+              <div class="lyr-step-thumb">${img ? `<img src="${img}" alt="">` : icon("cube", 22)}</div>
+              <div class="lyr-step-cap"><span class="lyr-step-badge">${i + 1}</span><span>${esc(stepName(i, at))}</span>${warn ? `<span class="lyr-step-warn" title="A part in this step is joined to one fitted later">!</span>` : ""}</div>
+            </div>`;
+          }).join("");
+      strip.innerHTML = `
+        <div class="lyr-steps-bar">
+          ${rec ? `<strong class="lyr-steps-title lyr-rec">${icon("play", 14)}<span>Recording step ${rec.steps.length}</span></strong>
+            <span class="lyr-grow"></span>
+            <button type="button" class="lyr-btn" data-steps="take-back" title="Put the last part fitted back"${rec.steps.flat().length ? "" : " disabled"}>${icon("undo", 16)}<span>Take back</span></button>
+            <button type="button" class="lyr-btn lyr-steps-primary" data-steps="rec-next" title="Start the next step"${rec.steps[rec.steps.length - 1].length ? "" : " disabled"}>${icon("chevronRight", 16)}<span>Next step</span></button>
+            <button type="button" class="lyr-btn" data-steps="rec-finish" title="Keep these steps">${icon("check", 16)}<span>Finish</span></button>
+            <button type="button" class="lyr-btn" data-steps="rec-stop" title="Stop without keeping them">${icon("close", 16)}<span>Stop</span></button>`
+          : `<strong class="lyr-steps-title">Steps${steps.length ? ` · ${steps.length}` : ""}</strong>
+            <span class="lyr-grow"></span>
+            <button type="button" class="lyr-btn" data-steps="suggest" title="Work out steps from the joints: one per part, fixings with their part">${icon("wand", 16)}<span>Suggest steps</span></button>
+            <button type="button" class="lyr-btn" data-steps="record" title="Click the parts in the order they go on, pressing Next step between steps">${icon("pencil", 16)}<span>Record steps</span></button>
+            <button type="button" class="lyr-btn" data-steps="play" title="Watch the steps go together, one after another"${steps.length ? "" : " disabled"}>${icon("play", 16)}<span>${stepPlay ? "Stop" : "Play steps"}</span></button>`}
+        </div>
+        <div class="lyr-steps-cards">
+          ${cards}
+          ${rec ? "" : `<button type="button" class="lyr-step-card lyr-step-new" data-steps="new" title="Add an empty step after this one">${icon("plus", 16)}<span>New step</span></button>`}
+          ${!rec && loose.length ? `<div class="lyr-step-tray" data-step-tray>
+            <div class="lyr-step-tray-title">Not in a step · ${loose.length}</div>
+            ${loose.map(p => `<button type="button" class="lyr-step-tray-part" data-step-add="${esc(p.id)}" draggable="true" title="Fit it in step ${stepAt + 1}">${icon("cube", 12)}<span>${esc(p.name)}</span></button>`).join("")}
+            <p class="lyr-note">Click one to put it in step ${steps.length ? stepAt + 1 : "1"}. Left out, the guide fits it in a step of its own at the end.</p>
+          </div>` : ""}
+        </div>`;
+      strip.querySelector(".lyr-step-card.lyr-on")?.scrollIntoView({ block: "nearest", inline: "nearest" });
+      if (!rec) queueThumbs();
+    }
+
+    /** What a step's picture depends on: its parts and the earlier steps', the model, and the camera. */
+    function thumbKey(i: number): string {
+      return JSON.stringify([steps.slice(0, i + 1).map(s => s.parts), stepsSig]);
+    }
+    function queueThumbs(): void {
+      clearTimeout(thumbTimer);
+      thumbTimer = window.setTimeout(() => void drawThumbs(), 250);
+    }
+    async function drawThumbs(): Promise<void> {
+      const gen = ++thumbGen;
+      const at = stepsAt();
+      const pieces = trackPieces(scene.parts);
+      const sceneFor = (i: number): SceneData => ({
+        ...clone(scene),
+        explode: 0,
+        arrows: true,
+        section: undefined,
+        parts: scene.parts.map(p => {
+          const k = at.get(p.id);
+          const out: ScenePart = { ...p };
+          for (const f of ["hidden", "ghost", "highlight", "explode"] as const) delete out[f];
+          if (p.wire || pieces.has(p.id) || k === undefined || k > i) out.hidden = true;
+          else if (k === i) Object.assign(out, { highlight: true, explode: 1 });
+          else Object.assign(out, { ghost: true, highlight: false, explode: 0 });
+          return out;
+        }),
+      });
+      const todo = steps.map((_, i) => i).filter(i => !stepThumbs.has(thumbKey(i)));
+      if (!todo.length) return;
+      const all = steps.map((_, i) => sceneFor(i));
+      const W = 132, H = 84;
+      let cam: SceneCamera;
+      try {
+        cam = await frameAll(scene.camera, all, opts.store, W / H, 1.08);
+      } catch {
+        return;
+      }
+      for (const i of todo) {
+        if (gen !== thumbGen || closed || !stepsOn || recording) return;
+        const key = thumbKey(i);
+        try {
+          const pic = await renderPicture({ ...all[i], camera: cam }, opts.store, W, H, 2);
+          if (gen !== thumbGen) return;
+          stepThumbs.set(key, pic.toDataURL("image/png"));
+          const img = strip.querySelector<HTMLElement>(`[data-step-card="${i}"] .lyr-step-thumb`);
+          if (img) img.innerHTML = `<img src="${stepThumbs.get(key)}" alt="">`;
+        } catch {
+          // A step whose picture can't be drawn keeps its plain card.
+        }
+      }
+    }
+
+    /** Puts a part in step `i` (taking it out of any other), or, already there, out of every step. */
+    function toggleInStep(id: string, i = stepAt): void {
+      const p = partById(id);
+      if (!p || p.wire) return;
+      if (!steps.length) {
+        steps.push({ id: newStepId(steps), parts: [] });
+        i = stepAt = 0;
+      }
+      const was = steps.findIndex(s => s.parts.includes(id));
+      const at = stepsAt();
+      steps.forEach(s => (s.parts = s.parts.filter(x => x !== id)));
+      const auto = was < 0 && at.get(id) === i && isFixing(p);
+      if (was === i || auto) {
+        status(auto ? `${p.name} goes with its part in step ${i + 1} by itself.` : `${p.name} is out of step ${i + 1}.`);
+        if (auto) steps[i].parts.push(id);
+      } else {
+        steps[i].parts.push(id);
+        status(`${p.name} is fitted in step ${i + 1}${was >= 0 ? ` (moved from step ${was + 1})` : ""}.`);
+      }
+      stepsCommit();
+      showStep();
+    }
+
+    function newStep(): void {
+      const s: BuildStep = { id: newStepId(steps), parts: [] };
+      const i = steps.length ? stepAt + 1 : 0;
+      steps.splice(i, 0, s);
+      stepAt = i;
+      stepsCommit();
+      showStep();
+      status(`Step ${i + 1}: click parts, in the list or the view, to fit them in it.`);
+    }
+
+    function deleteStep(i: number): void {
+      if (!steps[i]) return;
+      steps.splice(i, 1);
+      stepAt = Math.max(0, Math.min(i, steps.length - 1));
+      stepsCommit();
+      showStep();
+      status(`Step ${i + 1} deleted: its parts are in no step now (Undo brings it back).`);
+    }
+
+    function moveStep(from: number, to: number): void {
+      if (from === to || !steps[from] || to < 0 || to >= steps.length) return;
+      const [s] = steps.splice(from, 1);
+      steps.splice(to, 0, s);
+      stepAt = to;
+      stepsCommit();
+      showStep();
+    }
+
+    function suggest(): void {
+      const fresh = suggestSteps({ parts: scene.parts }, isFixing);
+      if (!fresh.length) return status("Add parts to the model first.", true);
+      if (steps.some(s => s.parts.length) && !window.confirm(`Replace your ${steps.length} step${steps.length === 1 ? "" : "s"} with ${fresh.length} worked out from the joints?`)) return;
+      steps = fresh;
+      stepAt = 0;
+      stepsCommit();
+      showStep();
+      status(`${fresh.length} steps from the joints: one per part, fixings with their part. Move parts between steps to group them.`);
+    }
+
+    // Record steps: every part starts faint; click them in the order they go on.
+    function recordedAt(): Map<string, number> {
+      const out = new Map<string, number>();
+      recording?.steps.forEach((ids, i) => ids.forEach(id => out.set(id, i)));
+      return out;
+    }
+    function startRecording(): void {
+      if (steps.some(s => s.parts.length) && !window.confirm("Record new steps? The ones you have are replaced when you press Finish.")) return;
+      stopStepPlay();
+      recording = { steps: [[]] };
+      showStep();
+      status("Click the part that goes on first. Parts joined to one not fitted yet wait their turn.", false, true);
+    }
+    function recordClick(id: string): void {
+      if (!recording) return;
+      const p = partById(id);
+      if (!p || p.wire) return;
+      const at = recordedAt();
+      const last = recording.steps.length - 1;
+      if (at.has(id)) {
+        if (at.get(id) !== last) return status(`${p.name} went on in step ${at.get(id)! + 1}. Take back works on this step's parts.`, true);
+        // Taken back, with the fixings that came with it.
+        const going = new Set([id, ...[...fixingOwners(scene.parts, isFixing)].filter(([, o]) => o === id).map(([f]) => f)]);
+        recording.steps[last] = recording.steps[last].filter(x => !going.has(x));
+        status(`${p.name} taken back.`);
+      } else {
+        const fitted = new Set(at.keys());
+        if (!readyToFit(p, fitted, scene.parts)) return status(`${partById(p.parent!)?.name || "Its part"} goes on before ${p.name}: fit that first.`, true);
+        const with_ = isFixing(p) ? [] : [...fixingOwners(scene.parts, isFixing)].filter(([f, o]) => o === id && !at.has(f)).map(([f]) => f);
+        recording.steps[last].push(id, ...with_);
+        status(`${p.name}${with_.length ? ` and ${with_.length} fixing${with_.length === 1 ? "" : "s"}` : ""} fitted in step ${last + 1}.`);
+      }
+      showStep();
+    }
+    function recordTakeBack(): void {
+      if (!recording) return;
+      let last = recording.steps.length - 1;
+      if (!recording.steps[last].length && last > 0) {
+        recording.steps.pop();
+        last--;
+      }
+      recording.steps[last].pop();
+      showStep();
+    }
+    function finishRecording(): void {
+      if (!recording) return;
+      const kept = recording.steps.filter(s => s.length);
+      recording = null;
+      if (kept.length) {
+        steps = [];
+        for (const ids of kept) steps.push({ id: newStepId(steps), parts: ids });
+        stepAt = 0;
+        stepsCommit();
+        status(`${kept.length} step${kept.length === 1 ? "" : "s"} recorded.`);
+      } else status("Nothing recorded: your steps are as they were.");
+      showStep();
+    }
+
+    // Play steps: each step shown drawn apart, then put together, one after another.
+    function stopStepPlay(): void {
+      if (!stepPlay) return;
+      cancelAnimationFrame(stepPlay.frame);
+      stepPlay = null;
+      if (stepsOn) showStep();
+    }
+    function playSteps(): void {
+      if (stepPlay) return stopStepPlay();
+      if (!steps.length) return;
+      stepAt = 0;
+      showStep();
+      stepPlay = { frame: 0, at: 0, t0: performance.now() };
+      renderStrip();
+      const HOLD = 600, MOVE = 900, REST = 400;
+      const tick = (now: number) => {
+        if (!stepPlay || closed) return;
+        const t = now - stepPlay.t0;
+        const f = Math.max(0, Math.min(1, (t - HOLD) / MOVE));
+        const e = 1 - (f < 0.5 ? 2 * f * f : 1 - Math.pow(-2 * f + 2, 2) / 2);
+        const at = stepsAt();
+        for (const p of scene.parts) if (at.get(p.id) === stepPlay.at) p.explode = e;
+        art.move(scene.parts, scene.explode);
+        draw();
+        if (t > HOLD + MOVE + REST) {
+          if (stepPlay.at >= steps.length - 1) {
+            stepPlay = null;
+            renderStrip();
+            status("That's every step.");
+            return;
+          }
+          stepPlay.at++;
+          stepAt = stepPlay.at;
+          stepPlay.t0 = now;
+          showStep();
+        }
+        stepPlay.frame = requestAnimationFrame(tick);
+      };
+      stepPlay.frame = requestAnimationFrame(tick);
+    }
+
+    /** This picture keeps the step shown, when Steps mode ends. */
+    function useStepHere(): void {
+      if (!kept) return;
+      kept.parts = new Map(scene.parts.map(p => [p.id, showingOf(p)]));
+      kept.explode = 0;
+      kept.arrows = true;
+      status(`This picture shows step ${stepAt + 1} now: it stays when you go back to Model or press Done.`);
+    }
+
+    /** Parts in this step that run into parts fitted before them on their way off. */
+    function blockedInStep(): ScenePart[] {
+      const at = stepsAt();
+      const mine = scene.parts.filter(p => at.get(p.id) === stepAt && p.parent && p.joint && (at.get(p.parent) ?? 99) < stepAt);
+      if (!mine.length) return [];
+      const shapes = new Map<string, ExplodeShape>();
+      for (const q of scene.parts) {
+        const m = models.get(q.id);
+        if (!m || m instanceof Error) continue;
+        const g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry;
+        shapes.set(q.id, { size: m.size, triangles: g.getAttribute("position")?.array as ArrayLike<number> | undefined });
+      }
+      // Only what's fitted by now is in the way.
+      const now = scene.parts.map(p => ({ ...p, hidden: (at.get(p.id) ?? 99) > stepAt || !!p.wire }));
+      const choose = explodeChooser(now, worldMatrices(now, 0, false), shapes);
+      return mine.filter(p => {
+        const c = choose(p.id);
+        return !!c && (c.costs[p.joint!.explodeDir || "joint"] ?? 0) > 0.02;
+      });
+    }
+
+    function stepPanel(): string {
+      if (recording) {
+        const at = recordedAt();
+        const fitted = new Set(at.keys());
+        const left = steppable(scene.parts).filter(p => !at.has(p.id) && !isFixing(p));
+        return `<section class="lyr-scene-section">
+          <div class="lyr-panel-title">Still to fit · ${left.length}</div>
+          ${left.length ? `<ul class="lyr-step-parts">${left.map(p => {
+            const ready = readyToFit(p, fitted, scene.parts);
+            return `<li><button type="button" class="lyr-step-part${ready ? "" : " lyr-off"}" data-rec-part="${esc(p.id)}" title="${ready ? "Fit it in this step" : `Fit ${esc(partById(p.parent!)?.name || "its part")} first`}">${icon("cube", 12)}<span>${esc(p.name)}</span><em>${ready ? "ready" : `needs ${esc(partById(p.parent!)?.name || "its part")}`}</em></button></li>`;
+          }).join("")}</ul>` : `<p class="lyr-note">Every part is on. Press Finish to keep these steps.</p>`}
+          <div class="lyr-panel-title">Steps so far</div>
+          <ol class="lyr-step-sofar">${recording.steps.map(ids => `<li>${esc(ids.filter(id => !isFixing(partById(id)!)).map(id => partById(id)?.name || "part").join(", ") || "…")}</li>`).join("")}</ol>
+          <p class="lyr-note">Click a faint part in the view, or one here, to fit it now. Its screws come with it. Click a highlighted part to take it back.</p>
+        </section>`;
+      }
+      const s = steps[stepAt];
+      if (!s) return `<section class="lyr-scene-section"><div class="lyr-panel-title">Steps</div>
+        <p class="lyr-note">Build the model in Model mode, joints and all. Then make the steps here: each says which parts go on in it, and the assembly guide draws a page for each.</p>
+        <button type="button" class="lyr-wide-btn" data-steps="suggest">${icon("wand", 16)} Suggest steps</button>
+        <button type="button" class="lyr-wide-btn" data-steps="record">${icon("pencil", 16)} Record steps</button>
+        <button type="button" class="lyr-wide-btn" data-steps="new">${icon("plus", 16)} New step</button></section>`;
+      const at = stepsAt();
+      const own = s.parts.map(id => partById(id)).filter((p): p is ScenePart => !!p);
+      const follow = scene.parts.filter(p => at.get(p.id) === stepAt && !s.parts.includes(p.id));
+      const warns = stepWarnings(scene.parts, at, stepAt);
+      const blocked = blockedInStep();
+      return `<section class="lyr-scene-section lyr-step-panel">
+        <div class="lyr-step-head"><span class="lyr-step-badge">${stepAt + 1}</span><div class="lyr-panel-title">Step ${stepAt + 1} of ${steps.length}</div>
+          <span class="lyr-grow"></span>
+          <button type="button" class="lyr-btn lyr-icon-btn" data-steps="earlier" title="Move it earlier"${stepAt ? "" : " disabled"} aria-label="Move the step earlier">${icon("chevronUp", 16)}</button>
+          <button type="button" class="lyr-btn lyr-icon-btn" data-steps="later" title="Move it later"${stepAt < steps.length - 1 ? "" : " disabled"} aria-label="Move the step later">${icon("chevronDown", 16)}</button>
+          <button type="button" class="lyr-btn lyr-icon-btn" data-steps="delete" title="Delete this step (its parts go back to Not in a step)" aria-label="Delete the step">${icon("trash", 16)}</button>
+        </div>
+        <label class="lyr-scene-namebox">Title <input type="text" maxlength="120" data-step-title value="${esc(s.title || "")}" placeholder="${esc(stepName(stepAt, at))}"></label>
+        <div class="lyr-scene-sub">Fitted in this step · ${own.length}</div>
+        ${own.length ? `<ul class="lyr-step-parts">${own.map(p => `<li><button type="button" class="lyr-step-part" data-step-part="${esc(p.id)}" title="Take it out of this step">${icon("cube", 12)}<span>${esc(p.name)}</span>${icon("close", 12)}</button></li>`).join("")}</ul>`
+          : `<p class="lyr-note">Click parts in the list, the view, or Not in a step to fit them here.</p>`}
+        ${follow.length ? `<div class="lyr-scene-sub">With their parts · ${follow.length}</div><p class="lyr-note">${esc(follow.map(p => p.name).join(", "))}: fixings go in their part's step unless you put them in another.</p>` : ""}
+        <label class="lyr-scene-namebox">View <select data-step-view>
+          <option value="">Same as every step</option>
+          ${views.map(v => `<option value="${esc(v.id)}"${s.view === v.id ? " selected" : ""}>${esc(v.name)}</option>`).join("")}
+        </select></label>
+        ${views.length ? "" : `<p class="lyr-note">Save a view under Views to draw a step from another side (turned over, say).</p>`}
+        <div class="lyr-scene-sub">Checks</div>
+        <ul class="lyr-step-checks">
+          ${warns.map(w => `<li class="lyr-bad">${esc(partById(w.part)?.name || "A part")} is joined to ${esc(partById(w.needs)?.name || "a part")}, which ${w.later < 0 ? "is in no step" : `goes on in step ${w.later + 1}`}.</li>`).join("")}
+          ${blocked.map(p => `<li class="lyr-bad">${esc(p.name)} runs into a part fitted earlier on its way off: change its Comes off way in Model mode (the joint's pencil).</li>`).join("")}
+          ${!own.length && !follow.length ? `<li class="lyr-bad">Nothing in it: the guide leaves it out.</li>` : ""}
+          ${!warns.length && !blocked.length && (own.length || follow.length) ? `<li class="lyr-ok">${icon("check", 12)} Every part goes onto one already fitted, and comes off clear.</li>` : ""}
+        </ul>
+        <button type="button" class="lyr-wide-btn" data-steps="use" title="This picture shows this step when Steps mode ends">${icon("camera", 16)} Use this step for this picture</button>
+        <p class="lyr-note">The project's /Assembly guide draws a page for each step, in this order.</p>
+      </section>`;
+    }
+
+    function renderStepsList(): void {
+      const at = recording ? recordedAt() : stepsAt();
+      const owners = fixingOwners(scene.parts, isFixing);
+      const handPicked = stepIndex(steps);
+      const ids = new Set(scene.parts.map(p => p.id));
+      const byParent = new Map<string, ScenePart[]>();
+      for (const p of steppable(scene.parts)) {
+        const key = p.parent && ids.has(p.parent) ? p.parent : "";
+        (byParent.get(key) || byParent.set(key, []).get(key)!).push(p);
+      }
+      const row = (p: ScenePart, depth: number): string => {
+        const k = at.get(p.id);
+        const auto = !recording && k !== undefined && !handPicked.has(p.id);
+        const cur = recording ? k === recording.steps.length - 1 : k === stepAt;
+        const chip = k === undefined ? "–" : String(k + 1);
+        const title = recording
+          ? (k === undefined ? "Not fitted yet: click to fit it now" : `Fitted in step ${k + 1}`)
+          : k === undefined ? `In no step: click to fit it in step ${stepAt + 1}`
+          : auto ? `Goes with ${esc(partById(owners.get(p.id) || "")?.name || "its part")} in step ${k + 1}: click to put it in step ${stepAt + 1} instead`
+          : cur ? `Fitted in step ${k + 1}: click to take it out` : `Fitted in step ${k + 1}: click to move it to step ${stepAt + 1}`;
+        return `<li class="lyr-scene-row lyr-step-row${cur ? " lyr-on" : ""}" style="--depth:${depth}" data-id="${esc(p.id)}" draggable="${recording ? "false" : "true"}">
+          <button type="button" class="lyr-scene-name" data-step-toggle="${esc(p.id)}" title="${title}"><span class="lyr-step-chip${cur ? " lyr-cur" : ""}${k === undefined ? " lyr-none" : ""}${auto ? " lyr-auto" : ""}">${chip}</span>${icon("cube", 14)}<span>${esc(p.name)}</span></button>
+        </li>${(byParent.get(p.id) || []).map(c => row(c, depth + 1)).join("")}`;
+      };
+      list.innerHTML = (byParent.get("") || []).map(p => row(p, 0)).join("") || `<li class="lyr-note">No parts yet.</li>`;
+      modelNote.hidden = false;
+      modelNote.innerHTML = `<p class="lyr-note">${recording ? "Click parts in the order they go on." : "The number is the step a part goes on in. Click a part to put it in the step shown, or drag it onto a step."}</p>`;
+      $(".lyr-scene-parts-title").textContent = "Build order";
+    }
+
+    root.querySelector(".lyr-scene-modes")?.addEventListener("click", e => {
+      const b = (e.target as HTMLElement).closest<HTMLElement>("[data-mode]");
+      if (b) setMode(b.dataset.mode === "steps");
+    });
+    list.addEventListener("click", e => {
+      const b = (e.target as HTMLElement).closest<HTMLElement>("[data-step-toggle]");
+      if (!b || !stepsOn) return;
+      if (recording) recordClick(b.dataset.stepToggle!);
+      else toggleInStep(b.dataset.stepToggle!);
+    });
+    list.addEventListener("dragstart", e => {
+      const li = (e.target as HTMLElement).closest<HTMLElement>(".lyr-step-row");
+      if (!li || !stepsOn) return;
+      e.dataTransfer?.setData("text/x-lyr-part", li.dataset.id || "");
+    });
+    function stepsAction(act: string): void {
+      switch (act) {
+        case "suggest": suggest(); break;
+        case "record": startRecording(); break;
+        case "play": playSteps(); break;
+        case "new": newStep(); break;
+        case "delete": deleteStep(stepAt); break;
+        case "earlier": moveStep(stepAt, stepAt - 1); break;
+        case "later": moveStep(stepAt, stepAt + 1); break;
+        case "use": useStepHere(); break;
+        case "take-back": recordTakeBack(); break;
+        case "rec-next":
+          if (recording && recording.steps[recording.steps.length - 1].length) {
+            recording.steps.push([]);
+            showStep();
+            status(`Step ${recording.steps.length}: click the parts that go on next.`, false, true);
+          }
+          break;
+        case "rec-finish": finishRecording(); break;
+        case "rec-stop": recording = null; showStep(); status("Recording stopped: your steps are as they were."); break;
+      }
+    }
+    strip.addEventListener("click", e => {
+      const t = e.target as HTMLElement;
+      const b = t.closest<HTMLElement>("[data-steps], [data-step-add], [data-step-card]");
+      if (!b) return;
+      if (b.dataset.steps) stepsAction(b.dataset.steps);
+      else if (b.dataset.stepAdd) toggleInStep(b.dataset.stepAdd);
+      else if (b.dataset.stepCard) {
+        stopStepPlay();
+        stepAt = Number(b.dataset.stepCard);
+        showStep();
+      }
+    });
+    strip.addEventListener("keydown", e => {
+      const card = (e.target as HTMLElement).closest<HTMLElement>("[data-step-card]");
+      if (!card) return;
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        stepAt = Number(card.dataset.stepCard);
+        showStep();
+      } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        e.preventDefault();
+        stepAt = Math.max(0, Math.min(steps.length - 1, stepAt + (e.key === "ArrowLeft" ? -1 : 1)));
+        showStep();
+        strip.querySelector<HTMLElement>(`[data-step-card="${stepAt}"]`)?.focus();
+      }
+    });
+    strip.addEventListener("dragstart", e => {
+      const card = (e.target as HTMLElement).closest<HTMLElement>("[data-step-card]");
+      const part = (e.target as HTMLElement).closest<HTMLElement>("[data-step-add]");
+      if (card) e.dataTransfer?.setData("text/x-lyr-step", card.dataset.stepCard!);
+      else if (part) e.dataTransfer?.setData("text/x-lyr-part", part.dataset.stepAdd!);
+    });
+    strip.addEventListener("dragover", e => {
+      if (!(e.target as HTMLElement).closest("[data-step-card]")) return;
+      const types = e.dataTransfer?.types || [];
+      if (types.includes("text/x-lyr-step") || types.includes("text/x-lyr-part")) {
+        e.preventDefault();
+        strip.querySelectorAll(".lyr-drop-on").forEach(c => c.classList.remove("lyr-drop-on"));
+        (e.target as HTMLElement).closest("[data-step-card]")!.classList.add("lyr-drop-on");
+      }
+    });
+    strip.addEventListener("dragleave", e => (e.target as HTMLElement).closest("[data-step-card]")?.classList.remove("lyr-drop-on"));
+    strip.addEventListener("drop", e => {
+      const card = (e.target as HTMLElement).closest<HTMLElement>("[data-step-card]");
+      if (!card) return;
+      e.preventDefault();
+      const to = Number(card.dataset.stepCard);
+      const from = e.dataTransfer?.getData("text/x-lyr-step");
+      const part = e.dataTransfer?.getData("text/x-lyr-part");
+      if (from) moveStep(Number(from), to);
+      else if (part) {
+        const was = steps.findIndex(s => s.parts.includes(part));
+        stepAt = to;
+        if (was !== to) toggleInStep(part, to);
+        else showStep();
+      }
+    });
+    props.addEventListener("click", e => {
+      if (!stepsOn) return;
+      const b = (e.target as HTMLElement).closest<HTMLElement>("[data-steps], [data-step-part], [data-rec-part]");
+      if (!b) return;
+      if (b.dataset.steps) stepsAction(b.dataset.steps);
+      else if (b.dataset.stepPart) toggleInStep(b.dataset.stepPart);
+      else if (b.dataset.recPart) recordClick(b.dataset.recPart);
+    });
+    props.addEventListener("change", e => {
+      const t = e.target as HTMLInputElement | HTMLSelectElement;
+      const s = steps[stepAt];
+      if (!stepsOn || !s) return;
+      if (t.dataset.stepTitle !== undefined) {
+        const v = t.value.trim();
+        if (v) s.title = v.slice(0, 120);
+        else delete s.title;
+        stepsCommit();
+        renderStrip();
+      } else if (t.dataset.stepView !== undefined) {
+        if (t.value) {
+          s.view = t.value;
+          const v = views.find(x => x.id === t.value);
+          if (v) glideTo(structuredClone(v.camera), () => {});
+        } else delete s.view;
+        stepsCommit();
+      }
+    });
+
     function close(result: WorkspaceResult | null): void {
       if (closed) return;
       closed = true;
@@ -6006,7 +6717,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
 
     function cancel(): void {
       commit();
-      if (JSON.stringify(scene) !== start && !window.confirm("Leave the 3D scene without keeping your changes?")) return;
+      if (stepsOn) setMode(false);
+      if ((JSON.stringify(scene) !== start || JSON.stringify(steps) !== startSteps) && !window.confirm("Leave the 3D scene without keeping your changes?")) return;
       close(null);
     }
 
@@ -6017,6 +6729,9 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
         await finishTrack();
         if (trackDraft) return;
       }
+      if (recording) finishRecording();
+      // The scene shows what it showed before Steps mode (or the step picked for it).
+      if (stepsOn) setMode(false);
       busy = true;
       commit();
       const btn = $<HTMLButtonElement>("[data-act=done]");
@@ -6032,7 +6747,8 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
             if (m && !(m instanceof Error)) opts.store.put(p, m);
           }
         }
-        const viewsChanged = shared && JSON.stringify([views, defaultView]) !== startViews;
+        steps = tidySteps(steps, out.parts.filter(p => !p.wire), views);
+        const viewsChanged = shared && (JSON.stringify([views, defaultView]) !== startViews || JSON.stringify(steps) !== startSteps);
         // The project's model still carrying unpacked models is saved again, packed, as the same version.
         const repack = linked() && !!projectModel && projectModel.parts.some(p => p.data && !isPacked(p.data));
         if (linked() && opts.saveModel && (scene.parts.length || projectModel) && (!projectModel || partsDiffer(projectModel.parts, scene.parts))) {
@@ -6040,14 +6756,14 @@ export function openWorkspace(opts: WorkspaceOptions): Promise<WorkspaceResult |
           // pictures drawn from the old one will say they're behind.
           status("Saving the project's model…", false, true);
           const stamp = Math.max(Date.now(), (opts.model?.stamp || 0) + 1);
-          await opts.saveModel({ ...modelOf(out, stamp), ...viewsOut() });
+          await opts.saveModel({ ...modelOf(out, stamp), ...viewsOut(), ...stepsOut() });
           out.model = { stamp };
         } else if ((viewsChanged || repack) && opts.saveModel) {
           // Only the named views changed (or the models were packed): the same version, so no picture is out of date.
-          status(repack ? "Saving the project's model…" : "Saving the project's views…", false, true);
+          status("Saving the project's model…", false, true);
           const was = opts.model || modelOf(linked() ? out : { ...out, parts: [] }, 0);
           const base = repack ? { ...was, parts: modelOf(out, was.stamp).parts } : was;
-          await opts.saveModel({ ...base, ...viewsOut() });
+          await opts.saveModel({ ...base, ...viewsOut(), ...stepsOut() });
         }
         status("Drawing the picture…", false, true);
         const picture = await renderPicture(out, opts.store, opts.width, opts.height, opts.scale);

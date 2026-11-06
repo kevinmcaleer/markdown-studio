@@ -1,0 +1,68 @@
+{
+  "title": "Suggest steps follows the joint tree",
+  "why": "With no steps, the guide fits the second part onto the first, then one part per step down each branch: the left motor's wheel before the right motor. Screws aren't listed; they follow their part.",
+  "input": {
+    "parts": [
+      {
+        "id": "chassis"
+      },
+      {
+        "id": "motorL",
+        "parent": "chassis"
+      },
+      {
+        "id": "s1",
+        "parent": "motorL"
+      },
+      {
+        "id": "s2",
+        "parent": "motorL"
+      },
+      {
+        "id": "wheelL",
+        "parent": "motorL"
+      },
+      {
+        "id": "motorR",
+        "parent": "chassis"
+      },
+      {
+        "id": "wheelR",
+        "parent": "motorR"
+      },
+      {
+        "id": "s3",
+        "parent": "chassis"
+      },
+      {
+        "id": "shield",
+        "parent": "chassis"
+      }
+    ],
+    "fixings": [
+      "s1",
+      "s2",
+      "s3"
+    ]
+  },
+  "expect": {
+    "suggest": [
+      [
+        "chassis",
+        "motorL"
+      ],
+      [
+        "wheelL"
+      ],
+      [
+        "motorR"
+      ],
+      [
+        "wheelR"
+      ],
+      [
+        "shield"
+      ]
+    ]
+  }
+}

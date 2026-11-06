@@ -25,6 +25,7 @@ They cover the parts of 3D scenes that rely on guesses:
 | `cases/mirror/` | Mirror a wire finds each part's partner across the middle of the model (not x 0), and puts each point where the mirror does, its face turned the mirror's way |
 | `cases/diagram/` | Add missing wires makes a 3D cable for each of the 2D diagram's with sockets at both ends, its wires in the plug's pin order and the diagram's colours |
 | `cases/pins/` | Finding a part's pins on its model from its 2D picture puts each where its wire ends (a header pin's tip, a motor tab's end), facing the way the wire leaves, and guesses nothing for a model drawn another way round |
+| `cases/steps/` | Build steps picked by hand make the guide pages a person expects: fixings go with their part unless picked into another step, a part in no step gets a page at the end, Suggest steps follows the joint tree, and a part fitted before what it's joined to is caught |
 | `cases/pictures/` | Whole scenes drawn with the real renderer, compared with approved pictures |
 
 ## Running them

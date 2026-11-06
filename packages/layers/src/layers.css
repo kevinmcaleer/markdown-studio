@@ -946,3 +946,81 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 .lyr-scene-pjoint .lyr-icon-btn:not(.lyr-on) { color: #c3c7cd; transition: color 0.12s; }
 .lyr-scene-pjoint .lyr-icon-btn:not(.lyr-on):hover,
 .lyr-scene-pjoint .lyr-icon-btn:not(.lyr-on):focus-visible { color: var(--lyr-ink); }
+
+/* 3D scene modes: Model (parts and joints) and Steps (the order they go together). */
+.lyr-scene-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; margin: 0 0 12px; padding: 2px; border-radius: 8px; background: var(--lyr-hover); }
+.lyr-scene-modes[hidden] { display: none; }
+.lyr-scene-mode { display: flex; align-items: center; justify-content: center; gap: 6px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: var(--lyr-muted); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.lyr-scene-mode:hover { color: var(--lyr-ink); }
+.lyr-scene-mode.lyr-on { background: #fff; color: var(--lyr-accent); box-shadow: 0 1px 2px rgb(0 0 0 / 0.12); }
+/* In Steps mode the model's tools are put away: the view, Views and Fit stay. */
+.lyr-steps-on .lyr-scene-tools [data-tool],
+.lyr-steps-on .lyr-scene-tools [data-act=screw],
+.lyr-steps-on .lyr-scene-tools [data-act=wire],
+.lyr-steps-on .lyr-scene-tools [data-act=section],
+.lyr-steps-on .lyr-scene-tools .lyr-scene-explode,
+.lyr-steps-on .lyr-scene-tools [data-act=explode-smart],
+.lyr-steps-on .lyr-scene-tools [data-act=explode-follow],
+.lyr-steps-on .lyr-scene-tools .lyr-sep:first-of-type,
+.lyr-steps-on .lyr-scene-tools .lyr-sep:last-of-type,
+.lyr-steps-on .lyr-scene-add,
+.lyr-steps-on [data-act=urdf],
+.lyr-steps-on .lyr-scene-parts > .lyr-note { display: none !important; }
+.lyr-step-row { gap: 0; }
+.lyr-step-row .lyr-scene-name { padding-left: calc(var(--depth, 0) * 14px + 4px); }
+.lyr-step-chip { flex: 0 0 auto; min-width: 22px; height: 20px; padding: 0 6px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; background: #e9ebef; color: var(--lyr-muted); font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.lyr-step-chip.lyr-cur { background: #1f6fe0; color: #fff; }
+.lyr-step-chip.lyr-auto { background: transparent; border: 1px solid #c9ced6; }
+.lyr-step-chip.lyr-none { background: transparent; border: 1px dashed #aab0b8; color: #8a9099; }
+.lyr-step-row.lyr-on { background: #e7f0fd; }
+.lyr-step-row.lyr-on .lyr-scene-name { color: #1f6fe0; }
+/* The strip of steps under the view. */
+.lyr-steps-strip { width: 100%; max-width: 100%; display: flex; flex-direction: column; gap: 6px; padding: 8px 10px 10px; background: #fff; border-radius: 10px; box-shadow: 0 1px 3px rgb(0 0 0 / 0.12); }
+.lyr-steps-strip[hidden] { display: none; }
+.lyr-steps-bar { display: flex; align-items: center; gap: 4px; font-size: 13px; }
+.lyr-steps-bar .lyr-grow { flex: 1; }
+.lyr-steps-title { display: inline-flex; align-items: center; gap: 6px; }
+.lyr-steps-title.lyr-rec { color: #c92a2a; }
+.lyr-steps-primary { background: #1f6fe0; color: #fff; }
+.lyr-steps-primary:hover { background: #1a5fc2; }
+.lyr-steps-bar .lyr-btn:disabled { opacity: 0.4; cursor: default; }
+.lyr-steps-cards { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 4px; }
+.lyr-step-card { flex: 0 0 150px; display: flex; flex-direction: column; gap: 4px; padding: 5px; border: 1px solid var(--lyr-line); border-radius: 8px; background: #fff; color: inherit; font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.lyr-step-card:hover { border-color: #9fb9e6; }
+.lyr-step-card.lyr-on { border-color: #1f6fe0; box-shadow: 0 0 0 2px rgb(31 111 224 / 0.2); }
+.lyr-step-card.lyr-drop-on { border-color: var(--lyr-accent); background: var(--lyr-accent-soft); }
+.lyr-step-thumb { height: 84px; border-radius: 5px; background: var(--lyr-stage); display: flex; align-items: center; justify-content: center; color: #b7bcc4; overflow: hidden; }
+.lyr-step-thumb img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.lyr-step-cap { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.lyr-step-cap > span:nth-child(2) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lyr-step-badge { flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%; background: #d6322f; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
+.lyr-step-warn { flex: 0 0 auto; width: 16px; height: 16px; border-radius: 50%; background: #e8590c; color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
+.lyr-step-new { flex-basis: 110px; align-items: center; justify-content: center; flex-direction: row; border-style: dashed; color: var(--lyr-muted); font-weight: 600; }
+.lyr-step-tray { flex: 0 0 190px; display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; border: 1px dashed #e0b100; border-radius: 8px; background: #fff9e6; font-size: 12px; overflow-y: auto; max-height: 126px; }
+.lyr-step-tray-title { font-weight: 700; margin-bottom: 2px; }
+.lyr-step-tray-part { display: flex; align-items: center; gap: 6px; padding: 2px 4px; border: 0; border-radius: 4px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.lyr-step-tray-part:hover { background: #fff0bf; }
+.lyr-step-tray-part span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lyr-step-tray .lyr-note { margin: 4px 0 0; color: #946200; }
+/* The Step panel. */
+.lyr-step-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.lyr-step-head .lyr-panel-title { margin: 0; }
+.lyr-step-head .lyr-grow { flex: 1; }
+.lyr-step-head .lyr-icon-btn:disabled { opacity: 0.3; }
+.lyr-step-panel select { height: 32px; border: 1px solid var(--lyr-line); border-radius: 6px; padding: 0 6px; color: var(--lyr-ink); font: inherit; background: #fff; }
+.lyr-step-panel .lyr-scene-namebox { margin-top: 8px; }
+.lyr-step-parts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.lyr-step-parts > li::before, .lyr-step-parts > li::marker { content: none; }
+.lyr-step-part { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 28px; padding: 0 6px; border: 1px solid var(--lyr-line); border-radius: 6px; background: #fff; color: inherit; font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.lyr-step-part > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lyr-step-part > em { font-style: normal; font-size: 11px; color: #2b8a3e; }
+.lyr-step-part.lyr-off { color: var(--lyr-muted); }
+.lyr-step-part.lyr-off > em { color: var(--lyr-muted); }
+.lyr-step-part:hover { border-color: var(--lyr-accent); }
+.lyr-step-checks { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.lyr-step-checks > li::before, .lyr-step-checks > li::marker { content: none; }
+.lyr-step-checks .lyr-bad { color: #b35000; }
+.lyr-step-checks .lyr-ok { color: #2b8a3e; display: flex; gap: 4px; align-items: flex-start; }
+.lyr-step-checks .lyr-ok .lyr-icon { flex: 0 0 auto; margin-top: 2px; }
+.lyr-step-sofar { margin: 0 0 8px; padding-left: 20px; font-size: 12px; }
+.lyr-step-panel .lyr-wide-btn, .lyr-steps-on .lyr-scene-props .lyr-wide-btn { margin-top: 6px; border: 1px solid var(--lyr-line); background: #fff; }
