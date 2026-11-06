@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Matrix4, Vector3 } from "three";
-import { clearRun, routeRound, solidGrid, type Solid } from "./wireAvoid";
+import { clearRun, findWay, routeRound, solidGrid, tighten, type Solid } from "./wireAvoid";
 import { followRoom, roundCorners, routeOrder, routeWire, wireHitsParts } from "./wireRouting";
 import { loomsOf } from "./wireSpec";
 import type { WireSpec } from "./wireSpec";
@@ -118,5 +118,47 @@ describe("routing round parts", () => {
     const b = routeWire(beside, mats, g, looms)!;
     expect(b.waypoints.filter(w => w.along)).toEqual(beside.waypoints);
     expect(wireHitsParts({ ...beside, waypoints: b.waypoints }, mats, g, looms)).toBe(false);
+  });
+
+  describe("tight gaps", () => {
+    // A 6 mm wall 50 mm high across a wide plate, with a 4 mm slot at y 0 and an 8 mm one at y 10.
+    const slotted: Solid[] = [
+      { part: "base", positions: box([-60, -100, -5], [60, 100, 0]), matrix: I },
+      { part: "w1", positions: box([-3, -100, 0], [3, -2, 50]), matrix: I },
+      { part: "w2", positions: box([-3, 2, 0], [3, 6, 50]), matrix: I },
+      { part: "w3", positions: box([-3, 14, 0], [3, 100, 50]), matrix: I },
+    ];
+    const sg = solidGrid(slotted)!;
+    const up = new Vector3(0, 0, 1);
+    const through = (pts: Vector3[], a: Vector3, b: Vector3) => {
+      const all = [a, ...pts, b];
+      for (let i = 1; i < all.length; i++) {
+        const p = all[i - 1], q = all[i];
+        if ((p.x < 0) !== (q.x < 0)) return p.y + ((q.y - p.y) * (0 - p.x)) / (q.x - p.x);
+      }
+      return NaN;
+    };
+
+    it("threads a snug slot rather than climbing the wall, but never closer than the wire's radius", () => {
+      // Too snug for the full room (3 mm a side), roomy enough for the wire (1.2).
+      const a = new Vector3(-25, -20, 3), b = new Vector3(25, -20, 3);
+      const strict = findWay(sg, { p: a, n: up }, { p: b, n: up }, 3)!;
+      const soft = findWay(sg, { p: a, n: up }, { p: b, n: up }, 3, 1.2)!;
+      expect(soft.score!).toBeLessThan(strict.score! - 5);
+      const pts = tighten(sg, soft);
+      expect(Math.abs(through(pts, a, b))).toBeLessThan(2);
+      expect(Math.max(...[a, ...pts, b].map(p => p.z))).toBeLessThan(20);
+      // Too snug even for that: over the top or by the wide slot.
+      const fat = tighten(sg, findWay(sg, { p: a, n: up }, { p: b, n: up }, 3.4, 3)!);
+      expect(Math.abs(through(fat, a, b))).toBeGreaterThan(2);
+    });
+
+    it("takes a roomy gap over a snug one when it's not much further", () => {
+      const a = new Vector3(-25, 0, 3), b = new Vector3(25, 0, 3);
+      const pts = tighten(sg, findWay(sg, { p: a, n: up }, { p: b, n: up }, 3, 1.2)!);
+      const y = through(pts, a, b);
+      expect(y).toBeGreaterThan(7);
+      expect(y).toBeLessThan(13);
+    });
   });
 });

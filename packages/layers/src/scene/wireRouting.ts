@@ -6,7 +6,7 @@
 
 import { Matrix4, Vector3 } from "three";
 import { alongside, anchor, cableRadius, leadLength, MIN_BEND, wireRoute } from "./wire";
-import { clearance, findWay, nearestPart, tighten, WIRE_ROOM, type RouteEnd, type SolidGrid, type Way } from "./wireAvoid";
+import { clearance, findWay, nearestPart, SQUEEZE_ROOM, tighten, WIRE_ROOM, type RouteEnd, type SolidGrid, type Way } from "./wireAvoid";
 import type { Looms, WireSpec, WireWaypoint } from "./wireSpec";
 
 export interface RoutedWire {
@@ -60,6 +60,8 @@ export function routeWire(spec: WireSpec, mats: Map<string, Matrix4>, g: SolidGr
   const r = cableRadius(spec);
   const lead = leadLength({ diameter: r * 2 });
   const keep = r + WIRE_ROOM + room;
+  // Through a hole or slot, it may squeeze down to this.
+  const hard = r + SQUEEZE_ROOM + room;
   const own = spec.waypoints.filter(w => !w.auto);
   // The fixed points in order: each lead's end, each waypoint on a face (lifted off it),
   // and each stretch beside another wire (from where it joins to where it leaves).
@@ -93,7 +95,7 @@ export function routeWire(spec: WireSpec, mats: Map<string, Matrix4>, g: SolidGr
   // Each stretch's way found once; pulled tight differently on each try.
   const found = new Map<number, Way | null>();
   const wayFor = (i: number) => {
-    if (!found.has(i)) found.set(i, findWay(g, (fixed[i].out ?? fixed[i].at)!, fixed[i + 1].at!, keep));
+    if (!found.has(i)) found.set(i, findWay(g, (fixed[i].out ?? fixed[i].at)!, fixed[i + 1].at!, keep, hard));
     return found.get(i)!;
   };
   let best: RoutedWire | null = null;

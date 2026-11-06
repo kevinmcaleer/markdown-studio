@@ -1,0 +1,134 @@
+{
+  "title": "A motor wire goes up through the hole in the deck, not round the outside of the robot",
+  "why": "Like a SMARS: a board sits on a 100 x 70 deck 30 mm up, and a motor sits under the deck. The deck has a 4 mm wire hole 15 mm from the motor's tab. Round the deck's edge is over 85 mm; up through the hole is about 50. The hole is snug for a 1.6 mm wire but it fits, so the wire should take it.",
+  "input": {
+    "parts": [
+      {
+        "id": "deckA",
+        "shape": {
+          "box": [
+            100,
+            33,
+            3
+          ]
+        },
+        "position": [
+          0,
+          -18.5,
+          30
+        ]
+      },
+      {
+        "id": "deckB",
+        "shape": {
+          "box": [
+            100,
+            33,
+            3
+          ]
+        },
+        "position": [
+          0,
+          18.5,
+          30
+        ]
+      },
+      {
+        "id": "deckC",
+        "shape": {
+          "box": [
+            48,
+            4,
+            3
+          ]
+        },
+        "position": [
+          -26,
+          0,
+          30
+        ]
+      },
+      {
+        "id": "deckD",
+        "shape": {
+          "box": [
+            48,
+            4,
+            3
+          ]
+        },
+        "position": [
+          26,
+          0,
+          30
+        ]
+      },
+      {
+        "id": "board",
+        "shape": {
+          "box": [
+            40,
+            30,
+            2
+          ]
+        },
+        "position": [
+          25,
+          15,
+          33
+        ]
+      },
+      {
+        "id": "motor",
+        "shape": {
+          "box": [
+            30,
+            12,
+            10
+          ]
+        },
+        "position": [
+          -15,
+          0,
+          12
+        ]
+      }
+    ],
+    "wire": {
+      "from": {
+        "part": "motor",
+        "point": [
+          0,
+          0,
+          5
+        ],
+        "normal": [
+          0,
+          0,
+          1
+        ]
+      },
+      "to": {
+        "part": "board",
+        "point": [
+          -15,
+          -10,
+          1
+        ],
+        "normal": [
+          0,
+          0,
+          1
+        ]
+      },
+      "waypoints": [],
+      "color": "#222",
+      "diameter": 1.6,
+      "slack": 5
+    }
+  },
+  "expect": {
+    "hitsBefore": true,
+    "maxLength": 65
+  }
+}

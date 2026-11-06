@@ -10,6 +10,15 @@
 // the wire's waypoints, each on the part it is nearest, so the wire still
 // follows its parts when they move or explode.
 //
+// Room round a wire is soft: it wants `keep` mm off every part, but will
+// squeeze down to `hard` mm (its radius and a little) through a hole or slot
+// when going round would be much longer. Each cube with less than `keep`
+// costs more to pass through, so a short squeeze beats a long detour and a
+// roomy way beats a squeeze of about the same length. Like a PCB autorouter,
+// several ways are tried for each stretch (strict room, soft room, leaving
+// the end straight out or by its nearest free side) and the one with the
+// lowest score (length, squeezes and bends) is kept.
+//
 // The surface is a shell: a part's inside is far from its surface too, but
 // it is walled in by the band round the shell, so a run from outside never
 // gets there.
@@ -24,6 +33,12 @@ const MAX_CELLS = 3_000_000;
 const MIN_CELL = 0.5;
 /** Mm the grid reaches past the model all round, so a wire can go round its outside. */
 const MARGIN = 20;
+/** Mm a squeezing wire still keeps off the parts, over its radius. */
+export const SQUEEZE_ROOM = 0.4;
+/** A mm with no room to spare costs this many mm more than a roomy one. */
+const SQUEEZE_COST = 4;
+/** Mm a route's score goes up for each right angle it turns through (gentler turns count less). */
+const BEND_COST = 4;
 
 export interface Solid {
   part: string;
@@ -308,19 +323,42 @@ class Heap {
   }
 }
 
-/** The shortest run of clear cubes from `a` to `b` (both clear), as cube middles. Null when there's none. */
-function search(g: SolidGrid, a: Vector3, b: Vector3, keep: number): Vector3[] | null {
+/** The searches' working arrays, kept with their grid (one search at a time). */
+const scratch = new WeakMap<SolidGrid, { cost: Float32Array; f: Float32Array; from: Int32Array; done: Uint8Array }>();
+
+/** How short of the room it wants a cube is, 0 (roomy) to 1 (only just fits), from its distance (×10 cubes). */
+const shortOf = (d: number, want: number, hard: number) => (d >= want || want <= hard ? 0 : Math.min(1, (want - d) / (want - hard)));
+
+/** A found run of cube middles from one end to the other, and what each step so far has cost (mm, squeezes counted). */
+interface Run {
+  pts: Vector3[];
+  cost: number[];
+}
+
+/**
+ * The cheapest run of cubes from `a` to `b` (both clear) at least `hard` mm
+ * off the parts, a step through a cube with less than `keep` costing more.
+ * Null when there's none.
+ */
+function search(g: SolidGrid, a: Vector3, b: Vector3, keep: number, hard = keep): Run | null {
   const want = Math.ceil((keep / g.cell) * 10);
-  const free = (o: number) => g.dist[o] >= want;
+  const least = Math.min(want, Math.ceil((hard / g.cell) * 10));
+  const free = (o: number) => g.dist[o] >= least;
   const [ai, aj, ak] = cellOf(g, a);
   const [bi, bj, bk] = cellOf(g, b);
   if (!inside(g, ai, aj, ak) || !inside(g, bi, bj, bk)) return null;
   const s = ai + g.nx * (aj + g.ny * ak), t = bi + g.nx * (bj + g.ny * bk);
   const n = g.nx * g.ny * g.nz;
-  const cost = new Float32Array(n).fill(Infinity);
-  const f = new Float32Array(n).fill(Infinity);
-  const from = new Int32Array(n).fill(-1);
-  const done = new Uint8Array(n);
+  let w = scratch.get(g);
+  if (!w) {
+    w = { cost: new Float32Array(n), f: new Float32Array(n), from: new Int32Array(n), done: new Uint8Array(n) };
+    scratch.set(g, w);
+  }
+  const { cost, f, from, done } = w;
+  cost.fill(Infinity);
+  f.fill(Infinity);
+  from.fill(-1);
+  done.fill(0);
   const h = (o: number) => {
     const i = o % g.nx, j = Math.floor(o / g.nx) % g.ny, k = Math.floor(o / (g.nx * g.ny));
     return Math.hypot(i - bi, j - bj, k - bk);
@@ -346,7 +384,7 @@ function search(g: SolidGrid, a: Vector3, b: Vector3, keep: number): Vector3[] |
       if (!inside(g, X, Y, Z)) continue;
       const q = X + g.nx * (Y + g.ny * Z);
       if (done[q] || (!free(q) && q !== t)) continue;
-      const nc = cost[o] + c;
+      const nc = cost[o] + c * (1 + SQUEEZE_COST * shortOf(g.dist[q], want, least));
       if (nc < cost[q]) {
         cost[q] = nc;
         from[q] = o;
@@ -356,23 +394,55 @@ function search(g: SolidGrid, a: Vector3, b: Vector3, keep: number): Vector3[] |
     }
   }
   if (!done[t]) return null;
-  const out: Vector3[] = [];
-  for (let o = t; o !== -1; o = from[o]) out.push(centreOf(g, o));
-  out.reverse();
-  out[0] = a.clone();
-  out[out.length - 1] = b.clone();
-  return out;
+  const pts: Vector3[] = [];
+  const spent: number[] = [];
+  for (let o = t; o !== -1; o = from[o]) {
+    pts.push(centreOf(g, o));
+    spent.push(cost[o] * g.cell);
+  }
+  pts.reverse();
+  spent.reverse();
+  pts[0] = a.clone();
+  pts[pts.length - 1] = b.clone();
+  return { pts, cost: spent };
+}
+
+/**
+ * What the straight run from `a` to `b` costs (mm, with a squeeze costing
+ * more, as the search counts it), or Infinity when it comes closer than
+ * `hard` to a surface (or goes through one).
+ */
+export function runCost(g: SolidGrid, a: Vector3, b: Vector3, keep: number, hard = keep): number {
+  const len = a.distanceTo(b);
+  const n = Math.max(1, Math.ceil(len / (g.cell * 0.4)));
+  const p = new Vector3();
+  let short = 0;
+  for (let s = 0; s <= n; s++) {
+    p.copy(a).lerp(b, s / n);
+    // Half a cube's slack: the grid only knows distance to a cube's middle. Never through a surface.
+    const c = clearance(g, p);
+    const room = c + g.cell * 0.5;
+    if (c <= 0 || room < Math.min(hard, keep)) return Infinity;
+    if (room < keep && keep > hard) short += Math.min(1, (keep - room) / (keep - hard)) * (s === 0 || s === n ? 0.5 : 1);
+  }
+  return len * (1 + (SQUEEZE_COST * short) / n);
 }
 
 /**
  * The run pulled tight: from each corner, straight to the furthest point it
- * clears (found by galloping out, then halving back), no stretch longer
- * than `maxRun`.
+ * can reach for no more than the run itself costs there (found by galloping
+ * out, then halving back), no stretch longer than `maxRun`.
  */
-function pullTight(g: SolidGrid, path: Vector3[], keep: number, maxRun: number): Vector3[] {
+function pullTight(g: SolidGrid, run: Run, keep: number, hard: number, maxRun: number): Vector3[] {
+  const path = run.pts;
   const out = [path[0]];
   const last = path.length - 1;
-  const ok = (i: number, j: number) => path[i].distanceTo(path[j]) <= maxRun && clearRun(g, path[i], path[j], keep);
+  // A little over the run's own cost: the cubes' middles zigzag, the straight line doesn't.
+  const ok = (i: number, j: number) => {
+    if (path[i].distanceTo(path[j]) > maxRun) return false;
+    const c = runCost(g, path[i], path[j], keep, hard);
+    return c < Infinity && (keep <= hard || c <= (run.cost[j] - run.cost[i]) * 1.02 + g.cell);
+  };
   let i = 0;
   while (i < last) {
     let good = i + 1;
@@ -422,22 +492,69 @@ export interface Way {
   b: RouteEnd;
   /** Null: the straight run is clear. */
   path: Vector3[] | null;
+  /** What each step of `path` has cost so far. */
+  cost?: number[];
   keep: number;
+  /** The least room it keeps, squeezing (`keep` when it doesn't). */
+  hard?: number;
+  /** Its score: mm, with squeezes and bends added (lower is better). */
+  score?: number;
+}
+
+/** How much a run of corners costs: its length (squeezes counted), and each bend. */
+export function scoreOf(g: SolidGrid, pts: Vector3[], keep: number, hard = keep): number {
+  let score = 0;
+  for (let i = 1; i < pts.length; i++) {
+    // The runs out of each end start by a face: their length is all that counts.
+    const end = i === 1 || i === pts.length - 1;
+    const c = end ? pts[i - 1].distanceTo(pts[i]) : runCost(g, pts[i - 1], pts[i], keep, hard);
+    score += c < Infinity ? c : pts[i - 1].distanceTo(pts[i]) * (1 + SQUEEZE_COST * 2);
+  }
+  for (let i = 1; i < pts.length - 1; i++) {
+    const u = pts[i].clone().sub(pts[i - 1]), w = pts[i + 1].clone().sub(pts[i]);
+    if (u.lengthSq() < 1e-9 || w.lengthSq() < 1e-9) continue;
+    score += (BEND_COST * u.angleTo(w)) / (Math.PI / 2);
+  }
+  return score;
 }
 
 /**
- * The shortest way from `a` to `b` keeping `keep` mm off the solids; in a
- * tight spot, as close as the grid can tell, but never through a part.
- * Null when there's no way at all.
+ * The best way from `a` to `b`, keeping `keep` mm off the solids where it
+ * can and at least `hard` mm where it squeezes through; in a tight spot, as
+ * close as the grid can tell, but never through a part. Several ways are
+ * tried (strict room, soft room, each end left straight out along its face
+ * or by its nearest free side) and the lowest score kept. Null when there's
+ * no way at all.
  */
-export function findWay(g: SolidGrid, a: RouteEnd, b: RouteEnd, keep: number): Way | null {
-  if (clearRun(g, a.p, b.p, keep)) return { a, b, path: null, keep };
-  for (const k of [keep, Math.max(g.cell * 0.6, keep * 0.6), g.cell * 0.15]) {
+export function findWay(g: SolidGrid, a: RouteEnd, b: RouteEnd, keep: number, hard = keep): Way | null {
+  if (clearRun(g, a.p, b.p, keep)) return { a, b, path: null, keep, score: a.p.distanceTo(b.p) };
+  hard = Math.min(hard, keep);
+  // Each end out along its face, or by whichever side is nearest clear (a pin pointing into a wall).
+  const tries: { k: number; h: number; out: number; side?: boolean }[] = [{ k: keep, h: keep, out: keep }, { k: keep, h: keep, out: keep, side: true }];
+  if (hard < keep) tries.push({ k: keep, h: hard, out: keep }, { k: keep, h: hard, out: hard }, { k: keep, h: hard, out: hard, side: true });
+  let best: Way | null = null;
+  const seen = new Set<string>();
+  for (const t of tries) {
+    const a1 = escape(g, a.p, t.side ? null : a.n, t.out);
+    const b1 = escape(g, b.p, t.side ? null : b.n, t.out);
+    if (!a1 || !b1) continue;
+    const key = `${a1.toArray()}|${b1.toArray()}|${t.h}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const run = search(g, a1, b1, t.k, t.h);
+    if (!run) continue;
+    const way: Way = { a, b, path: run.pts, cost: run.cost, keep: t.k, hard: t.h };
+    way.score = scoreOf(g, [a.p, ...tighten(g, way), b.p], t.k, t.h);
+    if (!best || way.score < best.score!) best = way;
+  }
+  if (best) return best;
+  // Nowhere with that much room: as close as the grid can tell.
+  for (const k of [Math.max(g.cell * 0.6, keep * 0.6), g.cell * 0.15]) {
     const a1 = escape(g, a.p, a.n, k);
     const b1 = escape(g, b.p, b.n, k);
     if (!a1 || !b1) continue;
-    const path = search(g, a1, b1, k);
-    if (path) return { a, b, path, keep: k };
+    const run = search(g, a1, b1, k);
+    if (run) return { a, b, path: run.pts, cost: run.cost, keep: k };
   }
   return null;
 }
@@ -449,7 +566,8 @@ export function tighten(g: SolidGrid, way: Way, maxRun = Infinity): Vector3[] {
     const n = Math.ceil(way.a.p.distanceTo(way.b.p) / maxRun);
     return Array.from({ length: n - 1 }, (_, i) => way.a.p.clone().lerp(way.b.p, (i + 1) / n));
   }
-  const out = pullTight(g, way.path, way.keep, maxRun);
+  const run = { pts: way.path, cost: way.cost ?? way.path.map((_, i) => i * g.cell * 2) };
+  const out = pullTight(g, run, way.keep, way.hard ?? way.keep, maxRun);
   // The way out from each end, kept: it rises clear before it turns.
   if (out[0].distanceTo(way.a.p) < g.cell * 0.5) out.shift();
   if (out.length && out[out.length - 1].distanceTo(way.b.p) < g.cell * 0.5) out.pop();
