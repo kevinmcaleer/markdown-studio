@@ -247,13 +247,17 @@ export function placeCamera(c: OrthographicCamera, cam: SceneCamera, dist: numbe
 
 // ------------------------------------------------------------ the renderer
 
+/** A bare wire's alpha in the ID pass: the outline shader leaves it (and the edges round it) alone. */
+const BARE_ID_ALPHA = 0.25;
 const OUTLINE_VERT = "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }";
 const OUTLINE_FRAG = `
   uniform sampler2D tId; uniform vec2 px; uniform float width; uniform vec3 colour; uniform vec3 ghost; varying vec2 vUv;
-  // A part's ID is its colour; alpha is 1 for a part, 0.5 for a ghost part, 0 for nothing.
+  // A part's ID is its colour; alpha is 1 for a part, 0.5 for a ghost part, 0.25 for a bare wire, 0 for nothing.
   // An edge touching a part gets the line colour; one only between ghosts and nothing, the ghost colour.
+  // A bare wire has no outline: nothing is drawn on it, nor round it.
   void main() {
     vec4 here = texture2D(tId, vUv);
+    if (here.a > 0.125 && here.a < 0.375) discard;
     float hitPart = 0.0;
     float hitGhost = 0.0;
     for (int r = 1; r <= 48; r++) {
@@ -262,6 +266,7 @@ const OUTLINE_FRAG = `
       for (int k = 0; k < 16; k++) {
         float a = float(k) * 0.39269908;
         vec4 there = texture2D(tId, vUv + vec2(cos(a), sin(a)) * fr * px);
+        if (there.a > 0.125 && there.a < 0.375) continue;
         if (distance(there, here) > 0.001) {
           if (here.a > 0.75 || there.a > 0.75) { hitPart = 1.0; break; }
           hitGhost = 1.0;
@@ -469,7 +474,7 @@ export class LineArt {
       const idGroup = new Group();
       // Each part's ID colour; 0 (black) is the empty background.
       // Written as is (no blending), so a ghost part's alpha marks it for the outline pass.
-      idGroup.add(new Mesh(geometry, new MeshBasicMaterial({ color: new Color().setHex(idColour(i + 1)), transparent: true, opacity: part.ghost || glass ? 0.5 : 1, blending: NoBlending, clippingPlanes: this.clip })));
+      idGroup.add(new Mesh(geometry, new MeshBasicMaterial({ color: new Color().setHex(idColour(i + 1)), transparent: true, opacity: own.wire && this.look.bareWires ? BARE_ID_ALPHA : part.ghost || glass ? 0.5 : 1, blending: NoBlending, clippingPlanes: this.clip })));
       place(group, world.get(part.id)!);
       place(idGroup, world.get(part.id)!);
       group.visible = idGroup.visible = !part.hidden;
@@ -1262,6 +1267,8 @@ export class LineArt {
     this.idScene.overrideMaterial = this.depthOnly;
     r.render(this.idScene, camera);
     this.idScene.overrideMaterial = null;
+    // Bare wires keep their IDs here too, so the glass round them isn't outlined along them.
+    if (this.look.bareWires) for (const o of this.objects) if (o.part.wire && o.idGroup.visible && o.idGroup.parent === this.idScene) r.render(o.idGroup, camera);
     r.render(this.glassScene, camera);
     r.setRenderTarget(null);
     const u = this.outline.uniforms;
@@ -1465,7 +1472,7 @@ export function frameTight(cam: SceneCamera, meshes: Placed[], aspect: number, m
  * see-through background, drawn bigger and shrunk so its lines are smooth.
  * Parts whose models can't be read are left out.
  */
-export async function renderPicture(data: SceneData, store: ModelStore, w: number, h: number, scale = 1, cuts: Cut[] = []): Promise<HTMLCanvasElement> {
+export async function renderPicture(data: SceneData, store: ModelStore, w: number, h: number, scale = 1, cuts: Cut[] = [], extra: Pick<SceneLook, "bareWires"> = {}): Promise<HTMLCanvasElement> {
   const settled = await Promise.allSettled(data.parts.map(async part => ({ part, model: await store.get(part) })));
   const list = settled.flatMap(r => (r.status === "fulfilled" ? [r.value] : []));
   const ow = Math.max(1, Math.round(w * scale));
@@ -1475,7 +1482,7 @@ export async function renderPicture(data: SceneData, store: ModelStore, w: numbe
     const max = Math.min(art.renderer.capabilities.maxTextureSize || 4096, 8192);
     const ss = Math.max(1, Math.min(2, max / Math.max(ow, oh)));
     art.setSection(data.section);
-    art.look = lookOf(data);
+    art.look = { ...lookOf(data), ...extra };
     art.setParts(list, data.style, data.explode);
     art.arrows = !!data.arrows;
     art.cuts = cuts;

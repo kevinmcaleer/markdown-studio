@@ -1067,3 +1067,10 @@ html.lyr-open, html.lyr-open body { overflow: hidden !important; }
 .lyr-tool-size { padding: 1px 7px; border: 1px solid var(--lyr-line); border-radius: 999px; background: #fff; color: var(--lyr-muted); font: inherit; font-size: 11px; cursor: pointer; }
 .lyr-tool-size:hover { border-color: #9fb9e6; }
 .lyr-tool-size.lyr-on { border-color: #1f6fe0; background: #eaf2ff; color: #174ea6; }
+
+/* The wiring showcase's preview, in its dialog in the 3D workspace. */
+.lyr-showcase-dialog { width: 380px; }
+.lyr-showcase-shape { display: grid; gap: 4px; margin-top: 10px; font-size: 12px; font-weight: 600; }
+.lyr-showcase-preview { display: flex; align-items: center; justify-content: center; width: 100%; max-height: 52vh; margin-top: 10px; overflow: hidden; background: #ececec; border-radius: 6px; }
+.lyr-showcase-preview video, .lyr-showcase-preview img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.lyr-showcase-preview .lyr-note { margin: 0; }
