@@ -199,14 +199,14 @@ export function animationParts(model: Pick<ProjectModel, "parts">) {
     });
 }
 
-/** The style the animation is drawn in: the scenes' line art, without draft lines (the parts' movement says where they go). */
+/** The style the animation is drawn in: the scenes' line art, without draft lines (solid arrows show where each part goes). */
 export function animationStyle(): SceneStyle {
   return { ...blankScene().style, draft: false };
 }
 
 /** Up to `max` of the meshes' points, where they're drawn now (an even spread, for framing). */
 function samplePoints(art: LineArt, max = 40000): Float32Array {
-  const { meshes } = art.placed();
+  const { meshes, points } = art.placed();
   let total = 0;
   for (const m of meshes) total += m.geometry.getAttribute("position")?.count || 0;
   const stride = Math.max(1, Math.ceil(total / max));
@@ -220,6 +220,8 @@ function samplePoints(art: LineArt, max = 40000): Float32Array {
       out.push(v.x, v.y, v.z);
     }
   }
+  // The arrows' ends too, so an arrow is never cut off at the edge.
+  for (const p of points) out.push(p.x, p.y, p.z);
   return new Float32Array(out);
 }
 
@@ -247,6 +249,8 @@ export async function renderAnimation(model: Pick<ProjectModel, "parts">, store:
   ctx.imageSmoothingQuality = "high";
   try {
     const shown = list.map(x => x.part);
+    // Solid arrows along each gap, as on the assembly guide's steps.
+    art.arrows = true;
     art.setParts(list, style, 0);
     const pointsAt = (e: number) => {
       art.move(shown, e);
